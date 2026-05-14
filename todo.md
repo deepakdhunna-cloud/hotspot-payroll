@@ -130,12 +130,12 @@
 - [x] Run tests (48/48 passing), checkpoint
 
 ## v8 — Kiosk hardening + sitewide design refresh
-- [ ] Add "Open kiosk" button to the dashboard header (same behavior as Payroll page button — new tab, noopener)
-- [ ] Kiosk auto-detects the calling manager's store from session cookie when launched from a manager login (skip the store-picker; pre-fill it and let CEO still pick)
-- [ ] Hard isolation on the kiosk page: no app links/back button, no DashboardLayout, no PIN-protected nav reachable; the tab can only be closed by the user
-- [ ] Make Open kiosk launchers always open `/clock` with `target="_blank"` + `rel="noopener noreferrer"`
-- [ ] Build a shared PageHeader (eyebrow / title / one-line description) component and apply across all pages
-- [ ] Tighten spacing/typography: cards use consistent padding, KPI cards share scale, page gutters consistent
-- [ ] Rewrite every page's description so it's detailed but ≤140 chars
-- [ ] Loading + empty states reviewed on every page (consistent skeletons / empty illustrations)
-- [ ] Run all tests, save checkpoint
+- [x] Add "Open kiosk" button to the dashboard header (same behavior as Payroll page button — new tab, noopener)
+- [x] Kiosk auto-detects the calling manager's store from session cookie when launched from a manager login (skip the store-picker; pre-fill it and let CEO still pick)
+- [x] Hard isolation on the kiosk page: no app links/back button, no DashboardLayout, no PIN-protected nav reachable; the tab can only be closed by the user
+- [x] Make Open kiosk launchers always open `/clock` with `target="_blank"` + `rel="noopener noreferrer"`
+- [x] Build a shared PageHeader (eyebrow / title / one-line description) component and apply across all pages
+- [x] Tighten spacing/typography: cards use consistent padding, KPI cards share scale, page gutters consistent
+- [x] Rewrite every page's description so it's detailed but ≤140 chars
+- [x] Loading + empty states reviewed on every page (consistent skeletons + empty-row messages; mutation buttons show pending text)
+- [x] Run all tests (48/48 passing), save checkpoint
