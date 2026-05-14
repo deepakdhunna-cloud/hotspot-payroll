@@ -1,0 +1,43 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [
+    "server",
+    "db",
+    "user"
+  ],
+  "dev_command": "pnpm run dev",
+  "env_vars": {
+    "DATABASE_URL": "mysql://4MxDGskzutEnLhR.3cdacfe2df0d:BGcGN1n51R6FntP61CQb@gateway04.us-east-1.prod.aws.tidbcloud.com:4000/2nzzcMYqbvbBAVqaxrnEg8?ssl={\"rejectUnauthorized\":true}"
+  },
+  "experiments": [
+    "no_db_push"
+  ],
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663443119124/2nzzcMYqbvbBAVqaxrnEg8",
+    "access_key_id": "ASIAZV3A2ECZCIVGCG55",
+    "secret_access_key": "9yWKtX31tBA2ZFcpcc344p/rJG4MOHRVdsK8Dj7I",
+    "session_token": "IQoJb3JpZ2luX2VjEJX//////////wEaCXVzLWVhc3QtMSJHMEUCIGrH+z4icuzXdkAxlxN6+/rymvTtzBaQwhqYFYkbXAt2AiEAuMqf9JE8nMYYQhyx6+LlTCZ7xkXlDSLua2+inQ1ddPYq9gMIXhAEGgw2NjUzODYwOTg4NjYiDJd4mFbWBiJJTavJkirTA99+xPUoA6ZcmauajQj8u+PxwJCHdl4vLwMmwygoUcHvvaqZcfhXd3XeA2diY9v66WDuCOSEO3Gs3QPZqCVXTMFdMgw9ZHHhkr79uDrmcfudFP724WoSt7bbaP7sSAdhg8fSIkcHch+Mqu5pMhWOUMtL5B1t2dmZkNIlCG5qkuOMLj/ynKWSA8VLdCwIOqPqvfuc6tA1losMnRY1lqzjSQAMS3ULMC6cpBd8f53nDvjvVU6uLFLUIf428FB0NNMHgynkKSZQAPnxwj8dYwyF/aQ/qDB4YTCxDxzYtnbvL0B9grDDUqUYqT00lglr/neoozWftphnzC1e5+IWn61ng61TMILCH36wpfpIekKmf9UH2vH+93jsNgFKcxBm3kq7vKPlW/NMbQ0BFSNRFgMZyJXNJwURYZAHerOoQ7p/XcbkBaSFx3CKFZVUVyO0zB3nz5vO48xyG2nM0bWos0nf+lTpLbjEUFDtXU8AHjomw9teVSc4/kd+KlqkpjgzV/7WyUOWqvmshfXEHUFc9b41qJ3G2wcKKMiLeQ+d0D/2RJGWRrPa0l3P2EeHdiRs78meQPedimFS5lo1jUTGuvE/SMBsEUilroZ7EoN8eJwKIsQQCIaEMOyBl9AGOp0BeQuqhN9xwfkCTH5QO9DE2CvHcwiDNWFslNEoh2LUURGObE5NV52lJLYBoywKJiBFHaOr47SyMb1Js2OoMesQ0odrBABkQUA1xIlTWVDOTb+q5bzXvnOvHgy4secmrPCZWClFndLa8E7vTNJd1hjdn2H+v9dSU/dn+V0mk9z5bkCaOFzHxVwkHvi9sjeFEPc+M1t6uqAERDzOqhROuw==",
+    "expiration": "2026-05-15T00:32:44.000Z"
+  },
+  "name": "hotspot_payroll",
+  "path": "/home/ubuntu/hotspot_payroll",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "US2aVn2ctav6XhmVQKvnMV",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "JWT_SECRET": "Mhqd5PuQq4UqWrKrKabCRF",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OWNER_NAME": "Deepak Dhunna",
+    "OWNER_OPEN_ID": "JDDHVgWguHFnb78TdEVJkS",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "3ede55ab-0930-4831-877a-02f1d7e9762f",
+    "VITE_APP_ID": "2nzzcMYqbvbBAVqaxrnEg8",
+    "VITE_APP_LOGO": "",
+    "VITE_APP_TITLE": "Hotspot Market Payroll",
+    "VITE_FRONTEND_FORGE_API_KEY": "kTGhb7awCafVTyXjjmzTKP",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-db-user",
+  "test_command": "pnpm test"
+}
