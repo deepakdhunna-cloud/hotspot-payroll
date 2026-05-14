@@ -79,7 +79,12 @@
 - [x] Checkpoint v6 saved
 
 ## v6.1 \u2014 Pay period bugfix
-- [ ] Diagnose: for May 14, 2026 (Thursday) verify the displayed week range
-- [ ] Fix server getWeekStart to anchor Thu and end on Wed
-- [ ] Fix fmtWeekRange to label start=Thu \u2026 end=Wed (6 days later)
-- [ ] Add tests covering May 7\u201313 and May 14\u201320 boundaries
+- [x] Diagnosed: default was the in-progress week (May 14–20); changed default to most-recent-closed (May 7–13)
+- [x] Added getCurrentPayPeriodStart shared helper; getWeekStart was already correctly anchored
+- [x] fmtWeekRange already labels start … end+6 correctly; verified with new tests
+- [x] Tests covering May 7–13, May 6, and May 14–20 boundaries — 34/34 passing
+
+## v6.2 — Dashboard layout tweak
+- [x] Reorder KPI cards: Total Hours → Scheduled Hours → Total Gross Pay → Over/Under
+- [x] Per-store cards grid now adapts to count (1=full width, 2=halves, 3=thirds, 4=quarters)
+- [x] Save checkpoint

@@ -145,16 +145,16 @@ export default function Home() {
           accent="primary"
         />
         <KpiCard
-          label="Total gross pay"
-          value={fmtMoney(totals.totalGross)}
-          icon={<DollarSign className="h-5 w-5" />}
-          accent="green"
-        />
-        <KpiCard
           label="Scheduled hours"
           value={fmtHours(totals.totalScheduled)}
           icon={<CalendarDays className="h-5 w-5" />}
           accent="blue"
+        />
+        <KpiCard
+          label="Total gross pay"
+          value={fmtMoney(totals.totalGross)}
+          icon={<DollarSign className="h-5 w-5" />}
+          accent="green"
         />
         <KpiCard
           label="Over / under schedule"
@@ -175,8 +175,19 @@ export default function Home() {
         />
       </section>
 
-      {/* Per store cards */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      {/* Per store cards — grid adapts to how many stores are visible so a
+          single store stretches full width instead of looking squished. */}
+      <section
+        className={
+          (() => {
+            const n = Object.keys(byStore).length;
+            if (n <= 1) return "grid grid-cols-1 gap-4";
+            if (n === 2) return "grid grid-cols-1 md:grid-cols-2 gap-4";
+            if (n === 3) return "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4";
+            return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4";
+          })()
+        }
+      >
         {Object.entries(byStore).map(([store, s]: any) => {
           const variance = s.totalHours - s.totalScheduled;
           return (
