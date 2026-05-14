@@ -21,15 +21,22 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
-const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
+type MenuItem = { icon: typeof LayoutDashboard; label: string; path: string; adminOnly?: boolean };
+
+const LOGO_URL = "/manus-storage/hotspot-logo_f28ed58b.jpg";
+
+const baseMenuItems: MenuItem[] = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Users, label: "Employees", path: "/employees" },
+  { icon: ClipboardList, label: "Weekly Payroll", path: "/payroll" },
+  { icon: Upload, label: "Schedule Import", path: "/schedule-import" },
+  { icon: ShieldCheck, label: "CEO Overview", path: "/ceo", adminOnly: true },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -60,12 +67,16 @@ export default function DashboardLayout({
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <div className="flex flex-col items-center gap-6">
-            <h1 className="text-2xl font-semibold tracking-tight text-center">
-              Sign in to continue
+          <img src={LOGO_URL} alt="Hotspot Market" className="h-20 w-auto object-contain" />
+          <div className="flex flex-col items-center gap-3">
+            <span className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
+              Hotspot Market Payroll
+            </span>
+            <h1 className="text-3xl font-bold tracking-tight text-center">
+              Workforce &amp; Payroll OS
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+              Sign in to run weekly payroll, import schedules, and view store performance across all four Hotspot locations.
             </p>
           </div>
           <Button
@@ -77,6 +88,9 @@ export default function DashboardLayout({
           >
             Sign in
           </Button>
+          <p className="text-[11px] text-muted-foreground text-center">
+            Hotspot Market 11 &middot; 13 &middot; 14 &middot; Travel Center
+          </p>
         </div>
       </div>
     );
@@ -112,6 +126,8 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const isAdmin = user?.role === "admin";
+  const menuItems = baseMenuItems.filter(item => !item.adminOnly || isAdmin);
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
@@ -159,7 +175,7 @@ function DashboardLayoutContent({
           className="border-r-0"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-16 justify-center">
+          <SidebarHeader className="h-20 justify-center border-b border-sidebar-border">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
@@ -170,11 +186,15 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-semibold tracking-tight truncate">
-                    Navigation
-                  </span>
+                  <img src={LOGO_URL} alt="Hotspot Market" className="h-10 w-auto object-contain" />
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Payroll</span>
+                    <span className="text-xs font-semibold text-foreground">Workforce OS</span>
+                  </div>
                 </div>
-              ) : null}
+              ) : (
+                <img src={LOGO_URL} alt="" className="h-7 w-7 object-contain rounded" />
+              )}
             </div>
           </SidebarHeader>
 
@@ -214,8 +234,12 @@ function DashboardLayoutContent({
                     <p className="text-sm font-medium truncate leading-none">
                       {user?.name || "-"}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate mt-1.5">
-                      {user?.email || "-"}
+                    <p className="text-[11px] text-muted-foreground truncate mt-1.5 flex items-center gap-1">
+                      {isAdmin ? (
+                        <><ShieldCheck className="h-3 w-3 text-primary" /> CEO / Admin</>
+                      ) : (
+                        <><Building2 className="h-3 w-3" /> Manager</>
+                      )}
                     </p>
                   </div>
                 </button>
@@ -248,16 +272,15 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <span className="tracking-tight text-foreground">
-                    {activeMenuItem?.label ?? "Menu"}
-                  </span>
-                </div>
+                <img src={LOGO_URL} alt="Hotspot Market" className="h-7 w-auto object-contain" />
+                <span className="text-sm font-medium tracking-tight text-foreground">
+                  {activeMenuItem?.label ?? "Menu"}
+                </span>
               </div>
             </div>
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4 md:p-8">{children}</main>
       </SidebarInset>
     </>
   );
