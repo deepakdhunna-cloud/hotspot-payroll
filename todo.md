@@ -51,3 +51,16 @@
 - [x] Vitest tests for payroll calculations & withholding
 - [x] All tests passing (15/15)
 - [x] Save checkpoint and deliver
+
+
+## PIN Authentication (v2)
+- [ ] Swap site-wide logo to new dark-background PNG
+- [ ] Add `pin_codes` table (scope: 'ceo' | store name, hashed pin)
+- [ ] Seed default PINs (CEO: 9999, HM11: 1111, HM13: 1313, HM14: 1414, Travel: 7777)
+- [ ] Build PIN session cookie (sign role + store scope, 7-day TTL)
+- [ ] tRPC `auth.verifyPin` (public) and `auth.session` (replaces auth.me)
+- [ ] Replace OAuth gating with PIN check in DashboardLayout
+- [ ] On-screen numeric keypad sign-in page with Hotspot branding
+- [ ] CEO panel: change CEO PIN + change each store's manager PIN
+- [ ] Tests: PIN verification, scope enforcement (manager can't read other stores)
+- [ ] Save checkpoint and deliver

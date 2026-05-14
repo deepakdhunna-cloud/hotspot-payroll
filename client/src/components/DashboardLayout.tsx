@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import PinKeypad from "@/components/PinKeypad";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -19,7 +20,6 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -29,7 +29,7 @@ import { Button } from "./ui/button";
 
 type MenuItem = { icon: typeof LayoutDashboard; label: string; path: string; adminOnly?: boolean };
 
-const LOGO_URL = "/manus-storage/hotspot-logo_f28ed58b.jpg";
+const LOGO_URL = "/manus-storage/hotspot-logo-v2_94a15d3e.jpg";
 
 const baseMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -64,36 +64,7 @@ export default function DashboardLayout({
   }
 
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
-          <img src={LOGO_URL} alt="Hotspot Market" className="h-20 w-auto object-contain" />
-          <div className="flex flex-col items-center gap-3">
-            <span className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-              Hotspot Market Payroll
-            </span>
-            <h1 className="text-3xl font-bold tracking-tight text-center">
-              Workforce &amp; Payroll OS
-            </h1>
-            <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Sign in to run weekly payroll, import schedules, and view store performance across all four Hotspot locations.
-            </p>
-          </div>
-          <Button
-            onClick={() => {
-              window.location.href = getLoginUrl();
-            }}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
-          <p className="text-[11px] text-muted-foreground text-center">
-            Hotspot Market 11 &middot; 13 &middot; 14 &middot; Travel Center
-          </p>
-        </div>
-      </div>
-    );
+    return <PinKeypad />;
   }
 
   return (

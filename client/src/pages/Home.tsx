@@ -84,7 +84,7 @@ export default function Home() {
             {user?.role === "admin" ? "CEO Dashboard" : "Manager Dashboard"}
           </div>
           <h1 className="text-3xl font-bold tracking-tight mt-1">
-            Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+            Welcome back{user?.name ? `, ${user.name}` : ""}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Live overview of hours, scheduled vs actual, and gross pay across your stores.

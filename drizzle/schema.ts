@@ -107,3 +107,21 @@ export const payrollEntries = mysqlTable(
 
 export type PayrollEntry = typeof payrollEntries.$inferSelect;
 export type InsertPayrollEntry = typeof payrollEntries.$inferInsert;
+
+/**
+ * PIN codes for the simple keypad sign-in.
+ * scope = 'ceo' OR one of the four store names.
+ * pinHash = sha256(pin + scope) — never store raw PINs.
+ */
+export const pinCodes = mysqlTable(
+  "pin_codes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    scope: varchar("scope", { length: 64 }).notNull().unique(),
+    pinHash: varchar("pinHash", { length: 128 }).notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+);
+
+export type PinCode = typeof pinCodes.$inferSelect;
+export type InsertPinCode = typeof pinCodes.$inferInsert;

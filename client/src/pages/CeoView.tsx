@@ -297,35 +297,25 @@ function Stat({ label, value, bold = false }: { label: string; value: string; bo
 }
 
 function ManagersPanel() {
-  const optionsQ = trpc.meta.options.useQuery();
-  const managersQ = trpc.ceo.listManagers.useQuery();
+  const pinsQ = trpc.ceo.listPins.useQuery();
   const utils = trpc.useUtils();
 
-  const setStores = trpc.ceo.setManagerStores.useMutation({
+  const updatePin = trpc.ceo.updatePin.useMutation({
     onSuccess: () => {
-      toast.success("Updated access");
-      utils.ceo.listManagers.invalidate();
+      toast.success("PIN updated");
+      utils.ceo.listPins.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
-  const setRole = trpc.ceo.setUserRole.useMutation({
-    onSuccess: () => {
-      toast.success("Role updated");
-      utils.ceo.listManagers.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const stores = optionsQ.data?.stores ?? [];
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5" /> Manager access
+          <Users className="h-5 w-5" /> Access PINs
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          Promote signed-in users to CEO, or restrict managers to specific stores. Admins always see all stores.
+          Manage the CEO master PIN and one PIN per store. The CEO PIN always grants full access and can recover any store if a manager forgets their PIN.
         </p>
       </CardHeader>
       <CardContent className="px-0">
@@ -333,72 +323,91 @@ function ManagersPanel() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Assigned stores</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Last changed</TableHead>
+                <TableHead className="text-right">Update PIN</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(managersQ.data ?? []).map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.name ?? "—"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{u.email ?? "—"}</TableCell>
-                  <TableCell>
-                    <Select
-                      value={u.role}
-                      onValueChange={(v) => setRole.mutate({ userId: u.id, role: v as any })}
-                    >
-                      <SelectTrigger className="w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="user">Manager</SelectItem>
-                        <SelectItem value="admin">CEO / Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell>
-                    {u.role === "admin" ? (
-                      <span className="text-xs text-muted-foreground">All stores (admin)</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-3">
-                        {stores.map((s) => {
-                          const checked = u.stores.includes(s);
-                          return (
-                            <label
-                              key={s}
-                              className="flex items-center gap-2 text-xs cursor-pointer"
-                            >
-                              <Checkbox
-                                checked={checked}
-                                onCheckedChange={(c) => {
-                                  const next = c
-                                    ? [...u.stores, s]
-                                    : u.stores.filter((x) => x !== s);
-                                  setStores.mutate({ userId: u.id, stores: next as any });
-                                }}
-                              />
-                              {STORE_ABBR[s] ?? s}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
+              {(pinsQ.data ?? []).map((row) => (
+                <PinRow
+                  key={row.scope}
+                  scope={row.scope}
+                  label={row.label}
+                  isSet={row.isSet}
+                  updatedAt={row.updatedAt}
+                  onSave={(pin) => updatePin.mutate({ scope: row.scope, pin })}
+                  saving={updatePin.isPending}
+                />
               ))}
-              {managersQ.data && managersQ.data.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center py-10 text-sm text-muted-foreground">
-                    No users have signed in yet.
-                  </TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function PinRow({
+  scope,
+  label,
+  isSet,
+  updatedAt,
+  onSave,
+  saving,
+}: {
+  scope: string;
+  label: string;
+  isSet: boolean;
+  updatedAt: Date | null;
+  onSave: (pin: string) => void;
+  saving: boolean;
+}) {
+  const [pin, setPin] = useState("");
+  const valid = /^\d{4,8}$/.test(pin);
+  return (
+    <TableRow>
+      <TableCell className="font-medium flex items-center gap-2">
+        {scope === "ceo" ? (
+          <ShieldCheck className="h-4 w-4 text-primary" />
+        ) : (
+          <Building2 className="h-4 w-4 text-muted-foreground" />
+        )}
+        {label}
+      </TableCell>
+      <TableCell>
+        <Badge variant={isSet ? "default" : "secondary"}>
+          {isSet ? "Active" : "Not set"}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {updatedAt ? new Date(updatedAt).toLocaleString() : "—"}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-end gap-2">
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={8}
+            placeholder="New 4-digit PIN"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
+            className="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm tabular-nums tracking-widest text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <Button
+            size="sm"
+            disabled={!valid || saving}
+            onClick={() => {
+              onSave(pin);
+              setPin("");
+            }}
+          >
+            Save
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

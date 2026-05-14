@@ -1,4 +1,4 @@
-import { COOKIE_NAME } from "@shared/const";
+import { PIN_COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -14,14 +14,10 @@ import {
   countEmployees,
   createEmployee,
   deactivateEmployee,
-  getDb,
   getEmployeeById,
   getEmployeePayrollHistory,
-  getManagerStores,
   getPayrollByWeek,
-  getPayrollRange,
   listEmployees,
-  setManagerStores,
   updateEmployee,
   upsertPayrollEntry,
 } from "./db";
@@ -34,51 +30,87 @@ import {
   getWeekStart,
 } from "@shared/hotspot";
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
-import { users } from "../drizzle/schema";
+import {
+  ALL_SCOPES,
+  listPinScopes,
+  setPin,
+  signPinSession,
+  verifyPin,
+  type PinScope,
+  type PinSession,
+} from "./_core/pinAuth";
 
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
 
-async function getScope(user: { id: number; role: "user" | "admin" }) {
-  if (user.role === "admin") {
+function getScope(session: PinSession) {
+  if (session.role === "admin") {
     return { isAdmin: true as const, stores: [...STORES] as Store[] };
   }
-  const assigns = await getManagerStores(user.id);
-  const stores = assigns.map((a) => a.storeLocation as Store);
-  return { isAdmin: false as const, stores };
+  return {
+    isAdmin: false as const,
+    stores: session.store ? ([session.store] as Store[]) : [],
+  };
 }
 
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    /** Read current session (or null). Replaces auth.me. */
+    me: publicProcedure.query(({ ctx }) => {
+      if (!ctx.session) return null;
+      return {
+        role: ctx.session.role,
+        store: ctx.session.store,
+        scope: ctx.session.scope,
+      };
+    }),
+
+    /** Verify a PIN; on success, set the session cookie. */
+    verifyPin: publicProcedure
+      .input(z.object({ pin: z.string().min(4).max(8) }))
+      .mutation(async ({ ctx, input }) => {
+        const scope = await verifyPin(input.pin);
+        if (!scope) {
+          // Brief delay to slow brute force.
+          await new Promise((r) => setTimeout(r, 400));
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect PIN" });
+        }
+        const token = await signPinSession(scope);
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(PIN_COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+        return {
+          role: scope === "ceo" ? ("admin" as const) : ("manager" as const),
+          store: scope === "ceo" ? null : (scope as Store),
+          scope,
+        };
+      }),
+
+    /** Sign out by clearing the PIN cookie. */
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(PIN_COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
   }),
 
   meta: router({
-    /** List of stores and roles for dropdowns. */
     options: publicProcedure.query(() => ({
       stores: [...STORES],
       roles: [...ROLES],
     })),
 
-    /** Current user's scope (which stores they can see). */
-    myScope: protectedProcedure.query(async ({ ctx }) => {
-      const scope = await getScope(ctx.user);
-      return scope;
-    }),
+    myScope: protectedProcedure.query(({ ctx }) => getScope(ctx.session)),
   }),
 
   employees: router({
     list: protectedProcedure
       .input(z.object({ store: StoreEnum.optional() }).optional())
       .query(async ({ ctx, input }) => {
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         const targetStores =
           input?.store && (scope.isAdmin || scope.stores.includes(input.store))
             ? [input.store]
@@ -93,7 +125,7 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const emp = await getEmployeeById(input.id);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
@@ -111,11 +143,11 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         if (!scope.isAdmin && !scope.stores.includes(input.storeLocation)) {
           throw new TRPCError({
             code: "FORBIDDEN",
-            message: "You can only add employees to your assigned store(s).",
+            message: "You can only add employees to your assigned store.",
           });
         }
         const id = await createEmployee({
@@ -142,7 +174,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const emp = await getEmployeeById(input.id);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
@@ -161,7 +193,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const emp = await getEmployeeById(input.id);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
@@ -174,7 +206,7 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const emp = await getEmployeeById(input.id);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
@@ -183,16 +215,10 @@ export const appRouter = router({
   }),
 
   payroll: router({
-    /** Return weekly grid for a given Monday + store (scoped). */
     week: protectedProcedure
-      .input(
-        z.object({
-          weekStart: z.date(),
-          store: StoreEnum.optional(),
-        }),
-      )
+      .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
       .query(async ({ ctx, input }) => {
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         const week = getWeekStart(input.weekStart);
         const stores =
           input.store && (scope.isAdmin || scope.stores.includes(input.store))
@@ -208,17 +234,13 @@ export const appRouter = router({
 
         return {
           weekStart: week,
-          employees: employees.map((emp) => {
-            const entry = entryByEmp.get(emp.id);
-            return {
-              employee: emp,
-              entry: entry ?? null,
-            };
-          }),
+          employees: employees.map((emp) => ({
+            employee: emp,
+            entry: entryByEmp.get(emp.id) ?? null,
+          })),
         };
       }),
 
-    /** Save hours for an employee for the given week. Auto computes pay. */
     saveHours: protectedProcedure
       .input(
         z.object({
@@ -232,11 +254,10 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const emp = await getEmployeeById(input.employeeId);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-
         const payRate = Number(emp.payRate);
         const { regularPay, overtimePay, grossPay } = computeGrossPay(
           input.hoursWorked,
@@ -259,7 +280,6 @@ export const appRouter = router({
         return { id, grossPay, regularPay, overtimePay };
       }),
 
-    /** Save scheduled hours from the schedule importer for a batch of employees. */
     saveSchedule: protectedProcedure
       .input(
         z.object({
@@ -273,7 +293,7 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         const week = getWeekStart(input.weekStart);
         let saved = 0;
         for (const item of input.entries) {
@@ -282,7 +302,6 @@ export const appRouter = router({
           if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) continue;
 
           const payRate = Number(emp.payRate);
-          // Preserve existing hoursWorked if any.
           const existing = await getPayrollByWeek(week);
           const existingForEmp = existing.find((e) => e.employeeId === emp.id);
           const hoursWorked = Number(existingForEmp?.hoursWorked ?? 0);
@@ -306,18 +325,12 @@ export const appRouter = router({
   }),
 
   dashboard: router({
-    /** Manager / CEO dashboard summary for a given week & optional store. */
     summary: protectedProcedure
       .input(
-        z
-          .object({
-            weekStart: z.date(),
-            store: StoreEnum.optional(),
-          })
-          .optional(),
+        z.object({ weekStart: z.date(), store: StoreEnum.optional() }).optional(),
       )
       .query(async ({ ctx, input }) => {
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         const week = getWeekStart(input?.weekStart ?? new Date());
 
         const storesFilter =
@@ -332,21 +345,10 @@ export const appRouter = router({
 
         const byStore: Record<
           string,
-          {
-            totalHours: number;
-            totalScheduled: number;
-            totalGross: number;
-            employeeCount: number;
-          }
+          { totalHours: number; totalScheduled: number; totalGross: number; employeeCount: number }
         > = {};
-
         for (const s of storesFilter) {
-          byStore[s] = {
-            totalHours: 0,
-            totalScheduled: 0,
-            totalGross: 0,
-            employeeCount: 0,
-          };
+          byStore[s] = { totalHours: 0, totalScheduled: 0, totalGross: 0, employeeCount: 0 };
         }
         for (const e of employees) {
           if (byStore[e.storeLocation]) byStore[e.storeLocation].employeeCount++;
@@ -359,13 +361,9 @@ export const appRouter = router({
         }
 
         const totalHours = Object.values(byStore).reduce((a, b) => a + b.totalHours, 0);
-        const totalScheduled = Object.values(byStore).reduce(
-          (a, b) => a + b.totalScheduled,
-          0,
-        );
+        const totalScheduled = Object.values(byStore).reduce((a, b) => a + b.totalScheduled, 0);
         const totalGross = Object.values(byStore).reduce((a, b) => a + b.totalGross, 0);
 
-        // Per-employee breakdown for the current scope
         const empBreakdown = employees.map((emp) => {
           const entry = entries.find((e) => e.employeeId === emp.id);
           const hoursWorked = Number(entry?.hoursWorked ?? 0);
@@ -388,14 +386,18 @@ export const appRouter = router({
           weekStart: week,
           scope,
           byStore,
-          totals: { totalHours, totalScheduled, totalGross, variance: totalHours - totalScheduled },
+          totals: {
+            totalHours,
+            totalScheduled,
+            totalGross,
+            variance: totalHours - totalScheduled,
+          },
           employees: empBreakdown,
         };
       }),
   }),
 
   ceo: router({
-    /** CEO admin-only: per-employee gross + tax withholding across all 4 stores. */
     weekly: adminProcedure
       .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
       .query(async ({ input }) => {
@@ -488,40 +490,36 @@ export const appRouter = router({
         };
       }),
 
-    /** CEO: list of users (managers) and assign stores. */
-    listManagers: adminProcedure.query(async () => {
-      const db = await getDb();
-      if (!db) return [];
-      const allUsers = await db.select().from(users);
-      const all = await Promise.all(
-        allUsers.map(async (u) => ({
-          ...u,
-          stores: (await getManagerStores(u.id)).map((s) => s.storeLocation),
-        })),
-      );
-      return all;
+    /** List PIN scopes (without revealing PIN values). */
+    listPins: adminProcedure.query(async () => {
+      const rows = await listPinScopes();
+      return ALL_SCOPES.map((scope) => {
+        const row = rows.find((r) => r.scope === scope);
+        return {
+          scope,
+          label:
+            scope === "ceo" ? "CEO Master PIN" : `${scope} \u2014 Manager PIN`,
+          isSet: !!row,
+          updatedAt: row?.updatedAt ?? null,
+        };
+      });
     }),
 
-    setManagerStores: adminProcedure
-      .input(z.object({ userId: z.number().int(), stores: z.array(StoreEnum) }))
+    /** Update a PIN (CEO master, or any of the four store PINs). */
+    updatePin: adminProcedure
+      .input(
+        z.object({
+          scope: z.enum(["ceo", ...STORES] as [PinScope, ...PinScope[]]),
+          pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits"),
+        }),
+      )
       .mutation(async ({ input }) => {
-        await setManagerStores(input.userId, input.stores);
-        return { success: true };
-      }),
-
-    setUserRole: adminProcedure
-      .input(z.object({ userId: z.number().int(), role: z.enum(["user", "admin"]) }))
-      .mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error("DB unavailable");
-        await db.update(users).set({ role: input.role }).where(eq(users.id, input.userId));
+        await setPin(input.scope, input.pin);
         return { success: true };
       }),
   }),
 
   schedule: router({
-    /** Upload a Homebase schedule (PDF / image), parse it via LLM vision,
-     *  and return extracted { name, scheduledHours }[] for the chosen week. */
     parseUpload: protectedProcedure
       .input(
         z.object({
@@ -533,11 +531,10 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        // Save the uploaded file to storage so the LLM can fetch it by URL.
         const buf = Buffer.from(input.fileBase64, "base64");
         const safeName = input.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
         const ext = safeName.includes(".") ? safeName.split(".").pop() : "bin";
-        const key = `schedules/${ctx.user.id}-${Date.now()}.${ext}`;
+        const key = `schedules/${ctx.session.scope}-${Date.now()}.${ext}`;
         const { url } = await storagePut(key, buf, input.mimeType);
 
         const isPdf = input.mimeType === "application/pdf";
@@ -615,15 +612,14 @@ export const appRouter = router({
           const raw = response.choices[0]?.message?.content;
           const text = typeof raw === "string" ? raw : JSON.stringify(raw);
           parsed = JSON.parse(text);
-        } catch (e) {
+        } catch {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Could not parse the schedule. Try a clearer photo or PDF.",
           });
         }
 
-        // Match extracted names to existing employees in scope.
-        const scope = await getScope(ctx.user);
+        const scope = getScope(ctx.session);
         const stores =
           input.store && (scope.isAdmin || scope.stores.includes(input.store))
             ? [input.store]
@@ -637,9 +633,7 @@ export const appRouter = router({
 
         const matched = parsed.employees.map((row) => {
           const target = normalize(row.name);
-          // First exact match
           let emp = dbEmployees.find((e) => normalize(e.fullName) === target);
-          // Then last-name + first-initial heuristic
           if (!emp) {
             const parts = target.split(" ").filter(Boolean);
             const first = parts[0] ?? "";
