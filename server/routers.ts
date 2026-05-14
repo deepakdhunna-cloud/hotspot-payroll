@@ -132,6 +132,35 @@ export const appRouter = router({
         return emp;
       }),
 
+    /**
+     * Quick Add: create a placeholder employee from a parsed schedule row.
+     * Pay rate is 0, role is Cashier, phone is "—". Edit later from the profile.
+     */
+    quickCreate: protectedProcedure
+      .input(
+        z.object({
+          fullName: z.string().min(1).max(200),
+          storeLocation: StoreEnum,
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(input.storeLocation)) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You can only add employees to your assigned store.",
+          });
+        }
+        const id = await createEmployee({
+          fullName: input.fullName.trim(),
+          phone: "—",
+          payRate: "0",
+          role: "Cashier",
+          storeLocation: input.storeLocation,
+        });
+        return { id, fullName: input.fullName.trim(), storeLocation: input.storeLocation };
+      }),
+
     create: protectedProcedure
       .input(
         z.object({

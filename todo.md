@@ -64,3 +64,11 @@
 - [x] CEO panel: change CEO PIN + change each store's manager PIN
 - [x] Tests: PIN verification + session round-trip (21/21 passing)
 - [x] Save checkpoint and deliver
+
+## Quick Add from Schedule Import (v3)
+- [x] Per-row "Quick Add" button on unmatched rows
+- [x] Defaults: phone "—", payRate 0, role Cashier, store = current filter
+- [x] After create, re-match row to new employee automatically
+- [x] Bulk "Create all unmatched" button at top
+- [x] Tests for quickCreate procedure (24/24 passing)
+- [x] Checkpoint and deliver

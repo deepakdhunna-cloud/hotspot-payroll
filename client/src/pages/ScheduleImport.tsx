@@ -30,6 +30,8 @@ import {
   FileImage,
   FileText,
   X,
+  UserPlus,
+  Zap,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -88,6 +90,35 @@ export default function ScheduleImport() {
   });
 
   const utils = trpc.useUtils();
+
+  const quickCreateM = trpc.employees.quickCreate.useMutation({
+    onSuccess: async (data, vars) => {
+      await utils.employees.list.invalidate();
+      const fresh = await utils.employees.list.fetch({
+        store: storeFilter === "all" ? undefined : (storeFilter as any),
+      });
+      // Auto-match this newly created employee to the row that triggered it.
+      const idx = (rows ?? []).findIndex(
+        (r) => r.extractedName === vars.fullName && !overrides[(rows ?? []).indexOf(r)],
+      );
+      if (idx >= 0) {
+        setOverrides((o) => ({ ...o, [idx]: data.id }));
+      }
+      // Also fix any other unmatched rows that share the same name.
+      setOverrides((o) => {
+        const next = { ...o };
+        (rows ?? []).forEach((r, i) => {
+          if (!next[i] && r.extractedName.trim() === data.fullName) next[i] = data.id;
+        });
+        return next;
+      });
+      toast.success(`Added ${data.fullName} to ${data.storeLocation}`);
+      // Keep fresh list available for the select dropdown.
+      void fresh;
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const saveScheduleM = trpc.payroll.saveSchedule.useMutation({
     onSuccess: ({ saved }) => {
       toast.success(`Saved schedules for ${saved} employee${saved === 1 ? "" : "s"}.`);
@@ -158,6 +189,43 @@ export default function ScheduleImport() {
     if (!rows) return 0;
     return Object.values(overrides).filter(Boolean).length;
   }, [rows, overrides]);
+
+  // Determine the default store to assign for Quick Add.
+  const quickAddStore = useMemo<string | null>(() => {
+    if (storeFilter !== "all") return storeFilter;
+    return stores[0] ?? null;
+  }, [storeFilter, stores]);
+
+  const unmatchedIndices = useMemo(() => {
+    if (!rows) return [];
+    return rows
+      .map((_, i) => i)
+      .filter((i) => !overrides[i] && (rows[i].extractedName ?? "").trim().length > 0);
+  }, [rows, overrides]);
+
+  const quickAddOne = (idx: number) => {
+    if (!rows || !quickAddStore) return;
+    const r = rows[idx];
+    quickCreateM.mutate({
+      fullName: r.extractedName.trim(),
+      storeLocation: quickAddStore as any,
+    });
+  };
+
+  const quickAddAll = async () => {
+    if (!rows || !quickAddStore) return;
+    for (const i of unmatchedIndices) {
+      const r = rows[i];
+      try {
+        await quickCreateM.mutateAsync({
+          fullName: r.extractedName.trim(),
+          storeLocation: quickAddStore as any,
+        });
+      } catch {
+        /* surfaced via toast onError */
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -280,7 +348,7 @@ export default function ScheduleImport() {
 
       {rows && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle>Review extracted schedule</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
@@ -289,10 +357,24 @@ export default function ScheduleImport() {
                 <span className="text-amber-400">{rows.length - matchedCount} need review</span>
               </p>
             </div>
-            <Button onClick={commit} disabled={saveScheduleM.isPending}>
-              <CheckCircle2 className="h-4 w-4 mr-2" />
-              {saveScheduleM.isPending ? "Saving…" : `Import ${matchedCount} schedules`}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {unmatchedIndices.length > 0 && quickAddStore && (
+                <Button
+                  variant="secondary"
+                  onClick={quickAddAll}
+                  disabled={quickCreateM.isPending}
+                >
+                  <Zap className="h-4 w-4 mr-2 text-primary" />
+                  {quickCreateM.isPending
+                    ? "Adding…"
+                    : `Quick add ${unmatchedIndices.length} to ${quickAddStore}`}
+                </Button>
+              )}
+              <Button onClick={commit} disabled={saveScheduleM.isPending}>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                {saveScheduleM.isPending ? "Saving…" : `Import ${matchedCount} schedules`}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="px-0">
             <div className="overflow-x-auto">
@@ -323,27 +405,41 @@ export default function ScheduleImport() {
                         </TableCell>
                         <TableCell className="font-medium">{row.extractedName}</TableCell>
                         <TableCell>
-                          <Select
-                            value={matchedId ? String(matchedId) : "skip"}
-                            onValueChange={(v) =>
-                              setOverrides((o) => ({
-                                ...o,
-                                [i]: v === "skip" ? null : Number(v),
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="max-w-[300px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="skip">— Skip this row —</SelectItem>
-                              {employeesList.map((e) => (
-                                <SelectItem key={e.id} value={String(e.id)}>
-                                  {e.fullName} · {e.storeLocation}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={matchedId ? String(matchedId) : "skip"}
+                              onValueChange={(v) =>
+                                setOverrides((o) => ({
+                                  ...o,
+                                  [i]: v === "skip" ? null : Number(v),
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="max-w-[260px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="skip">— Skip this row —</SelectItem>
+                                {employeesList.map((e) => (
+                                  <SelectItem key={e.id} value={String(e.id)}>
+                                    {e.fullName} · {e.storeLocation}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {!matchedId && quickAddStore && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-9 shrink-0"
+                                disabled={quickCreateM.isPending}
+                                onClick={() => quickAddOne(i)}
+                                title={`Create "${row.extractedName}" at ${quickAddStore}`}
+                              >
+                                <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Quick add
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <Input
