@@ -23,6 +23,7 @@ import {
   getEmployeeById,
   getEmployeePayrollHistory,
   getPayrollByWeek,
+  getPayrollRange,
   getPunchById,
   hoursWorkedForWeek,
   hoursWorkedForWeekBulk,
@@ -463,6 +464,98 @@ export const appRouter = router({
           saved++;
         }
         return { saved };
+      }),
+
+    /**
+     * Multi-week payroll history for a Thursday-anchored date range.
+     * Returns each saved row (already permanently persisted in `payroll_entries`)
+     * along with the originating employee, plus per-employee + grand totals.
+     * Scope-aware: managers only ever see their stores; CEO sees all unless
+     * a store is explicitly requested.
+     */
+    range: protectedProcedure
+      .input(
+        z.object({
+          startWeek: z.date(),
+          endWeek: z.date(),
+          store: StoreEnum.optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const start = getWeekStart(input.startWeek);
+        const end = getWeekStart(input.endWeek);
+        if (end.getTime() < start.getTime()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "End week must be on or after start week.",
+          });
+        }
+        const stores =
+          input.store && (scope.isAdmin || scope.stores.includes(input.store))
+            ? [input.store]
+            : scope.isAdmin
+              ? undefined
+              : scope.stores;
+        const entries = await getPayrollRange(start, end, stores);
+        // Hydrate employees so the UI can show names without N+1 calls.
+        const empIds = Array.from(new Set(entries.map((e) => e.employeeId)));
+        const empById = new Map<number, { id: number; fullName: string; storeLocation: string; role: string }>();
+        for (const id of empIds) {
+          const e = await getEmployeeById(id);
+          if (e)
+            empById.set(id, {
+              id: e.id,
+              fullName: e.fullName,
+              storeLocation: e.storeLocation,
+              role: e.role,
+            });
+        }
+        // Build per-employee aggregates.
+        type Agg = {
+          employeeId: number;
+          employeeName: string;
+          storeLocation: string;
+          role: string;
+          hours: number;
+          gross: number;
+          weekCount: number;
+        };
+        const agg = new Map<number, Agg>();
+        let grandHours = 0;
+        let grandGross = 0;
+        for (const e of entries) {
+          const emp = empById.get(e.employeeId);
+          const h = Number(e.hoursWorked) || 0;
+          const g = Number(e.grossPay) || 0;
+          grandHours += h;
+          grandGross += g;
+          const row = agg.get(e.employeeId) ?? {
+            employeeId: e.employeeId,
+            employeeName: emp?.fullName ?? `Employee #${e.employeeId}`,
+            storeLocation: emp?.storeLocation ?? e.storeLocation,
+            role: emp?.role ?? "",
+            hours: 0,
+            gross: 0,
+            weekCount: 0,
+          };
+          row.hours += h;
+          row.gross += g;
+          row.weekCount += 1;
+          agg.set(e.employeeId, row);
+        }
+        return {
+          startWeek: start,
+          endWeek: end,
+          totals: { hours: grandHours, gross: grandGross, weeks: entries.length },
+          employees: Array.from(agg.values()).sort((a, b) =>
+            a.employeeName.localeCompare(b.employeeName),
+          ),
+          entries: entries.map((e) => ({
+            ...e,
+            employeeName: empById.get(e.employeeId)?.fullName ?? `Employee #${e.employeeId}`,
+          })),
+        };
       }),
   }),
 

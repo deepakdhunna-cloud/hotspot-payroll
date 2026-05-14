@@ -105,7 +105,7 @@
 - [x] Auto-prefill Weekly Payroll hours from clock punches (overrideable)
 - [x] Tests: clock.* permission + validation gates (9 new tests, 43/43 passing)
 - [x] Weekly Payroll: minimize manual entry — hours auto-fill from clock punches by default; manual override hidden behind a pencil icon per row with "(manual)" tag + Reset link
-- [ ] Checkpoint and deliver
+- [x] Checkpoint and deliver
 
 ## v7.1 — Time Clock UI polish
 - [x] Manager sessions on /time-clock: hide the "All my stores" option and default to their single store (CEO keeps "All stores")
@@ -114,3 +114,17 @@
 
 ## v7.2 — Kiosk launcher
 - [x] Add "Open kiosk" button on the Time Clock page header that opens /clock in a new tab
+
+## v7.3 — Merge Time Clock + Weekly Payroll
+- [x] Combined Payroll page with two tabs (Hours & pay / Punches) sharing a header (week navigator, store filter, KPI strip, Open kiosk button)
+- [x] Remove standalone Time Clock sidebar nav item; keep route `/time-clock` redirecting to `/payroll?tab=punches` for old links
+- [x] Run tests + checkpoint
+
+## v7.4 — Spreadsheet export + historical range
+- [x] Backend: payroll.range procedure → totals + per-employee hours/gross across a Thursday-anchored multi-week date range, scope-aware
+- [x] Frontend: combined Payroll page with three tabs (Hours & pay / Punches / History); shared week navigator + store filter + Open kiosk button
+- [x] Frontend: xlsx export on Hours & pay (single week, formatted: bold header, frozen, currency, totals row) — works in Google Sheets
+- [x] Frontend: History tab with start/end date pickers (snap to Thursday), per-employee summary table, totals row, xlsx export of the range
+- [x] Frontend: Punches tab: allow arbitrary date range (not just one week)
+- [x] Routing: remove "Time Clock" sidebar item; alias `/time-clock` to `/payroll?tab=punches`
+- [x] Run tests (48/48 passing), checkpoint

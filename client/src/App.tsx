@@ -11,9 +11,18 @@ import EmployeeProfile from "./pages/EmployeeProfile";
 import WeeklyPayroll from "./pages/WeeklyPayroll";
 import ScheduleImport from "./pages/ScheduleImport";
 import CeoView from "./pages/CeoView";
-import TimeClock from "./pages/TimeClock";
 import ClockKiosk from "./pages/ClockKiosk";
+import { useEffect } from "react";
 import { useLocation } from "wouter";
+
+// Legacy /time-clock URL → redirect to the Punches tab of the merged page.
+function TimeClockRedirect() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation("/payroll?tab=punches", { replace: true });
+  }, [setLocation]);
+  return null;
+}
 
 function Router() {
   const [location] = useLocation();
@@ -34,7 +43,7 @@ function Router() {
         <Route path={"/employees"} component={Employees} />
         <Route path={"/employees/:id"} component={EmployeeProfile} />
         <Route path={"/payroll"} component={WeeklyPayroll} />
-        <Route path={"/time-clock"} component={TimeClock} />
+        <Route path={"/time-clock"} component={TimeClockRedirect} />
         <Route path={"/schedule-import"} component={ScheduleImport} />
         <Route path={"/ceo"} component={CeoView} />
         <Route path={"/404"} component={NotFound} />

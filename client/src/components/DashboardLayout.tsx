@@ -35,8 +35,8 @@ const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
 const baseMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Employees", path: "/employees" },
-  { icon: Clock, label: "Time Clock", path: "/time-clock" },
-  { icon: ClipboardList, label: "Weekly Payroll", path: "/payroll" },
+  // Time Clock + Weekly Payroll are now merged into one Payroll page with tabs.
+  { icon: ClipboardList, label: "Payroll", path: "/payroll" },
   { icon: Upload, label: "Schedule Import", path: "/schedule-import" },
   { icon: ShieldCheck, label: "CEO Overview", path: "/ceo", adminOnly: true },
 ];
