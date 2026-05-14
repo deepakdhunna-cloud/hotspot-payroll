@@ -43,6 +43,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  ExternalLink,
   Pencil,
   Plus,
   Trash2,
@@ -220,6 +221,13 @@ export default function TimeClock() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => window.open("/clock", "_blank", "noopener,noreferrer")}
+            title="Open the public punch-in kiosk in a new tab"
+          >
+            <ExternalLink className="h-4 w-4 mr-2" /> Open kiosk
+          </Button>
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" /> Add punch
           </Button>

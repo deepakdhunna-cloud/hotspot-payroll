@@ -111,3 +111,6 @@
 - [x] Manager sessions on /time-clock: hide the "All my stores" option and default to their single store (CEO keeps "All stores")
 - [x] Remove the "Punches this week" KPI card; keep Hours logged + Currently clocked in only
 - [x] Run tests (43/43 still passing), checkpoint
+
+## v7.2 — Kiosk launcher
+- [x] Add "Open kiosk" button on the Time Clock page header that opens /clock in a new tab
