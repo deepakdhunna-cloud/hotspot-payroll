@@ -26,10 +26,11 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { trpc } from "@/lib/trpc";
 
 type MenuItem = { icon: typeof LayoutDashboard; label: string; path: string; adminOnly?: boolean };
 
-const LOGO_URL = "/manus-storage/hotspot-logo-v2_94a15d3e.jpg";
+const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
 
 const baseMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -98,6 +99,10 @@ function DashboardLayoutContent({
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isAdmin = user?.role === "admin";
+  const greetingQ = trpc.meta.greetingName.useQuery(undefined, {
+    enabled: !!user,
+  });
+  const displayName = isAdmin ? "CEO" : greetingQ.data?.name ?? "Manager";
   const menuItems = baseMenuItems.filter(item => !item.adminOnly || isAdmin);
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
@@ -146,7 +151,7 @@ function DashboardLayoutContent({
           className="border-r-0"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-20 justify-center border-b border-sidebar-border">
+          <SidebarHeader className="h-24 justify-center border-b border-sidebar-border">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
@@ -156,15 +161,14 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <img src={LOGO_URL} alt="Hotspot Market" className="h-10 w-auto object-contain" />
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Payroll</span>
-                    <span className="text-xs font-semibold text-foreground">Workforce OS</span>
-                  </div>
+                <div className="flex flex-col items-center gap-1 min-w-0 flex-1">
+                  <img src={LOGO_URL} alt="Hotspot" className="h-8 w-auto object-contain" />
+                  <span className="inline-flex items-center bg-neutral-950 text-white text-[9px] font-semibold tracking-[0.28em] uppercase px-3 py-0.5 rounded-full -mt-1">
+                    Market
+                  </span>
                 </div>
               ) : (
-                <img src={LOGO_URL} alt="" className="h-7 w-7 object-contain rounded" />
+                <img src={LOGO_URL} alt="" className="h-6 w-auto object-contain" />
               )}
             </div>
           </SidebarHeader>
@@ -197,19 +201,19 @@ function DashboardLayoutContent({
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 border shrink-0">
-                    <AvatarFallback className="text-xs font-medium">
-                      {user?.name?.charAt(0).toUpperCase()}
+                    <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
+                      {isAdmin ? "C" : "M"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
                     <p className="text-sm font-medium truncate leading-none">
-                      {user?.name || "-"}
+                      {displayName}
                     </p>
                     <p className="text-[11px] text-muted-foreground truncate mt-1.5 flex items-center gap-1">
                       {isAdmin ? (
-                        <><ShieldCheck className="h-3 w-3 text-primary" /> CEO / Admin</>
+                        <><ShieldCheck className="h-3 w-3 text-primary" /> All stores</>
                       ) : (
-                        <><Building2 className="h-3 w-3" /> Manager</>
+                        <><Building2 className="h-3 w-3" /> {user?.store ?? "—"}</>
                       )}
                     </p>
                   </div>

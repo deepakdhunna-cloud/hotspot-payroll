@@ -21,26 +21,22 @@ export const ROLES = [
 
 export type EmployeeRole = (typeof ROLES)[number];
 
-export const OVERTIME_THRESHOLD_HOURS = 40;
-export const OVERTIME_MULTIPLIER = 1.5;
-
 // Approximate tax withholding rates (estimates only - for CEO planning view).
 // Federal: simplified flat estimate covering FICA (7.65%) + federal income tax estimate.
 // State: a conservative state income tax estimate (configurable).
 export const FEDERAL_TAX_RATE = 0.18; // 18% federal estimate (FIT + FICA combined approx.)
 export const STATE_TAX_RATE = 0.05; // 5% state estimate
 
+/**
+ * Gross pay = hours worked × pay rate. Overtime is not applied; the business
+ * tracks every hour at the employee's standard rate.
+ */
 export function computeGrossPay(hoursWorked: number, payRate: number) {
-  const regularHours = Math.min(hoursWorked, OVERTIME_THRESHOLD_HOURS);
-  const overtimeHours = Math.max(0, hoursWorked - OVERTIME_THRESHOLD_HOURS);
-  const regularPay = regularHours * payRate;
-  const overtimePay = overtimeHours * payRate * OVERTIME_MULTIPLIER;
+  const grossPay = hoursWorked * payRate;
   return {
-    regularHours,
-    overtimeHours,
-    regularPay,
-    overtimePay,
-    grossPay: regularPay + overtimePay,
+    regularHours: hoursWorked,
+    regularPay: grossPay,
+    grossPay,
   };
 }
 
@@ -55,13 +51,17 @@ export function estimateWithholding(grossPay: number) {
   };
 }
 
-// Get the Monday of the week containing the given date (in UTC).
-// Returns a Date set to 00:00:00 UTC on Monday.
+/**
+ * Hotspot pay period runs Thursday – Wednesday.
+ * getWeekStart returns the Thursday on or before the given date, at 00:00 UTC.
+ */
+export const PAY_WEEK_START_DAY = 4; // Thursday (Sun=0..Sat=6)
+
 export function getWeekStart(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay(); // 0 = Sun .. 6 = Sat
-  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
-  d.setUTCDate(d.getUTCDate() + diff);
+  const day = d.getUTCDay();
+  const diff = (day - PAY_WEEK_START_DAY + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
   return d;
 }
 

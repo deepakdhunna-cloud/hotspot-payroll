@@ -14,6 +14,7 @@ import {
   countEmployees,
   createEmployee,
   deactivateEmployee,
+  deleteEmployee,
   getEmployeeById,
   getEmployeePayrollHistory,
   getPayrollByWeek,
@@ -104,6 +105,27 @@ export const appRouter = router({
     })),
 
     myScope: protectedProcedure.query(({ ctx }) => getScope(ctx.session)),
+
+    /**
+     * Resolve the display name for the current session.
+     * - CEO/admin: returns role "admin" so the UI shows "CEO".
+     * - Store manager: returns the full name of the active employee at the store
+     *   whose role is "Manager". Falls back to null so the UI shows "Manager".
+     */
+    greetingName: protectedProcedure.query(async ({ ctx }) => {
+      const scope = getScope(ctx.session);
+      if (scope.isAdmin) return { role: "admin" as const, name: null };
+      const store = scope.stores[0];
+      if (!store) return { role: "manager" as const, name: null };
+      const list = await listEmployees({ stores: [store] });
+      const manager = list.find(
+        (e) => e.role === "Manager" && e.storeLocation === store,
+      );
+      return {
+        role: "manager" as const,
+        name: manager?.fullName ?? null,
+      };
+    }),
   }),
 
   employees: router({
@@ -280,6 +302,23 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    /**
+     * Permanently delete an employee plus their full payroll history.
+     * Cannot be undone. Manager scope: must own the employee's store.
+     */
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await getEmployeeById(input.id);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        await deleteEmployee(input.id);
+        return { success: true };
+      }),
+
     history: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .query(async ({ ctx, input }) => {
@@ -327,6 +366,7 @@ export const appRouter = router({
           weekStart: z.date(),
           hoursWorked: z.number().min(0).max(168),
           scheduledHours: z.number().min(0).max(168).optional(),
+          payRateOverride: z.number().min(0).max(1000).optional(),
           notes: z.string().max(500).optional(),
         }),
       )
@@ -337,8 +377,18 @@ export const appRouter = router({
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        const payRate = Number(emp.payRate);
-        const { regularPay, overtimePay, grossPay } = computeGrossPay(
+        const payRate =
+          input.payRateOverride !== undefined
+            ? input.payRateOverride
+            : Number(emp.payRate);
+        // Persist any rate change back to the employee profile for future weeks.
+        if (
+          input.payRateOverride !== undefined &&
+          input.payRateOverride !== Number(emp.payRate)
+        ) {
+          await updateEmployee(emp.id, { payRate: String(payRate) });
+        }
+        const { regularPay, grossPay } = computeGrossPay(
           input.hoursWorked,
           payRate,
         );
@@ -352,11 +402,11 @@ export const appRouter = router({
           scheduledHours: String(input.scheduledHours ?? 0),
           payRateSnapshot: String(payRate),
           regularPay: String(regularPay.toFixed(2)),
-          overtimePay: String(overtimePay.toFixed(2)),
+          overtimePay: "0.00",
           grossPay: String(grossPay.toFixed(2)),
           notes: input.notes ?? null,
         });
-        return { id, grossPay, regularPay, overtimePay };
+        return { id, grossPay, regularPay };
       }),
 
     saveSchedule: protectedProcedure
@@ -384,7 +434,7 @@ export const appRouter = router({
           const existing = await getPayrollByWeek(week);
           const existingForEmp = existing.find((e) => e.employeeId === emp.id);
           const hoursWorked = Number(existingForEmp?.hoursWorked ?? 0);
-          const { regularPay, overtimePay, grossPay } = computeGrossPay(hoursWorked, payRate);
+          const { regularPay, grossPay } = computeGrossPay(hoursWorked, payRate);
 
           await upsertPayrollEntry({
             employeeId: emp.id,
@@ -394,7 +444,7 @@ export const appRouter = router({
             scheduledHours: String(item.scheduledHours),
             payRateSnapshot: String(payRate),
             regularPay: String(regularPay.toFixed(2)),
-            overtimePay: String(overtimePay.toFixed(2)),
+            overtimePay: "0.00",
             grossPay: String(grossPay.toFixed(2)),
           });
           saved++;

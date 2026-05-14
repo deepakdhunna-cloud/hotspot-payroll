@@ -24,7 +24,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Upload,
-  Sparkles,
   CheckCircle2,
   AlertCircle,
   FileImage,
@@ -36,11 +35,12 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
+// Hotspot pay period: Thursday – Wednesday.
 function startOfWeek(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
+  const diff = (day - 4 + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
   return d;
 }
 
@@ -232,13 +232,13 @@ export default function ScheduleImport() {
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            AI Schedule Import
+            Schedule Import
           </div>
           <h1 className="text-3xl font-bold tracking-tight mt-1 flex items-center gap-2">
-            <Sparkles className="h-7 w-7 text-primary" /> Import Homebase schedule
+            <Upload className="h-7 w-7 text-primary" /> Import Homebase schedule
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Drop a PDF, photo, or screenshot of your Homebase weekly schedule. AI extracts each
+            Drop a PDF, photo, or screenshot of your Homebase weekly schedule — we'll read each
             employee and their scheduled hours automatically.
           </p>
         </div>
@@ -339,8 +339,8 @@ export default function ScheduleImport() {
 
           <div className="flex justify-end mt-4">
             <Button onClick={startParse} disabled={!file || parseM.isPending} className="shadow-lg">
-              <Sparkles className="h-4 w-4 mr-2" />
-              {parseM.isPending ? "Reading schedule…" : "Extract with AI"}
+              <Upload className="h-4 w-4 mr-2" />
+              {parseM.isPending ? "Reading schedule…" : "Extract schedule"}
             </Button>
           </div>
         </CardContent>
@@ -469,7 +469,7 @@ export default function ScheduleImport() {
             <p className="font-medium text-foreground mb-2">How this works</p>
             <ol className="list-decimal list-inside space-y-1">
               <li>Export the weekly schedule from Homebase as PDF, or take a clear photo of it.</li>
-              <li>Drop the file above and click <span className="text-foreground">Extract with AI</span>.</li>
+              <li>Drop the file above and click <span className="text-foreground">Extract schedule</span>.</li>
               <li>Review the auto-matched employees and click Import.</li>
               <li>Scheduled hours now appear on the dashboard for over/under tracking.</li>
             </ol>

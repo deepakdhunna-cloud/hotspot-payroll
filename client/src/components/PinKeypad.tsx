@@ -4,7 +4,7 @@ import { Delete, Lock, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-const LOGO_URL = "/manus-storage/hotspot-logo-v2_94a15d3e.jpg";
+const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
 const PIN_LENGTH = 4;
 
 export default function PinKeypad() {
@@ -50,11 +50,16 @@ export default function PinKeypad() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background via-background to-primary/5">
       <div className="w-full max-w-sm flex flex-col items-center gap-8">
-        <img
-          src={LOGO_URL}
-          alt="Hotspot Market"
-          className="h-20 w-auto object-contain"
-        />
+        <div className="flex flex-col items-center gap-2">
+          <img
+            src={LOGO_URL}
+            alt="Hotspot"
+            className="h-14 w-auto object-contain"
+          />
+          <span className="inline-flex items-center bg-neutral-950 text-white text-[10px] font-semibold tracking-[0.32em] uppercase px-4 py-1 rounded-full">
+            Market
+          </span>
+        </div>
         <div className="flex flex-col items-center gap-2 text-center">
           <span className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold flex items-center gap-2">
             <Lock className="h-3 w-3" /> Secure access

@@ -29,6 +29,17 @@ import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange } from "@/lib/format";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Building2,
   Phone,
@@ -36,6 +47,7 @@ import {
   DollarSign,
   Clock,
   Briefcase,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
@@ -79,19 +91,26 @@ export default function EmployeeProfile() {
           </Button>
         </Link>
         {emp && (
-          <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Pencil className="h-4 w-4 mr-2" /> Edit profile
-              </Button>
-            </DialogTrigger>
-            <EditEmployeeDialog
-              emp={emp}
-              roles={optionsQ.data?.roles ?? []}
-              stores={scopeQ.data?.stores ?? []}
-              onClose={() => setEditOpen(false)}
+          <div className="flex items-center gap-2">
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Pencil className="h-4 w-4 mr-2" /> Edit profile
+                </Button>
+              </DialogTrigger>
+              <EditEmployeeDialog
+                emp={emp}
+                roles={optionsQ.data?.roles ?? []}
+                stores={scopeQ.data?.stores ?? []}
+                onClose={() => setEditOpen(false)}
+              />
+            </Dialog>
+            <DeleteEmployeeButton
+              id={emp.id}
+              name={emp.fullName}
+              onDeleted={() => navigate("/employees")}
             />
-          </Dialog>
+          </div>
         )}
       </div>
 
@@ -171,8 +190,6 @@ export default function EmployeeProfile() {
                       <TableHead>Week</TableHead>
                       <TableHead className="text-right">Scheduled</TableHead>
                       <TableHead className="text-right">Worked</TableHead>
-                      <TableHead className="text-right">Reg pay</TableHead>
-                      <TableHead className="text-right">OT pay</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
                     </TableRow>
@@ -180,7 +197,7 @@ export default function EmployeeProfile() {
                   <TableBody>
                     {history.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
+                        <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-10">
                           No payroll history yet.
                         </TableCell>
                       </TableRow>
@@ -193,16 +210,6 @@ export default function EmployeeProfile() {
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {Number(h.hoursWorked).toFixed(1)} h
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmtMoney(Number(h.regularPay))}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(h.overtimePay) > 0 ? (
-                            <span className="text-amber-400">{fmtMoney(Number(h.overtimePay))}</span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums font-semibold">
                           {fmtMoney(Number(h.grossPay))}
@@ -220,6 +227,57 @@ export default function EmployeeProfile() {
         </>
       )}
     </div>
+  );
+}
+
+function DeleteEmployeeButton({
+  id,
+  name,
+  onDeleted,
+}: {
+  id: number;
+  name: string;
+  onDeleted: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const del = trpc.employees.delete.useMutation({
+    onSuccess: () => {
+      toast.success(`${name} permanently deleted.`);
+      utils.employees.list.invalidate();
+      utils.dashboard.summary.invalidate();
+      onDeleted();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" size="sm">
+          <Trash2 className="h-4 w-4 mr-2" /> Delete
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently removes the employee <span className="font-semibold text-foreground">and</span> their
+            entire payroll history. This cannot be undone. If you only want to
+            stop scheduling them, use <span className="font-semibold text-foreground">Deactivate</span> inside Edit profile
+            instead — it keeps their history intact.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => del.mutate({ id })}
+            disabled={del.isPending}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {del.isPending ? "Deleting…" : "Yes, delete permanently"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

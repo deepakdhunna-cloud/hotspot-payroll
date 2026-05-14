@@ -23,7 +23,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import {
@@ -40,11 +39,12 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
+// Hotspot pay period: Thursday – Wednesday.
 function startOfWeek(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
+  const diff = (day - 4 + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
   return d;
 }
 

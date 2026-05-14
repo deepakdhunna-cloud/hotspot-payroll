@@ -156,6 +156,17 @@ export async function deactivateEmployee(id: number) {
   await db.update(employees).set({ active: 0 }).where(eq(employees.id, id));
 }
 
+/**
+ * Permanently delete an employee and their entire payroll history.
+ * This cannot be undone — callers must confirm in the UI.
+ */
+export async function deleteEmployee(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.delete(payrollEntries).where(eq(payrollEntries.employeeId, id));
+  await db.delete(employees).where(eq(employees.id, id));
+}
+
 /* -------------------- PAYROLL ENTRIES -------------------- */
 
 export async function upsertPayrollEntry(data: InsertPayrollEntry) {

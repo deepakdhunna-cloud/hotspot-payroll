@@ -35,11 +35,13 @@ import {
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 
+// Hotspot pay period: Thursday – Wednesday. Anchor any date to the Thursday
+// on or before it (UTC).
 function startOfWeek(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
+  const diff = (day - 4 + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
   return d;
 }
 
@@ -49,6 +51,7 @@ export default function Home() {
   const [storeFilter, setStoreFilter] = useState<string>("all");
 
   const scopeQ = trpc.meta.myScope.useQuery();
+  const greetingQ = trpc.meta.greetingName.useQuery();
   const stores = scopeQ.data?.stores ?? [];
 
   const summaryQ = trpc.dashboard.summary.useQuery({
@@ -84,7 +87,10 @@ export default function Home() {
             {user?.role === "admin" ? "CEO Dashboard" : "Manager Dashboard"}
           </div>
           <h1 className="text-3xl font-bold tracking-tight mt-1">
-            Welcome back{user?.name ? `, ${user.name}` : ""}
+            Welcome back,{" "}
+            {user?.role === "admin"
+              ? "CEO"
+              : greetingQ.data?.name ?? "Manager"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Live overview of hours, scheduled vs actual, and gross pay across your stores.

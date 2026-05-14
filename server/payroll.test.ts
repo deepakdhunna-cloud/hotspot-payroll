@@ -3,12 +3,11 @@ import {
   computeGrossPay,
   estimateWithholding,
   getWeekStart,
-  OVERTIME_MULTIPLIER,
-  OVERTIME_THRESHOLD_HOURS,
   ROLES,
   STORES,
   FEDERAL_TAX_RATE,
   STATE_TAX_RATE,
+  PAY_WEEK_START_DAY,
 } from "../shared/hotspot";
 
 describe("Hotspot constants", () => {
@@ -32,50 +31,34 @@ describe("Hotspot constants", () => {
     ]);
   });
 
-  it("uses 40-hour overtime threshold and 1.5x multiplier", () => {
-    expect(OVERTIME_THRESHOLD_HOURS).toBe(40);
-    expect(OVERTIME_MULTIPLIER).toBe(1.5);
+  it("uses Thursday-anchored pay week (day 4)", () => {
+    expect(PAY_WEEK_START_DAY).toBe(4);
   });
 });
 
-describe("computeGrossPay", () => {
-  it("computes regular pay only under 40 hours", () => {
+describe("computeGrossPay (no overtime)", () => {
+  it("multiplies hours by rate", () => {
     const r = computeGrossPay(30, 15);
     expect(r.regularHours).toBe(30);
-    expect(r.overtimeHours).toBe(0);
     expect(r.regularPay).toBe(450);
-    expect(r.overtimePay).toBe(0);
     expect(r.grossPay).toBe(450);
   });
 
-  it("computes exactly 40 hours as regular only", () => {
-    const r = computeGrossPay(40, 20);
-    expect(r.regularPay).toBe(800);
-    expect(r.overtimePay).toBe(0);
-    expect(r.grossPay).toBe(800);
-  });
-
-  it("applies 1.5x overtime over 40 hours", () => {
+  it("uses the same rate beyond 40 hours (no 1.5x)", () => {
     const r = computeGrossPay(45, 20);
-    // 40 * 20 = 800 regular, 5 * 20 * 1.5 = 150 OT, total 950
-    expect(r.regularPay).toBe(800);
-    expect(r.overtimePay).toBe(150);
-    expect(r.grossPay).toBe(950);
-    expect(r.overtimeHours).toBe(5);
+    expect(r.grossPay).toBe(900);
+    expect(r.regularPay).toBe(900);
   });
 
   it("handles zero hours", () => {
     const r = computeGrossPay(0, 18);
     expect(r.grossPay).toBe(0);
     expect(r.regularPay).toBe(0);
-    expect(r.overtimePay).toBe(0);
   });
 
   it("handles fractional hours", () => {
     const r = computeGrossPay(40.5, 10);
-    expect(r.regularPay).toBe(400);
-    expect(r.overtimePay).toBeCloseTo(7.5, 5);
-    expect(r.grossPay).toBeCloseTo(407.5, 5);
+    expect(r.grossPay).toBeCloseTo(405, 5);
   });
 });
 
@@ -97,26 +80,27 @@ describe("estimateWithholding", () => {
   });
 });
 
-describe("getWeekStart", () => {
-  it("returns Monday for a midweek date", () => {
-    // 2026-05-14 is a Thursday (UTC)
+describe("getWeekStart (Thursday-anchored)", () => {
+  it("returns Thursday for a midweek date", () => {
+    // 2026-05-14 is a Thursday; week starts the same day
     const w = getWeekStart(new Date("2026-05-14T15:00:00Z"));
-    expect(w.getUTCDay()).toBe(1);
-    expect(w.toISOString().startsWith("2026-05-11")).toBe(true);
+    expect(w.getUTCDay()).toBe(4);
+    expect(w.toISOString().startsWith("2026-05-14")).toBe(true);
   });
 
-  it("returns Monday when input is already Monday", () => {
-    const w = getWeekStart(new Date("2026-05-11T00:00:00Z"));
-    expect(w.toISOString().startsWith("2026-05-11")).toBe(true);
+  it("rolls back to previous Thursday for a Wednesday", () => {
+    // 2026-05-13 is a Wednesday → previous Thursday is 2026-05-07
+    const w = getWeekStart(new Date("2026-05-13T12:00:00Z"));
+    expect(w.toISOString().startsWith("2026-05-07")).toBe(true);
   });
 
-  it("returns Monday when input is Sunday", () => {
-    const w = getWeekStart(new Date("2026-05-17T12:00:00Z")); // Sunday
-    expect(w.toISOString().startsWith("2026-05-11")).toBe(true);
+  it("rolls back from Sunday to Thursday", () => {
+    const w = getWeekStart(new Date("2026-05-10T12:00:00Z")); // Sunday
+    expect(w.toISOString().startsWith("2026-05-07")).toBe(true);
   });
 
-  it("returns Monday when input is Saturday", () => {
-    const w = getWeekStart(new Date("2026-05-16T05:00:00Z")); // Saturday
-    expect(w.toISOString().startsWith("2026-05-11")).toBe(true);
+  it("rolls back from Saturday to Thursday", () => {
+    const w = getWeekStart(new Date("2026-05-09T05:00:00Z")); // Saturday
+    expect(w.toISOString().startsWith("2026-05-07")).toBe(true);
   });
 });

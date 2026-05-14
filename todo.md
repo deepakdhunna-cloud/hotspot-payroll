@@ -79,3 +79,25 @@
 - [x] UI: selection toolbar with store + role dropdowns + Apply
 - [x] Vitest: permission denial + zod validation (28/28 passing)
 - [x] Checkpoint and deliver
+
+## Delete Employee + Light Theme (v5)
+- [ ] Server: employees.delete (cascades payroll history)
+- [ ] UI: Delete button on EmployeeProfile with red confirm dialog
+- [ ] Keep Deactivate action as a separate option
+- [ ] Theme: switch defaultTheme to light, swap palette in index.css to white background
+- [ ] Use dark version of logo on white bg (the original red+grey on white logo)
+- [ ] Tests for delete permission + cascade
+- [ ] Checkpoint and deliver
+
+## v5 Continued — AI wording + Manager greeting
+- [ ] Remove every visible "AI" mention from the site (replace with "Smart" / neutral wording)
+- [ ] Show "Welcome back, Manager" when a store-manager session is active
+- [ ] Swap to white-bg logo for the light theme
+- [ ] Server: meta.greetingName resolves Manager-role employee at the signed-in store
+- [ ] Frontend: show employee name when present, else "Manager"; CEO stays "CEO"
+- [ ] Revert to dark-bg HOTSPOT MARKET logo with a styled chip for light-theme placement
+- [ ] Editable pay rate column on Weekly Payroll grid (live recalc + save back to profile)
+- [ ] Default pay-period week to Thursday\u2013Wednesday across server (getWeekStart) and all client pages
+- [ ] Add edit/pencil button on week selector to pick a custom start date
+- [ ] Remove overtime: server computeGrossPay = hours\u00d7rate (no 1.5x); drop OT column on Weekly Payroll grid; drop OT from totals and tests
+- [ ] Sidebar logo: center MARKET pill directly below HOTSPOT wordmark; remove side "Payroll" label
