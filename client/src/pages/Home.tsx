@@ -36,7 +36,8 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 
 // Hotspot pay period: Thursday – Wednesday. Anchor any date to the Thursday
-// on or before it (UTC).
+// on or before it (UTC), and default the dashboard to the most recently
+// closed pay period (the week we're actively paying).
 function startOfWeek(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay();
@@ -45,9 +46,15 @@ function startOfWeek(date: Date): Date {
   return d;
 }
 
+function currentPayPeriodStart(now: Date = new Date()): Date {
+  const start = startOfWeek(now);
+  start.setUTCDate(start.getUTCDate() - 7);
+  return start;
+}
+
 export default function Home() {
   const { user } = useAuth();
-  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
+  const [weekStart, setWeekStart] = useState<Date>(() => currentPayPeriodStart(new Date()));
   const [storeFilter, setStoreFilter] = useState<string>("all");
 
   const scopeQ = trpc.meta.myScope.useQuery();

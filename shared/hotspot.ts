@@ -65,6 +65,22 @@ export function getWeekStart(date: Date): Date {
   return d;
 }
 
+/**
+ * The pay period that should be open for entry / payable right now.
+ * Payroll for a week is settled AFTER it closes on Wednesday, so the
+ * "current" payable period is the most recent week that ended Wednesday.
+ *
+ * Example: on Thu May 14, 2026 (the first day of a new period) this returns
+ * the prior Thursday (May 7), so the UI shows the May 7–13 week that just
+ * closed — which is the week the manager is actually paying.
+ */
+export function getCurrentPayPeriodStart(now: Date = new Date()): Date {
+  const todayWeekStart = getWeekStart(now);
+  const prior = new Date(todayWeekStart);
+  prior.setUTCDate(prior.getUTCDate() - 7);
+  return prior;
+}
+
 export function formatWeekRange(weekStart: Date): string {
   const end = new Date(weekStart);
   end.setUTCDate(end.getUTCDate() + 6);

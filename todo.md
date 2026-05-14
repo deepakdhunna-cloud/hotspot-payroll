@@ -77,3 +77,9 @@
 
 ## Delivery
 - [x] Checkpoint v6 saved
+
+## v6.1 \u2014 Pay period bugfix
+- [ ] Diagnose: for May 14, 2026 (Thursday) verify the displayed week range
+- [ ] Fix server getWeekStart to anchor Thu and end on Wed
+- [ ] Fix fmtWeekRange to label start=Thu \u2026 end=Wed (6 days later)
+- [ ] Add tests covering May 7\u201313 and May 14\u201320 boundaries

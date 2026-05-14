@@ -39,7 +39,8 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
-// Hotspot pay period: Thursday – Wednesday.
+// Hotspot pay period: Thursday – Wednesday. Dashboards default to the most
+// recently closed week (the week we're actively paying).
 function startOfWeek(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay();
@@ -48,9 +49,15 @@ function startOfWeek(date: Date): Date {
   return d;
 }
 
+function currentPayPeriodStart(now: Date = new Date()): Date {
+  const start = startOfWeek(now);
+  start.setUTCDate(start.getUTCDate() - 7);
+  return start;
+}
+
 export default function CeoView() {
   const { user } = useAuth();
-  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
+  const [weekStart, setWeekStart] = useState<Date>(() => currentPayPeriodStart(new Date()));
   const [storeFilter, setStoreFilter] = useState<string>("all");
 
   if (user && user.role !== "admin") {

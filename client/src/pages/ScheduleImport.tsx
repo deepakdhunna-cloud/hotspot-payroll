@@ -35,7 +35,9 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-// Hotspot pay period: Thursday – Wednesday.
+// Hotspot pay period: Thursday – Wednesday. Schedule Import defaults to the
+// in-progress (upcoming/current) week so managers can upload as soon as they
+// publish in Homebase.
 function startOfWeek(date: Date): Date {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay();

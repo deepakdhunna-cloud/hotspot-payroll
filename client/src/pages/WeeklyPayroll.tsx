@@ -46,6 +46,17 @@ function startOfPayWeek(date: Date): Date {
   return d;
 }
 
+/**
+ * The pay period that's currently "payable" — i.e. the most recent week
+ * that has fully closed (Thursday…Wednesday). On a Thursday this returns the
+ * prior Thursday so payroll is for the week that just ended.
+ */
+function currentPayPeriodStart(now: Date = new Date()): Date {
+  const start = startOfPayWeek(now);
+  start.setUTCDate(start.getUTCDate() - 7);
+  return start;
+}
+
 function toDateInput(d: Date): string {
   // YYYY-MM-DD using UTC pieces so the calendar input matches the stored date.
   const yyyy = d.getUTCFullYear();
@@ -65,7 +76,7 @@ function computeGross(hours: number, rate: number) {
 }
 
 export default function WeeklyPayroll() {
-  const [weekStart, setWeekStart] = useState<Date>(() => startOfPayWeek(new Date()));
+  const [weekStart, setWeekStart] = useState<Date>(() => currentPayPeriodStart(new Date()));
   const [storeFilter, setStoreFilter] = useState<string>("all");
   const scopeQ = trpc.meta.myScope.useQuery();
   const weekQ = trpc.payroll.week.useQuery({
