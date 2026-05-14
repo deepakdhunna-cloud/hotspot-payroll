@@ -72,3 +72,10 @@
 - [x] Bulk "Create all unmatched" button at top
 - [x] Tests for quickCreate procedure (24/24 passing)
 - [x] Checkpoint and deliver
+
+## Bulk Edit Employees (v4)
+- [x] Server: employees.bulkUpdate (ids[], optional store, optional role) with permission checks
+- [x] UI: row checkbox + header "select all" on Employees page
+- [x] UI: selection toolbar with store + role dropdowns + Apply
+- [x] Vitest: permission denial + zod validation (28/28 passing)
+- [x] Checkpoint and deliver

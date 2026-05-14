@@ -27,10 +27,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, STORE_ABBR } from "@/lib/format";
-import { Phone, Plus, Search, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Phone, Plus, Search, Users, ArrowRight, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 
@@ -39,6 +40,9 @@ export default function Employees() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkStore, setBulkStore] = useState<string>("");
+  const [bulkRole, setBulkRole] = useState<string>("");
 
   const optionsQ = trpc.meta.options.useQuery();
   const scopeQ = trpc.meta.myScope.useQuery();
@@ -65,6 +69,62 @@ export default function Employees() {
 
   const stores = scopeQ.data?.stores ?? [];
   const roles = optionsQ.data?.roles ?? [];
+  const utils = trpc.useUtils();
+
+  const bulkM = trpc.employees.bulkUpdate.useMutation({
+    onSuccess: ({ updated, skipped }) => {
+      if (updated > 0) toast.success(`Updated ${updated} employee${updated === 1 ? "" : "s"}.`);
+      if (skipped.length > 0)
+        toast.warning(`${skipped.length} skipped (not in your scope).`);
+      setSelected(new Set());
+      setBulkStore("");
+      setBulkRole("");
+      utils.employees.list.invalidate();
+      utils.dashboard.summary.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Clear selections that fall out of the filtered view.
+  useEffect(() => {
+    setSelected((prev) => {
+      const visibleIds = new Set(filtered.map((e) => e.id));
+      let changed = false;
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeFilter, roleFilter, search]);
+
+  const toggleOne = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected((prev) => {
+      if (prev.size === filtered.length) return new Set();
+      return new Set(filtered.map((e) => e.id));
+    });
+
+  const applyBulk = () => {
+    if (selected.size === 0) return;
+    if (!bulkStore && !bulkRole) {
+      toast.error("Pick a new store or role first.");
+      return;
+    }
+    bulkM.mutate({
+      ids: Array.from(selected),
+      storeLocation: bulkStore ? (bulkStore as any) : undefined,
+      role: bulkRole ? (bulkRole as any) : undefined,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -136,11 +196,75 @@ export default function Employees() {
             </div>
           </div>
         </CardHeader>
+        {selected.size > 0 && (
+          <div className="mx-6 mb-4 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Badge className="bg-primary text-primary-foreground">{selected.size}</Badge>
+              <span className="font-medium">selected</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-muted-foreground"
+                onClick={() => setSelected(new Set())}
+              >
+                <X className="h-3.5 w-3.5 mr-1" /> Clear
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 md:ml-auto">
+              <Select value={bulkStore} onValueChange={setBulkStore}>
+                <SelectTrigger className="w-[200px] h-9 bg-background">
+                  <SelectValue placeholder="Move to store…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {stores.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={bulkRole} onValueChange={setBulkRole}>
+                <SelectTrigger className="w-[180px] h-9 bg-background">
+                  <SelectValue placeholder="Change role…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={applyBulk}
+                disabled={bulkM.isPending || (!bulkStore && !bulkRole)}
+                size="sm"
+                className="h-9"
+              >
+                <ArrowRight className="h-4 w-4 mr-1" />
+                {bulkM.isPending ? "Applying…" : "Apply to selected"}
+              </Button>
+            </div>
+          </div>
+        )}
         <CardContent className="px-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[44px] pl-4">
+                    <Checkbox
+                      checked={
+                        filtered.length > 0 && selected.size === filtered.length
+                          ? true
+                          : selected.size > 0
+                            ? "indeterminate"
+                            : false
+                      }
+                      onCheckedChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Store</TableHead>
@@ -152,20 +276,30 @@ export default function Employees() {
               <TableBody>
                 {listQ.isLoading && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-sm text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-10 text-sm text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 )}
                 {!listQ.isLoading && filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-sm text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-10 text-sm text-muted-foreground">
                       No employees match your filters.
                     </TableCell>
                   </TableRow>
                 )}
                 {filtered.map((emp) => (
-                  <TableRow key={emp.id}>
+                  <TableRow
+                    key={emp.id}
+                    data-state={selected.has(emp.id) ? "selected" : undefined}
+                  >
+                    <TableCell className="pl-4">
+                      <Checkbox
+                        checked={selected.has(emp.id)}
+                        onCheckedChange={() => toggleOne(emp.id)}
+                        aria-label={`Select ${emp.fullName}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Link
                         href={`/employees/${emp.id}`}

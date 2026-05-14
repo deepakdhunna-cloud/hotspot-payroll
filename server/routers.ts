@@ -217,6 +217,56 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    /**
+     * Bulk edit: change store and/or role for many employees at once.
+     * Manager scope: every selected employee's current store AND the target store
+     * must be within the manager's assigned stores. CEO/admin: unrestricted.
+     */
+    bulkUpdate: protectedProcedure
+      .input(
+        z.object({
+          ids: z.array(z.number().int()).min(1).max(500),
+          storeLocation: StoreEnum.optional(),
+          role: RoleEnum.optional(),
+        }).refine(
+          (v) => v.storeLocation !== undefined || v.role !== undefined,
+          { message: "Provide at least one field to update." },
+        ),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        if (
+          !scope.isAdmin &&
+          input.storeLocation !== undefined &&
+          !scope.stores.includes(input.storeLocation as Store)
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You can only move employees to your assigned stores.",
+          });
+        }
+        const update: Record<string, unknown> = {};
+        if (input.storeLocation !== undefined) update.storeLocation = input.storeLocation;
+        if (input.role !== undefined) update.role = input.role;
+
+        let updated = 0;
+        const skipped: number[] = [];
+        for (const id of input.ids) {
+          const emp = await getEmployeeById(id);
+          if (!emp) {
+            skipped.push(id);
+            continue;
+          }
+          if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
+            skipped.push(id);
+            continue;
+          }
+          await updateEmployee(id, update);
+          updated += 1;
+        }
+        return { updated, skipped };
+      }),
+
     deactivate: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .mutation(async ({ ctx, input }) => {
