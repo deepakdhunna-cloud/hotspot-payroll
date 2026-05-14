@@ -116,6 +116,7 @@ export default function TimeClock() {
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfPayWeek(new Date()),
   );
+  // For single-store managers we lock the filter to their store. CEO + multi-store managers can choose "all".
   const [storeFilter, setStoreFilter] = useState<string>("all");
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -126,6 +127,14 @@ export default function TimeClock() {
   const scopeQ = trpc.meta.myScope.useQuery();
   const stores = scopeQ.data?.stores ?? [];
   const isAdmin = scopeQ.data?.isAdmin ?? false;
+  const canPickAll = isAdmin || stores.length > 1;
+
+  // Snap a single-store manager's filter to their store as soon as scope loads.
+  useEffect(() => {
+    if (!canPickAll && stores.length === 1 && storeFilter !== stores[0]) {
+      setStoreFilter(stores[0]);
+    }
+  }, [canPickAll, stores, storeFilter]);
 
   const employeesQ = trpc.employees.list.useQuery(
     storeFilter === "all" ? undefined : { store: storeFilter as any },
@@ -218,17 +227,7 @@ export default function TimeClock() {
       </header>
 
       {/* KPI cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Punches this week
-            </div>
-            <div className="text-2xl font-bold mt-2 tabular-nums">
-              {totals.count}
-            </div>
-          </CardContent>
-        </Card>
+      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-5">
             <div className="text-xs text-muted-foreground uppercase tracking-wider">
@@ -258,14 +257,20 @@ export default function TimeClock() {
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
               Store
             </Label>
-            <Select value={storeFilter} onValueChange={setStoreFilter}>
+            <Select
+              value={storeFilter}
+              onValueChange={setStoreFilter}
+              disabled={!canPickAll && stores.length <= 1}
+            >
               <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="All stores" />
+                <SelectValue placeholder="Store" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">
-                  {isAdmin ? "All stores" : "All my stores"}
-                </SelectItem>
+                {canPickAll && (
+                  <SelectItem value="all">
+                    {isAdmin ? "All stores" : "All my stores"}
+                  </SelectItem>
+                )}
                 {stores.map((s) => (
                   <SelectItem key={s} value={s}>
                     {s}

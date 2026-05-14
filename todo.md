@@ -106,3 +106,8 @@
 - [x] Tests: clock.* permission + validation gates (9 new tests, 43/43 passing)
 - [x] Weekly Payroll: minimize manual entry — hours auto-fill from clock punches by default; manual override hidden behind a pencil icon per row with "(manual)" tag + Reset link
 - [ ] Checkpoint and deliver
+
+## v7.1 — Time Clock UI polish
+- [x] Manager sessions on /time-clock: hide the "All my stores" option and default to their single store (CEO keeps "All stores")
+- [x] Remove the "Punches this week" KPI card; keep Hours logged + Currently clocked in only
+- [x] Run tests (43/43 still passing), checkpoint
