@@ -34,6 +34,7 @@ import { Phone, Plus, Search, Users, ArrowRight, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/PageHeader";
 
 export default function Employees() {
   const [storeFilter, setStoreFilter] = useState<string>("all");
@@ -128,31 +129,26 @@ export default function Employees() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            Roster
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight mt-1 flex items-center gap-2">
-            <Users className="h-7 w-7" /> Employees
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage employee profiles, pay rates, and store assignments.
-          </p>
-        </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger asChild>
-            <Button className="shadow-lg">
-              <Plus className="h-4 w-4 mr-2" /> Add employee
-            </Button>
-          </DialogTrigger>
-          <AddEmployeeDialog
-            stores={stores}
-            roles={roles}
-            onSuccess={() => setAddOpen(false)}
-          />
-        </Dialog>
-      </header>
+      <PageHeader
+        eyebrow="Roster"
+        icon={<Users className="h-5 w-5" />}
+        title="Employees"
+        description="Profiles, pay rates, and store assignments. Click a row to open the full profile."
+        actions={
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" /> Add employee
+              </Button>
+            </DialogTrigger>
+            <AddEmployeeDialog
+              stores={stores}
+              roles={roles}
+              onSuccess={() => setAddOpen(false)}
+            />
+          </Dialog>
+        }
+      />
 
       <Card>
         <CardHeader className="pb-4">

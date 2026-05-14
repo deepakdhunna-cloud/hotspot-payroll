@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/PageHeader";
 
 // Hotspot pay period: Thursday – Wednesday. Schedule Import defaults to the
 // in-progress (upcoming/current) week so managers can upload as soon as they
@@ -231,50 +232,43 @@ export default function ScheduleImport() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            Schedule Import
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight mt-1 flex items-center gap-2">
-            <Upload className="h-7 w-7 text-primary" /> Import Homebase schedule
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Drop a PDF, photo, or screenshot of your Homebase weekly schedule — we'll read each
-            employee and their scheduled hours automatically.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border bg-card/60 p-1">
-            <Button variant="ghost" size="icon" onClick={() => shiftWeek(-1)} className="h-8 w-8">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2 px-2 text-sm font-medium">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              {fmtWeekRange(weekStart)}
+      <PageHeader
+        eyebrow="Schedule import"
+        icon={<Upload className="h-5 w-5" />}
+        title="Import Homebase schedule"
+        description="Drop a PDF or photo of the weekly schedule. Names and scheduled hours are read automatically."
+        actions={
+          <>
+            <div className="flex items-center gap-1 rounded-lg border bg-card/60 p-1">
+              <Button variant="ghost" size="icon" onClick={() => shiftWeek(-1)} className="h-8 w-8">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex items-center gap-2 px-2 text-sm font-medium">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                {fmtWeekRange(weekStart)}
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => shiftWeek(1)} className="h-8 w-8">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => shiftWeek(1)} className="h-8 w-8">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-          {stores.length > 1 && (
-            <Select value={storeFilter} onValueChange={setStoreFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All stores" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All my stores</SelectItem>
-                {stores.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      </header>
+            {stores.length > 1 && (
+              <Select value={storeFilter} onValueChange={setStoreFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="All stores" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All my stores</SelectItem>
+                  {stores.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </>
+        }
+      />
 
       <Card>
         <CardContent className="p-6">

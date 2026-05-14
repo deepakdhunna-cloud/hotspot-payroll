@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+
+/**
+ * Public kiosk page. Behaves in two ways:
+ *  - If launched from a logged-in manager session, the store is detected from
+ *    the session scope and the picker is skipped entirely.
+ *  - Otherwise (cold tablet, CEO, or no session) it falls back to a manual
+ *    store picker. We intentionally do NOT render any link back into the app:
+ *    this tab is meant to live on the counter, and the only way "out" is to
+ *    close the tab.
+ */
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { STORES, type Store } from "../../../shared/hotspot";
@@ -39,7 +49,40 @@ export default function ClockKiosk() {
   const [, navigate] = useLocation();
   const initialStore = decodeStoreFromUrl(params?.store);
 
+  // If a manager is signed in we know exactly which store this kiosk belongs
+  // to — grab it from the scope endpoint. (CEO sessions are admins with no
+  // single store; they still get the manual picker.)
+  const scopeQ = trpc.meta.myScope.useQuery(undefined, {
+    retry: false,
+    // The kiosk is a public route, so this can fail when no session exists;
+    // suppress the error — we'll just fall through to the picker.
+    throwOnError: false,
+  });
+  const sessionStore =
+    scopeQ.data && !scopeQ.data.isAdmin && scopeQ.data.stores.length === 1
+      ? scopeQ.data.stores[0]
+      : null;
+
   const [store, setStore] = useState<Store | null>(initialStore);
+  // Once scope resolves, pre-fill the store automatically.
+  useEffect(() => {
+    if (!store && sessionStore && isStore(sessionStore)) {
+      setStore(sessionStore as Store);
+      navigate(`/clock/${encodeURIComponent(sessionStore)}`, { replace: true });
+    }
+  }, [sessionStore, store, navigate]);
+
+  // Discourage navigating back into the manager app once the kiosk has been
+  // opened in this tab. We trap the popstate by pushing a sentinel entry on
+  // mount and re-pushing on every back attempt. This doesn't prevent closing
+  // the tab — only navigating away with the browser back button.
+  useEffect(() => {
+    const sentinel = () => window.history.pushState({ kiosk: true }, "");
+    sentinel();
+    const onPop = () => sentinel();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState<FlashState | null>(null);
   const [now, setNow] = useState(new Date());
@@ -196,16 +239,22 @@ export default function ClockKiosk() {
               <div className="font-semibold text-zinc-900">{store}</div>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setStore(null);
-              setCode("");
-              navigate("/clock");
-            }}
-            className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline"
-          >
-            Change store
-          </button>
+          {sessionStore ? (
+            <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">
+              Locked
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                setStore(null);
+                setCode("");
+                navigate("/clock");
+              }}
+              className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline"
+            >
+              Change store
+            </button>
+          )}
         </div>
       </div>
 

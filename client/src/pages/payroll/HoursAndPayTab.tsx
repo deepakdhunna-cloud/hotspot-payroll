@@ -226,36 +226,31 @@ export default function HoursAndPayTab({
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Total hours entered
+        <div className="surface-card p-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+            Total hours entered
+          </div>
+          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
+            {totals.hoursTotal.toFixed(1)} h
+          </div>
+        </div>
+        <div className="surface-card p-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+            Projected gross
+          </div>
+          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
+            {fmtMoney(totals.grossTotal)}
+          </div>
+        </div>
+        <div className="surface-card p-5 flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+              Week of
             </div>
-            <div className="text-2xl font-bold mt-2 tabular-nums">
-              {totals.hoursTotal.toFixed(1)} h
+            <div className="text-lg font-semibold mt-1">
+              {fmtWeekRange(weekStart)}
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Projected gross
-            </div>
-            <div className="text-2xl font-bold mt-2 tabular-nums">
-              {fmtMoney(totals.grossTotal)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5 flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                Week of
-              </div>
-              <div className="text-lg font-semibold mt-1">
-                {fmtWeekRange(weekStart)}
-              </div>
-            </div>
+          </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -271,8 +266,7 @@ export default function HoursAndPayTab({
                 {saveHoursM.isPending ? "Saving…" : "Save all"}
               </Button>
             </div>
-          </CardContent>
-        </Card>
+        </div>
       </section>
 
       <Card>

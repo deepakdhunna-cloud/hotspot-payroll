@@ -27,6 +27,7 @@ import {
   ChevronRight,
   ClipboardList,
   DollarSign,
+  ExternalLink,
   Users as UsersIcon,
   Building2,
   TrendingDown,
@@ -34,6 +35,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { PageHeader } from "@/components/PageHeader";
 
 // Hotspot pay period: Thursday – Wednesday. Anchor any date to the Thursday
 // on or before it (UTC), and default the dashboard to the most recently
@@ -99,23 +101,11 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            {user?.role === "admin" ? "CEO Dashboard" : "Manager Dashboard"}
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight mt-1">
-            Welcome back,{" "}
-            {user?.role === "admin"
-              ? "CEO"
-              : greetingQ.data?.name ?? "Manager"}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Live overview of hours, scheduled vs actual, and gross pay across your stores.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        eyebrow={user?.role === "admin" ? "CEO dashboard" : "Manager dashboard"}
+        title={`Welcome back, ${user?.role === "admin" ? "CEO" : greetingQ.data?.name ?? "Manager"}`}
+        description="Live hours, scheduled vs actual, and gross pay for the current pay period."
+        actions={<>
           <div className="flex items-center gap-1 rounded-lg border bg-card/60 backdrop-blur p-1">
             <Button variant="ghost" size="icon" onClick={() => shiftWeek(-1)} className="h-8 w-8">
               <ChevronLeft className="h-4 w-4" />
@@ -144,8 +134,18 @@ export default function Home() {
               </SelectContent>
             </Select>
           )}
-        </div>
-      </header>
+
+          <Button
+            variant="outline"
+            onClick={() =>
+              window.open("/clock", "_blank", "noopener,noreferrer")
+            }
+            title="Open the punch-in kiosk in a new tab"
+          >
+            <ExternalLink className="h-4 w-4 mr-2" /> Open kiosk
+          </Button>
+        </>}
+      />
 
       {/* KPI cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -392,20 +392,19 @@ function KpiCard({
     red: "bg-red-500/10 text-red-400",
   }[accent];
   return (
-    <Card className="relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-white/[0.02] to-transparent pointer-events-none" />
-      <CardContent className="p-5 relative">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-bold mt-2 tabular-nums">{value}</p>
-            {footer}
+    <div className="surface-card relative overflow-hidden transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:-translate-y-0.5">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">{label}</p>
+            <p className="text-[28px] leading-none font-bold mt-3 tabular-nums">{value}</p>
+            {footer ? <div className="mt-3">{footer}</div> : null}
           </div>
-          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${ring}`}>
+          <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center ${ring}`}>
             {icon}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -128,3 +128,14 @@
 - [x] Frontend: Punches tab: allow arbitrary date range (not just one week)
 - [x] Routing: remove "Time Clock" sidebar item; alias `/time-clock` to `/payroll?tab=punches`
 - [x] Run tests (48/48 passing), checkpoint
+
+## v8 — Kiosk hardening + sitewide design refresh
+- [ ] Add "Open kiosk" button to the dashboard header (same behavior as Payroll page button — new tab, noopener)
+- [ ] Kiosk auto-detects the calling manager's store from session cookie when launched from a manager login (skip the store-picker; pre-fill it and let CEO still pick)
+- [ ] Hard isolation on the kiosk page: no app links/back button, no DashboardLayout, no PIN-protected nav reachable; the tab can only be closed by the user
+- [ ] Make Open kiosk launchers always open `/clock` with `target="_blank"` + `rel="noopener noreferrer"`
+- [ ] Build a shared PageHeader (eyebrow / title / one-line description) component and apply across all pages
+- [ ] Tighten spacing/typography: cards use consistent padding, KPI cards share scale, page gutters consistent
+- [ ] Rewrite every page's description so it's detailed but ≤140 chars
+- [ ] Loading + empty states reviewed on every page (consistent skeletons / empty illustrations)
+- [ ] Run all tests, save checkpoint

@@ -189,29 +189,25 @@ export default function PunchesTab({
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Hours logged
-            </div>
-            <div className="text-2xl font-bold mt-2 tabular-nums">
-              {totals.hours.toFixed(1)} h
-            </div>
-            <div className="text-[11px] text-muted-foreground mt-1">
-              over {spanDays} day{spanDays === 1 ? "" : "s"}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-xs text-muted-foreground uppercase tracking-wider">
-              Currently clocked in
-            </div>
-            <div className="text-2xl font-bold mt-2 tabular-nums">
-              {totals.openCount}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="surface-card p-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+            Hours logged
+          </div>
+          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
+            {totals.hours.toFixed(1)} h
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-2">
+            over {spanDays} day{spanDays === 1 ? "" : "s"}
+          </div>
+        </div>
+        <div className="surface-card p-5">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
+            Currently clocked in
+          </div>
+          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
+            {totals.openCount}
+          </div>
+        </div>
       </section>
 
       <Card>

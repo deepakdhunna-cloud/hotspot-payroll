@@ -40,6 +40,7 @@ import { useLocation } from "wouter";
 import HoursAndPayTab from "./payroll/HoursAndPayTab";
 import PunchesTab from "./payroll/PunchesTab";
 import HistoryTab from "./payroll/HistoryTab";
+import { PageHeader } from "@/components/PageHeader";
 
 function startOfPayWeek(date: Date): Date {
   const d = new Date(
@@ -118,22 +119,12 @@ export default function WeeklyPayroll() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            Payroll
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight mt-1 flex items-center gap-2">
-            <ClipboardList className="h-7 w-7" /> Payroll & time clock
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Pay period runs Thursday → Wednesday. Hours auto-fill from the time
-            clock; every saved entry is kept permanently so you can look back
-            any number of weeks.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        eyebrow="Payroll"
+        icon={<ClipboardList className="h-5 w-5" />}
+        title="Payroll & time clock"
+        description="Thursday–Wednesday pay period. Hours auto-fill from the kiosk. Saved entries are kept permanently."
+        actions={<>
           {tab !== "history" && (
             <div className="flex items-center gap-1 rounded-lg border bg-card/60 p-1">
               <Button
@@ -218,8 +209,8 @@ export default function WeeklyPayroll() {
           >
             <ExternalLink className="h-4 w-4 mr-2" /> Open kiosk
           </Button>
-        </div>
-      </header>
+        </>}
+      />
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)}>
         <TabsList className="grid grid-cols-3 w-full max-w-md">

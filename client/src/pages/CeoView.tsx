@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/PageHeader";
 
 // Hotspot pay period: Thursday – Wednesday. Dashboards default to the most
 // recently closed week (the week we're actively paying).
@@ -97,49 +98,42 @@ export default function CeoView() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-primary font-semibold">
-            CEO &middot; Cross-Store Overview
-          </div>
-          <h1 className="text-3xl font-bold tracking-tight mt-1 flex items-center gap-2">
-            <ShieldCheck className="h-7 w-7 text-primary" /> Executive view
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Full payroll across all four locations, with estimated federal and state withholding for
-            planning purposes.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border bg-card/60 p-1">
-            <Button variant="ghost" size="icon" onClick={() => shiftWeek(-1)} className="h-8 w-8">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2 px-2 text-sm font-medium">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              {fmtWeekRange(weekStart)}
+      <PageHeader
+        eyebrow="CEO · cross-store overview"
+        icon={<ShieldCheck className="h-5 w-5" />}
+        title="Executive view"
+        description="Payroll across all four locations with estimated federal and state withholding."
+        actions={
+          <>
+            <div className="flex items-center gap-1 rounded-lg border bg-card/60 p-1">
+              <Button variant="ghost" size="icon" onClick={() => shiftWeek(-1)} className="h-8 w-8">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex items-center gap-2 px-2 text-sm font-medium">
+                <CalendarDays className="h-4 w-4 text-primary" />
+                {fmtWeekRange(weekStart)}
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => shiftWeek(1)} className="h-8 w-8">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => shiftWeek(1)} className="h-8 w-8">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
 
-          <Select value={storeFilter} onValueChange={setStoreFilter}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="All stores" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All stores</SelectItem>
-              {stores.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </header>
+            <Select value={storeFilter} onValueChange={setStoreFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="All stores" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All stores</SelectItem>
+                {stores.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
 
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>
@@ -278,19 +272,19 @@ function Kpi({
     green: "bg-emerald-500/10 text-emerald-400",
   }[accent];
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
-            <p className="text-2xl font-bold mt-2 tabular-nums">{value}</p>
+    <div className="surface-card relative overflow-hidden transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:-translate-y-0.5">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">{label}</p>
+            <p className="text-[28px] leading-none font-bold mt-3 tabular-nums">{value}</p>
           </div>
-          <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${ring}`}>
+          <div className={`h-10 w-10 shrink-0 rounded-lg flex items-center justify-center ${ring}`}>
             {icon}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
