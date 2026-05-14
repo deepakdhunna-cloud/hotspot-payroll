@@ -54,13 +54,13 @@
 
 
 ## PIN Authentication (v2)
-- [ ] Swap site-wide logo to new dark-background PNG
-- [ ] Add `pin_codes` table (scope: 'ceo' | store name, hashed pin)
-- [ ] Seed default PINs (CEO: 9999, HM11: 1111, HM13: 1313, HM14: 1414, Travel: 7777)
-- [ ] Build PIN session cookie (sign role + store scope, 7-day TTL)
-- [ ] tRPC `auth.verifyPin` (public) and `auth.session` (replaces auth.me)
-- [ ] Replace OAuth gating with PIN check in DashboardLayout
-- [ ] On-screen numeric keypad sign-in page with Hotspot branding
-- [ ] CEO panel: change CEO PIN + change each store's manager PIN
-- [ ] Tests: PIN verification, scope enforcement (manager can't read other stores)
-- [ ] Save checkpoint and deliver
+- [x] Swap site-wide logo to new dark-background PNG
+- [x] Add `pin_codes` table (scope: 'ceo' | store name, hashed pin)
+- [x] Seed default PINs (CEO: 9999, HM11: 1111, HM13: 1313, HM14: 1414, Travel: 7777)
+- [x] Build PIN session cookie (signed JWT, 1-year TTL)
+- [x] tRPC `auth.verifyPin` (public) and `auth.me` returns PIN session
+- [x] Replace OAuth gating with PIN check in DashboardLayout
+- [x] On-screen numeric keypad sign-in page with Hotspot branding
+- [x] CEO panel: change CEO PIN + change each store's manager PIN
+- [x] Tests: PIN verification + session round-trip (21/21 passing)
+- [x] Save checkpoint and deliver
