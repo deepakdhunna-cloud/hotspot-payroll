@@ -1,13 +1,15 @@
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   employees,
   InsertEmployee,
   InsertManagerStore,
   InsertPayrollEntry,
+  InsertTimePunch,
   InsertUser,
   managerStores,
   payrollEntries,
+  timePunches,
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -248,6 +250,183 @@ export async function getPayrollRange(
     .from(payrollEntries)
     .where(and(...conds))
     .orderBy(desc(payrollEntries.weekStart));
+}
+
+/* -------------------- TIME CLOCK -------------------- */
+
+/**
+ * Persist a new 4-digit clock code hash for an employee.
+ * Caller must ensure uniqueness within the store and that `clockCodeHash`
+ * is the result of hashClockCode(rawCode, employeeId).
+ */
+export async function setClockCodeHash(
+  employeeId: number,
+  clockCodeHash: string | null,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.update(employees).set({ clockCodeHash }).where(eq(employees.id, employeeId));
+}
+
+export async function findEmployeesWithClockCodes(store: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(employees)
+    .where(
+      and(
+        eq(employees.storeLocation, store),
+        eq(employees.active, 1),
+      ),
+    );
+}
+
+export async function findOpenPunch(employeeId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(timePunches)
+    .where(and(eq(timePunches.employeeId, employeeId), isNull(timePunches.clockOutAt)))
+    .orderBy(desc(timePunches.clockInAt))
+    .limit(1);
+  return rows[0];
+}
+
+export async function openPunch(data: InsertTimePunch) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const result = await db.insert(timePunches).values(data);
+  return Number((result as any)[0]?.insertId ?? (result as any).insertId ?? 0);
+}
+
+export async function closePunch(id: number, clockOutAt: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.update(timePunches).set({ clockOutAt }).where(eq(timePunches.id, id));
+}
+
+export async function listPunches(filter: {
+  stores?: string[];
+  employeeId?: number;
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [] as any[];
+  if (filter.stores && filter.stores.length > 0) {
+    conds.push(inArray(timePunches.storeLocation, filter.stores));
+  }
+  if (filter.employeeId !== undefined) {
+    conds.push(eq(timePunches.employeeId, filter.employeeId));
+  }
+  if (filter.startDate) conds.push(gte(timePunches.clockInAt, filter.startDate));
+  if (filter.endDate) conds.push(lt(timePunches.clockInAt, filter.endDate));
+  const where = conds.length > 0 ? and(...conds) : undefined;
+  return db
+    .select()
+    .from(timePunches)
+    .where(where as any)
+    .orderBy(desc(timePunches.clockInAt))
+    .limit(filter.limit ?? 500);
+}
+
+export async function getPunchById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(timePunches).where(eq(timePunches.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function createManualPunch(data: InsertTimePunch) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const result = await db.insert(timePunches).values({ ...data, source: "manual" });
+  return Number((result as any)[0]?.insertId ?? (result as any).insertId ?? 0);
+}
+
+export async function updatePunch(
+  id: number,
+  data: Partial<Pick<InsertTimePunch, "clockInAt" | "clockOutAt" | "note">>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.update(timePunches).set(data).where(eq(timePunches.id, id));
+}
+
+export async function deletePunch(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.delete(timePunches).where(eq(timePunches.id, id));
+}
+
+/**
+ * Sum of completed punch durations (in hours) for an employee in [start, end).
+ * Open punches (no clockOutAt yet) are counted up to `now` so the in-progress
+ * shift contributes to the running week total.
+ */
+export async function hoursWorkedForWeek(
+  employeeId: number,
+  start: Date,
+  end: Date,
+  now: Date = new Date(),
+) {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select()
+    .from(timePunches)
+    .where(
+      and(
+        eq(timePunches.employeeId, employeeId),
+        gte(timePunches.clockInAt, start),
+        lt(timePunches.clockInAt, end),
+      ),
+    )
+    .orderBy(asc(timePunches.clockInAt));
+  let totalMs = 0;
+  for (const r of rows) {
+    const inAt = new Date(r.clockInAt).getTime();
+    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : now.getTime();
+    if (outAt > inAt) totalMs += outAt - inAt;
+  }
+  return totalMs / 3_600_000;
+}
+
+/**
+ * Bulk variant: returns a Map<employeeId, hours> for the given store filter.
+ */
+export async function hoursWorkedForWeekBulk(
+  start: Date,
+  end: Date,
+  stores?: string[],
+  now: Date = new Date(),
+) {
+  const db = await getDb();
+  if (!db) return new Map<number, number>();
+  const conds = [
+    gte(timePunches.clockInAt, start),
+    lt(timePunches.clockInAt, end),
+  ] as any[];
+  if (stores && stores.length > 0) {
+    conds.push(inArray(timePunches.storeLocation, stores));
+  }
+  const rows = await db
+    .select()
+    .from(timePunches)
+    .where(and(...conds));
+  const map = new Map<number, number>();
+  for (const r of rows) {
+    const inAt = new Date(r.clockInAt).getTime();
+    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : now.getTime();
+    if (outAt <= inAt) continue;
+    const hrs = (outAt - inAt) / 3_600_000;
+    map.set(r.employeeId, (map.get(r.employeeId) ?? 0) + hrs);
+  }
+  return map;
 }
 
 export async function countEmployees() {

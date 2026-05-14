@@ -21,7 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck, Clock } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -35,6 +35,7 @@ const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
 const baseMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Users, label: "Employees", path: "/employees" },
+  { icon: Clock, label: "Time Clock", path: "/time-clock" },
   { icon: ClipboardList, label: "Weekly Payroll", path: "/payroll" },
   { icon: Upload, label: "Schedule Import", path: "/schedule-import" },
   { icon: ShieldCheck, label: "CEO Overview", path: "/ceo", adminOnly: true },

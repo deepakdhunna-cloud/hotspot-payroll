@@ -88,3 +88,21 @@
 - [x] Reorder KPI cards: Total Hours → Scheduled Hours → Total Gross Pay → Over/Under
 - [x] Per-store cards grid now adapts to count (1=full width, 2=halves, 3=thirds, 4=quarters)
 - [x] Save checkpoint
+
+## v7 — Time Clock subsystem
+- [x] Schema: add `clockCodeHash` to employees; create `time_punches` table (employeeId, storeLocation, clockInAt, clockOutAt nullable, source, durationMinutes, isManual flag, note) — no `createdBy` column needed (manager scope is enforced server-side, audit not required for this internal tool)
+- [x] Migration SQL applied
+- [x] db helpers: setClockCode, findOpenPunch, openPunch, closePunch, listPunches(filter), createManualPunch, updatePunch, deletePunch, hoursWorkedForWeek(employeeId, weekStart)
+- [x] Server procedure: clock.punch (public; takes store + 4-digit; toggles in/out; rejects if employee inactive or wrong store)
+- [x] Server procedures (protected, scope-checked): clock.list, clock.createManual, clock.update, clock.delete, clock.setCode (plus clock.weekHours and clock.weekHoursBulk for payroll prefill)
+- [x] Kiosk page at `/clock` (public route) — pick a store once, then number keypad to punch in/out
+- [x] Time Clock page inside app showing punches with date+time and duration; manager scope filters to their store
+- [x] Manual entry dialog (employee, in datetime, out datetime, note)
+- [x] Edit + delete actions on each punch row
+- [x] Employee profile: time-clock section with recent punches + "Set clock code" field
+- [x] Pace badge on Hours card: "on pace" / "behind pace" / "over" computed from elapsed-week-fraction × scheduled
+- [x] Home dashboard defaults to current in-progress week (not the just-closed payable week)
+- [x] Auto-prefill Weekly Payroll hours from clock punches (overrideable)
+- [x] Tests: clock.* permission + validation gates (9 new tests, 43/43 passing)
+- [x] Weekly Payroll: minimize manual entry — hours auto-fill from clock punches by default; manual override hidden behind a pencil icon per row with "(manual)" tag + Reset link
+- [ ] Checkpoint and deliver

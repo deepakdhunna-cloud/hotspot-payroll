@@ -63,6 +63,11 @@ export const employees = mysqlTable(
     role: varchar("role", { length: 64 }).notNull(),
     storeLocation: varchar("storeLocation", { length: 64 }).notNull(),
     active: int("active").default(1).notNull(),
+    /**
+     * Manager-assigned 4-digit clock-in code, hashed.
+     * Unique within a store (enforced in app logic). Null until set.
+     */
+    clockCodeHash: varchar("clockCodeHash", { length: 128 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
@@ -70,6 +75,36 @@ export const employees = mysqlTable(
     storeIdx: index("idx_employees_store").on(table.storeLocation),
   }),
 );
+
+/**
+ * Individual clock-in / clock-out punches.
+ * An "open" punch has clockOutAt = null; toggling on the kiosk closes it.
+ * Manual entries are inserted with both timestamps set in one shot.
+ */
+export const timePunches = mysqlTable(
+  "time_punches",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    employeeId: int("employeeId").notNull(),
+    storeLocation: varchar("storeLocation", { length: 64 }).notNull(),
+    clockInAt: timestamp("clockInAt").notNull(),
+    clockOutAt: timestamp("clockOutAt"),
+    source: mysqlEnum("source", ["kiosk", "manual"]).default("kiosk").notNull(),
+    note: text("note"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    employeeIdx: index("idx_time_punches_employee").on(table.employeeId),
+    storeWeekIdx: index("idx_time_punches_store_in").on(
+      table.storeLocation,
+      table.clockInAt,
+    ),
+  }),
+);
+
+export type TimePunch = typeof timePunches.$inferSelect;
+export type InsertTimePunch = typeof timePunches.$inferInsert;
 
 export type Employee = typeof employees.$inferSelect;
 export type InsertEmployee = typeof employees.$inferInsert;

@@ -8,6 +8,13 @@
       "when": 1778762153606,
       "tag": "0000_strange_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1778768345075,
+      "tag": "0001_demonic_silvermane",
+      "breakpoints": true
     }
   ]
 }

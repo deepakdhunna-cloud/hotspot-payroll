@@ -48,6 +48,8 @@ import {
   Clock,
   Briefcase,
   Trash2,
+  KeyRound,
+  Trash,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
@@ -62,6 +64,10 @@ export default function EmployeeProfile() {
   const histQ = trpc.employees.history.useQuery({ id }, { enabled: !Number.isNaN(id) });
   const optionsQ = trpc.meta.options.useQuery();
   const scopeQ = trpc.meta.myScope.useQuery();
+  const punchesQ = trpc.clock.list.useQuery(
+    { employeeId: id, limit: 50 },
+    { enabled: !Number.isNaN(id) },
+  );
 
   const [editOpen, setEditOpen] = useState(false);
 
@@ -176,6 +182,12 @@ export default function EmployeeProfile() {
             </Card>
           </section>
 
+          <ClockCodeCard
+            employeeId={emp.id}
+            employeeName={emp.fullName}
+            hasCode={!!emp.clockCodeHash}
+          />
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -224,9 +236,253 @@ export default function EmployeeProfile() {
               </div>
             </CardContent>
           </Card>
+
+          <PunchHistoryCard
+            isLoading={punchesQ.isLoading}
+            punches={(punchesQ.data ?? []) as any[]}
+          />
         </>
       )}
     </div>
+  );
+}
+
+function ClockCodeCard({
+  employeeId,
+  employeeName,
+  hasCode,
+}: {
+  employeeId: number;
+  employeeName: string;
+  hasCode: boolean;
+}) {
+  const utils = trpc.useUtils();
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const setCodeM = trpc.clock.setCode.useMutation({
+    onSuccess: (data) => {
+      toast.success(
+        data.cleared
+          ? `Clock code cleared for ${employeeName}.`
+          : `Clock code updated for ${employeeName}.`,
+      );
+      utils.employees.get.invalidate({ id: employeeId });
+      setOpen(false);
+      setCode("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const submit = () => {
+    if (code !== "" && !/^\d{4}$/.test(code)) {
+      toast.error("Code must be exactly 4 digits.");
+      return;
+    }
+    setCodeM.mutate({ employeeId, code });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-primary" /> Time clock code
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="text-sm text-muted-foreground">
+            {hasCode
+              ? "This employee can clock in or out by entering their 4-digit code on the kiosk."
+              : "No clock code has been set yet. Assign one so this employee can use the kiosk."}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={
+                hasCode
+                  ? "border-emerald-500/40 text-emerald-700 bg-emerald-50"
+                  : "border-amber-500/40 text-amber-700 bg-amber-50"
+              }
+            >
+              {hasCode ? "•••• set" : "No code"}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              Codes are stored hashed — not visible after creation.
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">
+                <Pencil className="h-4 w-4 mr-2" />
+                {hasCode ? "Change code" : "Set code"}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>
+                  {hasCode ? "Change clock code" : "Set clock code"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-3 py-2">
+                <Label>4-digit code</Label>
+                <Input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  placeholder="1234"
+                  className="text-center text-2xl tracking-[0.5em] tabular-nums"
+                  autoFocus
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Must be 4 digits. Codes must be unique within a store.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={submit} disabled={setCodeM.isPending}>
+                  {setCodeM.isPending ? "Saving…" : "Save code"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {hasCode && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-red-600 hover:text-red-700"
+              onClick={() => {
+                if (
+                  confirm(
+                    "Clear this employee's clock code? They won't be able to punch in until you assign a new one.",
+                  )
+                ) {
+                  setCodeM.mutate({ employeeId, code: "" });
+                }
+              }}
+            >
+              <Trash className="h-4 w-4 mr-2" /> Clear code
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PunchHistoryCard({
+  isLoading,
+  punches,
+}: {
+  isLoading: boolean;
+  punches: Array<{
+    id: number;
+    clockInAt: Date | string;
+    clockOutAt: Date | string | null;
+    durationHours: number | null;
+    source: "kiosk" | "manual";
+    note: string | null;
+  }>;
+}) {
+  const fmt = (v: Date | string | null | undefined) => {
+    if (!v) return "—";
+    return new Date(v).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Clock className="h-5 w-5 text-primary" /> Recent punches
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="px-0">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Clock in</TableHead>
+                <TableHead>Clock out</TableHead>
+                <TableHead className="text-right">Duration</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Note</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading && (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="text-center py-8 text-sm text-muted-foreground"
+                  >
+                    Loading punches…
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && punches.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="text-center py-8 text-sm text-muted-foreground"
+                  >
+                    No punches yet.
+                  </TableCell>
+                </TableRow>
+              )}
+              {punches.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="tabular-nums">{fmt(p.clockInAt)}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {p.clockOutAt ? (
+                      fmt(p.clockOutAt)
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-500/40 text-emerald-700 bg-emerald-50"
+                      >
+                        Clocked in
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {p.durationHours === null || p.durationHours === undefined
+                      ? "—"
+                      : `${p.durationHours.toFixed(2)} h`}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        p.source === "manual"
+                          ? "border-amber-500/40 text-amber-700 bg-amber-50"
+                          : "border-zinc-300 text-zinc-600 bg-zinc-50"
+                      }
+                    >
+                      {p.source === "manual" ? "Manual" : "Kiosk"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">
+                    {p.note ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

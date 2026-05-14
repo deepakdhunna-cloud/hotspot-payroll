@@ -52,9 +52,20 @@ function currentPayPeriodStart(now: Date = new Date()): Date {
   return start;
 }
 
+/** How far through the Thu-→Wed week are we right now (0..1)? */
+function weekProgressFraction(weekStart: Date, now: Date = new Date()): number {
+  const startMs = weekStart.getTime();
+  const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
+  const t = now.getTime();
+  if (t <= startMs) return 0;
+  if (t >= endMs) return 1;
+  return (t - startMs) / (endMs - startMs);
+}
+
 export default function Home() {
   const { user } = useAuth();
-  const [weekStart, setWeekStart] = useState<Date>(() => currentPayPeriodStart(new Date()));
+  // Default to the in-progress week so managers always see a live pace.
+  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   const [storeFilter, setStoreFilter] = useState<string>("all");
 
   const scopeQ = trpc.meta.myScope.useQuery();
@@ -143,6 +154,43 @@ export default function Home() {
           value={fmtHours(totals.totalHours)}
           icon={<ClipboardList className="h-5 w-5" />}
           accent="primary"
+          footer={(() => {
+            // Only show a pace badge while the displayed week is currently in progress.
+            const inProgressStart = startOfWeek(new Date()).getTime();
+            if (weekStart.getTime() !== inProgressStart) return null;
+            if (totals.totalScheduled <= 0) return null;
+            const frac = weekProgressFraction(weekStart);
+            if (frac <= 0) return null;
+            const expected = totals.totalScheduled * frac;
+            const diff = totals.totalHours - expected;
+            const projected = frac > 0 ? totals.totalHours / frac : 0;
+            const overProj = projected - totals.totalScheduled;
+            // Tolerance: ±3% of scheduled hours = "on pace".
+            const tol = Math.max(2, totals.totalScheduled * 0.03);
+            let tone: "under" | "on" | "over";
+            let label: string;
+            if (diff < -tol) {
+              tone = "under";
+              label = `Behind pace • proj ${projected.toFixed(0)}h`;
+            } else if (diff > tol) {
+              tone = "over";
+              label = `Trending over • proj ${projected.toFixed(0)}h${overProj > 0 ? ` (+${overProj.toFixed(0)})` : ""}`;
+            } else {
+              tone = "on";
+              label = `On pace • proj ${projected.toFixed(0)}h`;
+            }
+            const cls =
+              tone === "under"
+                ? "border-amber-500/40 text-amber-600 bg-amber-50"
+                : tone === "over"
+                  ? "border-red-500/40 text-red-600 bg-red-50"
+                  : "border-emerald-500/40 text-emerald-700 bg-emerald-50";
+            return (
+              <Badge variant="outline" className={`mt-3 ${cls}`}>
+                {label}
+              </Badge>
+            );
+          })()}
         />
         <KpiCard
           label="Scheduled hours"
@@ -328,11 +376,13 @@ function KpiCard({
   value,
   icon,
   accent,
+  footer,
 }: {
   label: string;
   value: React.ReactNode;
   icon: React.ReactNode;
   accent: "primary" | "green" | "blue" | "emerald" | "red";
+  footer?: React.ReactNode;
 }) {
   const ring = {
     primary: "bg-primary/10 text-primary",
@@ -349,6 +399,7 @@ function KpiCard({
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
             <p className="text-2xl font-bold mt-2 tabular-nums">{value}</p>
+            {footer}
           </div>
           <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${ring}`}>
             {icon}

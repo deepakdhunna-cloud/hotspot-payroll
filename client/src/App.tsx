@@ -11,8 +11,22 @@ import EmployeeProfile from "./pages/EmployeeProfile";
 import WeeklyPayroll from "./pages/WeeklyPayroll";
 import ScheduleImport from "./pages/ScheduleImport";
 import CeoView from "./pages/CeoView";
+import TimeClock from "./pages/TimeClock";
+import ClockKiosk from "./pages/ClockKiosk";
+import { useLocation } from "wouter";
 
 function Router() {
+  const [location] = useLocation();
+  // The /clock kiosk runs full-screen on store tablets — no sidebar, no PIN gate.
+  if (location === "/clock" || location.startsWith("/clock/")) {
+    return (
+      <Switch>
+        <Route path={"/clock"} component={ClockKiosk} />
+        <Route path={"/clock/:store"} component={ClockKiosk} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
   return (
     <DashboardLayout>
       <Switch>
@@ -20,6 +34,7 @@ function Router() {
         <Route path={"/employees"} component={Employees} />
         <Route path={"/employees/:id"} component={EmployeeProfile} />
         <Route path={"/payroll"} component={WeeklyPayroll} />
+        <Route path={"/time-clock"} component={TimeClock} />
         <Route path={"/schedule-import"} component={ScheduleImport} />
         <Route path={"/ceo"} component={CeoView} />
         <Route path={"/404"} component={NotFound} />

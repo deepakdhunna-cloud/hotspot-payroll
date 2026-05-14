@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Undo2 } from "lucide-react";
 
 // Hotspot pay period: Thursday – Wednesday. Anchor any date to the Thursday on
 // or before it (UTC).
@@ -90,22 +92,50 @@ export default function WeeklyPayroll() {
   const [hours, setHours] = useState<Record<number, string>>({});
   const [rates, setRates] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
+  // Per-row: did the manager click the pencil to override the auto-pulled clock hours?
+  const [manualOverride, setManualOverride] = useState<Record<number, boolean>>({});
+
+  // Pull the sum-of-clock-hours per employee for this same Thursday–Wednesday window.
+  const clockHoursQ = trpc.clock.weekHoursBulk.useQuery({
+    weekStart,
+    store: storeFilter === "all" ? undefined : (storeFilter as any),
+  });
+  const clockHoursMap = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const e of clockHoursQ.data?.entries ?? []) m.set(e.employeeId, e.hours);
+    return m;
+  }, [clockHoursQ.data]);
 
   useEffect(() => {
     const initialHours: Record<number, string> = {};
     const initialRates: Record<number, string> = {};
+    const initialOverride: Record<number, boolean> = {};
     weekQ.data?.employees.forEach((row) => {
-      initialHours[row.employee.id] = row.entry
-        ? String(Number(row.entry.hoursWorked))
-        : "";
-      // Prefer the snapshot rate from the saved entry; otherwise the profile rate.
-      initialRates[row.employee.id] = String(
+      const empId = row.employee.id;
+      const clockH = clockHoursMap.get(empId);
+      if (row.entry) {
+        // A payroll entry is saved — honor it.
+        const saved = Number(row.entry.hoursWorked);
+        initialHours[empId] = String(saved);
+        // If the saved value disagrees with the current clock total, mark it
+        // as a manual override so the UI shows the "(manual)" tag + Reset link.
+        if (clockH !== undefined && Math.abs(saved - clockH) > 0.01) {
+          initialOverride[empId] = true;
+        }
+      } else if (clockH !== undefined && clockH > 0) {
+        // No saved entry yet — pre-fill from the clock.
+        initialHours[empId] = clockH.toFixed(2);
+      } else {
+        initialHours[empId] = "";
+      }
+      initialRates[empId] = String(
         Number(row.entry?.payRateSnapshot ?? row.employee.payRate ?? 0),
       );
     });
     setHours(initialHours);
     setRates(initialRates);
-  }, [weekQ.data]);
+    setManualOverride(initialOverride);
+  }, [weekQ.data, clockHoursMap]);
 
   const utils = trpc.useUtils();
   const saveHoursM = trpc.payroll.saveHours.useMutation({
@@ -202,8 +232,8 @@ export default function WeeklyPayroll() {
             <ClipboardList className="h-7 w-7" /> Enter hours
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Pay period runs Thursday through Wednesday. Type each employee's hours
-            (and adjust the rate if needed) — gross is computed automatically.
+            Pay period runs Thursday through Wednesday. Hours auto-fill from the
+            time clock — click the pencil on a row to enter them manually.
           </p>
         </div>
 
@@ -336,6 +366,12 @@ export default function WeeklyPayroll() {
                   const hrs = rawHours === "" ? 0 : Number(rawHours);
                   const rate = rawRate === "" ? 0 : Number(rawRate);
                   const { grossPay } = computeGross(hrs, rate);
+                  const clockHours = clockHoursMap.get(emp.id);
+                  const hasClockHours =
+                    clockHours !== undefined && clockHours > 0;
+                  const isManual = manualOverride[emp.id] === true;
+                  // Read-only when we have clock hours AND the user hasn't pressed the pencil.
+                  const showReadOnlyClock = hasClockHours && !isManual;
                   return (
                     <TableRow key={emp.id}>
                       <TableCell className="font-medium">{emp.fullName}</TableCell>
@@ -373,27 +409,84 @@ export default function WeeklyPayroll() {
                         {scheduled.toFixed(1)} h
                       </TableCell>
                       <TableCell className="text-right">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.25"
-                          min="0"
-                          max="168"
-                          value={rawHours}
-                          onChange={(e) =>
-                            setHours((s) => ({ ...s, [emp.id]: e.target.value }))
-                          }
-                          onBlur={() => {
-                            if (
-                              rawHours !== "" &&
-                              rawHours !== String(Number(row.entry?.hoursWorked ?? 0))
-                            ) {
-                              handleSaveOne(emp.id, scheduled);
-                            }
-                          }}
-                          placeholder="0"
-                          className="text-right tabular-nums h-9"
-                        />
+                        {showReadOnlyClock ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <span
+                              className="tabular-nums font-medium"
+                              title="Auto-pulled from time clock punches"
+                            >
+                              {Number(clockHours).toFixed(2)}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-500/40 text-emerald-700 bg-emerald-50 text-[10px]"
+                            >
+                              clock
+                            </Badge>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => {
+                                setManualOverride((s) => ({ ...s, [emp.id]: true }));
+                              }}
+                              aria-label="Override clock hours"
+                              title="Edit manually"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end gap-1">
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.25"
+                              min="0"
+                              max="168"
+                              value={rawHours}
+                              onChange={(e) =>
+                                setHours((s) => ({ ...s, [emp.id]: e.target.value }))
+                              }
+                              onBlur={() => {
+                                if (
+                                  rawHours !== "" &&
+                                  rawHours !== String(Number(row.entry?.hoursWorked ?? 0))
+                                ) {
+                                  handleSaveOne(emp.id, scheduled);
+                                }
+                              }}
+                              placeholder={hasClockHours ? Number(clockHours).toFixed(2) : "0"}
+                              className="text-right tabular-nums h-9"
+                            />
+                            {hasClockHours && isManual && (
+                              <div className="flex items-center gap-2 text-[10px]">
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-500/40 text-amber-700 bg-amber-50"
+                                >
+                                  manual
+                                </Badge>
+                                <button
+                                  type="button"
+                                  className="text-primary hover:underline inline-flex items-center gap-1"
+                                  onClick={() => {
+                                    const v = Number(clockHours).toFixed(2);
+                                    setHours((s) => ({ ...s, [emp.id]: v }));
+                                    setManualOverride((s) => ({
+                                      ...s,
+                                      [emp.id]: false,
+                                    }));
+                                    handleSaveOne(emp.id, scheduled);
+                                  }}
+                                  title="Reset to clock hours"
+                                >
+                                  <Undo2 className="h-3 w-3" /> Reset
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">
                         {fmtMoney(grossPay)}

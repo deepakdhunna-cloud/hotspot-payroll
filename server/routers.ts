@@ -11,17 +11,30 @@ import {
   router,
 } from "./_core/trpc";
 import {
+  closePunch,
   countEmployees,
   createEmployee,
+  createManualPunch,
   deactivateEmployee,
   deleteEmployee,
+  deletePunch,
+  findEmployeesWithClockCodes,
+  findOpenPunch,
   getEmployeeById,
   getEmployeePayrollHistory,
   getPayrollByWeek,
+  getPunchById,
+  hoursWorkedForWeek,
+  hoursWorkedForWeekBulk,
   listEmployees,
+  listPunches,
+  openPunch,
+  setClockCodeHash,
   updateEmployee,
+  updatePunch,
   upsertPayrollEntry,
 } from "./db";
+import { hashClockCode, verifyClockCode } from "./_core/clockAuth";
 import {
   ROLES,
   STORES,
@@ -645,6 +658,280 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await setPin(input.scope, input.pin);
         return { success: true };
+      }),
+  }),
+
+  clock: router({
+    /**
+     * Public kiosk endpoint: punch in (creates an open punch) or punch out
+     * (closes the open punch). Takes the store + 4-digit code; tries the code
+     * against every active employee at that store and toggles based on whether
+     * an open punch already exists.
+     */
+    punch: publicProcedure
+      .input(
+        z.object({
+          store: StoreEnum,
+          code: z.string().regex(/^\d{4}$/),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const employees = await findEmployeesWithClockCodes(input.store);
+        let matched: (typeof employees)[number] | undefined;
+        for (const emp of employees) {
+          if (verifyClockCode(input.code, emp.id, emp.clockCodeHash)) {
+            matched = emp;
+            break;
+          }
+        }
+        if (!matched) {
+          await new Promise((r) => setTimeout(r, 400));
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Code not recognized at this store.",
+          });
+        }
+        const open = await findOpenPunch(matched.id);
+        const now = new Date();
+        if (open) {
+          await closePunch(open.id, now);
+          const durationMs = now.getTime() - new Date(open.clockInAt).getTime();
+          return {
+            action: "out" as const,
+            employee: { id: matched.id, fullName: matched.fullName },
+            at: now,
+            durationHours: Math.max(0, durationMs / 3_600_000),
+          };
+        }
+        await openPunch({
+          employeeId: matched.id,
+          storeLocation: matched.storeLocation,
+          clockInAt: now,
+          source: "kiosk",
+        });
+        return {
+          action: "in" as const,
+          employee: { id: matched.id, fullName: matched.fullName },
+          at: now,
+        };
+      }),
+
+    /**
+     * Set or clear an employee's 4-digit code. Manager-scoped to their store.
+     * Pass an empty string to remove the code.
+     */
+    setCode: protectedProcedure
+      .input(
+        z.object({
+          employeeId: z.number().int(),
+          code: z.string().regex(/^\d{4}$|^$/, "Code must be 4 digits or empty"),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const emp = await getEmployeeById(input.employeeId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        if (input.code === "") {
+          await setClockCodeHash(emp.id, null);
+          return { success: true, cleared: true };
+        }
+        // Uniqueness within store: any other active employee with a matching hash blocks reuse.
+        const peers = await findEmployeesWithClockCodes(emp.storeLocation);
+        const conflict = peers.find(
+          (p) => p.id !== emp.id && verifyClockCode(input.code, p.id, p.clockCodeHash),
+        );
+        if (conflict) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Code already used by ${conflict.fullName} at this store.`,
+          });
+        }
+        const hash = hashClockCode(input.code, emp.id);
+        await setClockCodeHash(emp.id, hash);
+        return { success: true, cleared: false };
+      }),
+
+    /**
+     * List punches for the current scope.
+     * Manager: only their store. CEO: all stores or a chosen store.
+     */
+    list: protectedProcedure
+      .input(
+        z
+          .object({
+            store: StoreEnum.optional(),
+            employeeId: z.number().int().optional(),
+            startDate: z.date().optional(),
+            endDate: z.date().optional(),
+            limit: z.number().int().min(1).max(2000).optional(),
+          })
+          .optional(),
+      )
+      .query(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const stores =
+          input?.store && (scope.isAdmin || scope.stores.includes(input.store))
+            ? [input.store]
+            : scope.isAdmin
+              ? undefined
+              : scope.stores;
+        if (input?.employeeId !== undefined) {
+          const emp = await getEmployeeById(input.employeeId);
+          if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
+          if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
+            throw new TRPCError({ code: "FORBIDDEN" });
+          }
+        }
+        const punches = await listPunches({
+          stores,
+          employeeId: input?.employeeId,
+          startDate: input?.startDate,
+          endDate: input?.endDate,
+          limit: input?.limit,
+        });
+        // Attach employee names for convenience
+        const empIds = Array.from(new Set(punches.map((p) => p.employeeId)));
+        const empMap = new Map<number, { id: number; fullName: string }>();
+        for (const id of empIds) {
+          const e = await getEmployeeById(id);
+          if (e) empMap.set(id, { id: e.id, fullName: e.fullName });
+        }
+        return punches.map((p) => ({
+          ...p,
+          employeeName: empMap.get(p.employeeId)?.fullName ?? "Unknown",
+          durationHours:
+            p.clockOutAt
+              ? Math.max(
+                  0,
+                  (new Date(p.clockOutAt).getTime() - new Date(p.clockInAt).getTime()) /
+                    3_600_000,
+                )
+              : null,
+        }));
+      }),
+
+    /** Manually add a punch (both in and out timestamps). */
+    createManual: protectedProcedure
+      .input(
+        z
+          .object({
+            employeeId: z.number().int(),
+            clockInAt: z.date(),
+            clockOutAt: z.date().optional(),
+            note: z.string().max(500).optional(),
+          })
+          .refine(
+            (v) => !v.clockOutAt || v.clockOutAt.getTime() > v.clockInAt.getTime(),
+            { message: "Clock-out must be after clock-in." },
+          ),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const emp = await getEmployeeById(input.employeeId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const id = await createManualPunch({
+          employeeId: emp.id,
+          storeLocation: emp.storeLocation,
+          clockInAt: input.clockInAt,
+          clockOutAt: input.clockOutAt ?? null,
+          source: "manual",
+          note: input.note ?? null,
+        });
+        return { id };
+      }),
+
+    /** Edit a punch's in/out times or note. */
+    update: protectedProcedure
+      .input(
+        z
+          .object({
+            id: z.number().int(),
+            clockInAt: z.date().optional(),
+            clockOutAt: z.date().nullable().optional(),
+            note: z.string().max(500).nullable().optional(),
+          })
+          .refine(
+            (v) =>
+              !v.clockInAt ||
+              !v.clockOutAt ||
+              v.clockOutAt.getTime() > v.clockInAt.getTime(),
+            { message: "Clock-out must be after clock-in." },
+          ),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const punch = await getPunchById(input.id);
+        if (!punch) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(punch.storeLocation as Store)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const update: Record<string, unknown> = {};
+        if (input.clockInAt !== undefined) update.clockInAt = input.clockInAt;
+        if (input.clockOutAt !== undefined) update.clockOutAt = input.clockOutAt;
+        if (input.note !== undefined) update.note = input.note;
+        await updatePunch(input.id, update as any);
+        return { success: true };
+      }),
+
+    /** Delete a punch. */
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        const punch = await getPunchById(input.id);
+        if (!punch) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(punch.storeLocation as Store)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        await deletePunch(input.id);
+        return { success: true };
+      }),
+
+    /** Sum of hours worked for one employee in a given week. */
+    weekHours: protectedProcedure
+      .input(z.object({ employeeId: z.number().int(), weekStart: z.date() }))
+      .query(async ({ ctx, input }) => {
+        const emp = await getEmployeeById(input.employeeId);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        const start = getWeekStart(input.weekStart);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
+        const hours = await hoursWorkedForWeek(emp.id, start, end);
+        return { employeeId: emp.id, weekStart: start, hours };
+      }),
+
+    /** Bulk hours-worked map for a week, scoped to the caller's stores. */
+    weekHoursBulk: protectedProcedure
+      .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
+      .query(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const stores =
+          input.store && (scope.isAdmin || scope.stores.includes(input.store))
+            ? [input.store]
+            : scope.isAdmin
+              ? undefined
+              : scope.stores;
+        const start = getWeekStart(input.weekStart);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
+        const map = await hoursWorkedForWeekBulk(start, end, stores);
+        return {
+          weekStart: start,
+          entries: Array.from(map.entries()).map(([employeeId, hours]) => ({
+            employeeId,
+            hours,
+          })),
+        };
       }),
   }),
 
