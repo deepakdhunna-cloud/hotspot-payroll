@@ -4,6 +4,7 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
+import { csrfOriginGuard } from "../csrf";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ensureDefaultPins } from "./pinAuth";
@@ -37,6 +38,8 @@ async function startServer() {
   registerStorageProxy(app);
   // Ensure the default Hotspot PINs exist (CEO + 4 store PINs).
   ensureDefaultPins().catch((err) => console.error("[PinAuth] init failed:", err));
+  // CSRF guard for mutating API requests (see server/csrf.ts + its tests).
+  app.use("/api", csrfOriginGuard);
   // tRPC API
   app.use(
     "/api/trpc",

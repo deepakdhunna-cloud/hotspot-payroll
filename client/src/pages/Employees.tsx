@@ -30,11 +30,12 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, STORE_ABBR } from "@/lib/format";
-import { Phone, Plus, Search, Users, ArrowRight, X } from "lucide-react";
+import { KeyRound, Phone, Plus, Search, Users, ArrowRight, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
+import { StoreSelect } from "@/components/StoreSelect";
 
 export default function Employees() {
   const [storeFilter, setStoreFilter] = useState<string>("all");
@@ -86,7 +87,8 @@ export default function Employees() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Clear selections that fall out of the filtered view.
+  // Clear selections that fall out of the filtered view — including rows that
+  // disappear when a background refetch updates listQ.data.
   useEffect(() => {
     setSelected((prev) => {
       const visibleIds = new Set(filtered.map((e) => e.id));
@@ -99,7 +101,7 @@ export default function Employees() {
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeFilter, roleFilter, search]);
+  }, [listQ.data, storeFilter, roleFilter, search]);
 
   const toggleOne = (id: number) =>
     setSelected((prev) => {
@@ -150,7 +152,7 @@ export default function Employees() {
         }
       />
 
-      <Card>
+      <Card className="surface-card border-0 rise-in">
         <CardHeader className="pb-4">
           <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
             <div className="relative flex-1 max-w-md">
@@ -163,21 +165,14 @@ export default function Employees() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={storeFilter} onValueChange={setStoreFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="All stores" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All stores</SelectItem>
-                  {stores.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <StoreSelect
+                stores={stores}
+                isAdmin={!!scopeQ.data?.isAdmin}
+                value={storeFilter}
+                onChange={setStoreFilter}
+              />
               <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="h-9 w-[180px] bg-card shadow-sm">
                   <SelectValue placeholder="All roles" />
                 </SelectTrigger>
                 <SelectContent>
@@ -193,7 +188,7 @@ export default function Employees() {
           </div>
         </CardHeader>
         {selected.size > 0 && (
-          <div className="mx-6 mb-4 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="mx-6 mb-4 rounded-xl border border-primary/30 bg-primary/5 shadow-sm px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex items-center gap-2 text-sm">
               <Badge className="bg-primary text-primary-foreground">{selected.size}</Badge>
               <span className="font-medium">selected</span>
@@ -265,6 +260,7 @@ export default function Employees() {
                   <TableHead>Role</TableHead>
                   <TableHead>Store</TableHead>
                   <TableHead>Phone</TableHead>
+                  <TableHead>Clock code</TableHead>
                   <TableHead className="text-right">Pay rate</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -272,14 +268,14 @@ export default function Employees() {
               <TableBody>
                 {listQ.isLoading && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-10 text-sm text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 )}
                 {!listQ.isLoading && filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-10 text-sm text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground">
                       No employees match your filters.
                     </TableCell>
                   </TableRow>
@@ -317,6 +313,17 @@ export default function Employees() {
                         <Phone className="h-3 w-3" />
                         {emp.phone}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      {emp.clockCodeHash ? (
+                        <span className="chip-good">
+                          <KeyRound className="h-3 w-3" /> set
+                        </span>
+                      ) : (
+                        <span className="chip-neutral">
+                          <KeyRound className="h-3 w-3" /> none
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums font-medium">
                       {fmtMoney(Number(emp.payRate))}/hr
@@ -367,7 +374,8 @@ function AddEmployeeDialog({
 
   const submit = () => {
     const rate = Number(payRate);
-    if (!fullName.trim() || !phone.trim() || !role || !storeLocation || !rate) {
+    const rateValid = payRate !== "" && rate >= 0;
+    if (!fullName.trim() || !phone.trim() || !role || !storeLocation || !rateValid) {
       toast.error("Please fill in every field.");
       return;
     }

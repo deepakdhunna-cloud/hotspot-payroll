@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { StatCard } from "@/components/StatCard";
 import {
   Select,
   SelectContent,
@@ -45,41 +45,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Pencil, Plus, Trash2, Search } from "lucide-react";
+import { Clock, Monitor, Pencil, Plus, Trash2, Search, UserCheck } from "lucide-react";
 import { STORE_ABBR } from "@/lib/format";
+import {
+  fmtDateTime,
+  fmtDuration,
+  fromDateInput,
+  shiftPayWeek,
+  toDateInput,
+} from "@/lib/payweek";
 import { toast } from "sonner";
 
-function startOfPayWeek(date: Date): Date {
-  const d = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-  const day = d.getUTCDay();
-  const diff = (day - 4 + 7) % 7;
-  d.setUTCDate(d.getUTCDate() - diff);
-  return d;
-}
-function endOfPayWeek(weekStart: Date): Date {
-  const e = new Date(weekStart);
-  e.setUTCDate(e.getUTCDate() + 7);
-  return e;
-}
-function fmtDateTime(value: Date | string | null | undefined): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
-function fmtDuration(hours: number | null | undefined): string {
-  if (hours === null || hours === undefined) return "—";
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return `${h}h ${String(m).padStart(2, "0")}m`;
-}
+// Punch times are intentionally LOCAL time (the kiosk records wall-clock
+// time), so the datetime-local helpers below stay local — do not use the
+// UTC-based payweek helpers for these.
 function toLocalInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
@@ -88,15 +67,6 @@ function toLocalInput(d: Date): string {
 }
 function fromLocalInput(value: string): Date {
   return new Date(value);
-}
-function toDateInput(d: Date): string {
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-function fromDateInput(value: string): Date {
-  return new Date(`${value}T00:00:00Z`);
 }
 
 type PunchRow = {
@@ -121,17 +91,14 @@ export default function PunchesTab({
   // Range mode lets users look back months. Default to the parent's week.
   const [rangeMode, setRangeMode] = useState<"week" | "range">("week");
   const [rangeStart, setRangeStart] = useState<Date>(weekStart);
-  const [rangeEnd, setRangeEnd] = useState<Date>(endOfPayWeek(weekStart));
+  const [rangeEnd, setRangeEnd] = useState<Date>(shiftPayWeek(weekStart, 1));
 
   useEffect(() => {
     if (rangeMode === "week") {
       setRangeStart(weekStart);
-      setRangeEnd(endOfPayWeek(weekStart));
+      setRangeEnd(shiftPayWeek(weekStart, 1));
     }
   }, [weekStart, rangeMode]);
-
-  const scopeQ = trpc.meta.myScope.useQuery();
-  const stores = scopeQ.data?.stores ?? [];
 
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -189,28 +156,21 @@ export default function PunchesTab({
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Hours logged
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {totals.hours.toFixed(1)} h
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-2">
-            over {spanDays} day{spanDays === 1 ? "" : "s"}
-          </div>
-        </div>
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Currently clocked in
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {totals.openCount}
-          </div>
-        </div>
+        <StatCard
+          label="Hours logged"
+          value={`${totals.hours.toFixed(1)} h`}
+          sub={`over ${spanDays} day${spanDays === 1 ? "" : "s"}`}
+          icon={<Clock />}
+        />
+        <StatCard
+          label="Currently clocked in"
+          value={totals.openCount}
+          icon={<UserCheck />}
+          style={{ animationDelay: "60ms" }}
+        />
       </section>
 
-      <Card>
+      <Card className="surface-card border-0">
         <CardContent className="p-4 flex flex-col md:flex-row md:items-end md:flex-wrap gap-3">
           <div className="grid gap-1.5">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -307,7 +267,7 @@ export default function PunchesTab({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="surface-card border-0">
         <CardHeader>
           <CardTitle>Punches</CardTitle>
         </CardHeader>
@@ -364,28 +324,24 @@ export default function PunchesTab({
                       {p.clockOutAt ? (
                         fmtDateTime(p.clockOutAt)
                       ) : (
-                        <Badge
-                          variant="outline"
-                          className="border-emerald-500/40 text-emerald-700 bg-emerald-50"
-                        >
-                          Clocked in
-                        </Badge>
+                        <span className="chip-good">
+                          <Clock className="h-3 w-3" /> Clocked in
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {fmtDuration(p.durationHours)}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          p.source === "manual"
-                            ? "border-amber-500/40 text-amber-700 bg-amber-50"
-                            : "border-zinc-300 text-zinc-600 bg-zinc-50"
-                        }
-                      >
-                        {p.source === "manual" ? "Manual" : "Kiosk"}
-                      </Badge>
+                      {p.source === "manual" ? (
+                        <span className="chip-warn">
+                          <Pencil className="h-3 w-3" /> Manual
+                        </span>
+                      ) : (
+                        <span className="chip-neutral">
+                          <Monitor className="h-3 w-3" /> Kiosk
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-[220px] text-xs text-muted-foreground truncate">
                       {p.note ?? "—"}
@@ -712,5 +668,3 @@ function EditPunchDialog({
   );
 }
 
-// Re-export utility so it can be referenced if needed elsewhere.
-export { startOfPayWeek };

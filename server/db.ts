@@ -1,14 +1,20 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  auditLog,
   employees,
+  InsertAuditLogEntry,
   InsertEmployee,
   InsertManagerStore,
   InsertPayrollEntry,
+  InsertScheduleImport,
+  InsertScheduleShift,
   InsertTimePunch,
   InsertUser,
   managerStores,
   payrollEntries,
+  scheduleImports,
+  scheduleShifts,
   timePunches,
   users,
 } from "../drizzle/schema";
@@ -135,6 +141,13 @@ export async function getEmployeeById(id: number) {
   return rows[0];
 }
 
+/** Bulk fetch, used to hydrate names without N+1 queries. */
+export async function getEmployeesByIds(ids: number[]) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return [];
+  return db.select().from(employees).where(inArray(employees.id, ids));
+}
+
 export async function createEmployee(data: InsertEmployee) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
@@ -159,14 +172,20 @@ export async function deactivateEmployee(id: number) {
 }
 
 /**
- * Permanently delete an employee and their entire payroll history.
- * This cannot be undone — callers must confirm in the UI.
+ * Permanently delete an employee and every dependent record (payroll history,
+ * time punches, scheduled shifts) in a single transaction so a mid-delete
+ * failure can never leave orphaned rows. Callers must confirm in the UI and
+ * write an audit-log snapshot first, so the data remains recoverable.
  */
 export async function deleteEmployee(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  await db.delete(payrollEntries).where(eq(payrollEntries.employeeId, id));
-  await db.delete(employees).where(eq(employees.id, id));
+  await db.transaction(async (tx) => {
+    await tx.delete(payrollEntries).where(eq(payrollEntries.employeeId, id));
+    await tx.delete(timePunches).where(eq(timePunches.employeeId, id));
+    await tx.delete(scheduleShifts).where(eq(scheduleShifts.employeeId, id));
+    await tx.delete(employees).where(eq(employees.id, id));
+  });
 }
 
 /* -------------------- PAYROLL ENTRIES -------------------- */
@@ -365,8 +384,9 @@ export async function deletePunch(id: number) {
 
 /**
  * Sum of completed punch durations (in hours) for an employee in [start, end).
- * Open punches (no clockOutAt yet) are counted up to `now` so the in-progress
- * shift contributes to the running week total.
+ * Open punches (no clockOutAt yet) are counted up to `now`, but never past the
+ * end of the queried week — otherwise a forgotten clock-out would inflate a
+ * past week's totals a little more every day it stays open.
  */
 export async function hoursWorkedForWeek(
   employeeId: number,
@@ -387,10 +407,11 @@ export async function hoursWorkedForWeek(
       ),
     )
     .orderBy(asc(timePunches.clockInAt));
+  const openCap = Math.min(now.getTime(), end.getTime());
   let totalMs = 0;
   for (const r of rows) {
     const inAt = new Date(r.clockInAt).getTime();
-    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : now.getTime();
+    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : openCap;
     if (outAt > inAt) totalMs += outAt - inAt;
   }
   return totalMs / 3_600_000;
@@ -419,14 +440,34 @@ export async function hoursWorkedForWeekBulk(
     .from(timePunches)
     .where(and(...conds));
   const map = new Map<number, number>();
+  // Same open-punch cap as hoursWorkedForWeek: never count past the week end.
+  const openCap = Math.min(now.getTime(), end.getTime());
   for (const r of rows) {
     const inAt = new Date(r.clockInAt).getTime();
-    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : now.getTime();
+    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : openCap;
     if (outAt <= inAt) continue;
     const hrs = (outAt - inAt) / 3_600_000;
     map.set(r.employeeId, (map.get(r.employeeId) ?? 0) + hrs);
   }
   return map;
+}
+
+/**
+ * All punches that are currently open (clocked in, no clock-out yet),
+ * optionally narrowed to a set of stores. Powers the live dashboard.
+ */
+export async function listOpenPunches(stores?: string[]) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [isNull(timePunches.clockOutAt)] as any[];
+  if (stores && stores.length > 0) {
+    conds.push(inArray(timePunches.storeLocation, stores));
+  }
+  return db
+    .select()
+    .from(timePunches)
+    .where(and(...conds))
+    .orderBy(asc(timePunches.clockInAt));
 }
 
 export async function countEmployees() {
@@ -437,4 +478,150 @@ export async function countEmployees() {
     .from(employees)
     .where(eq(employees.active, 1));
   return Number(r[0]?.c ?? 0);
+}
+
+/* -------------------- SCHEDULE SHIFTS (day-level) -------------------- */
+
+/**
+ * Replace the full set of scheduled shifts for one employee in one pay week.
+ * Runs in a transaction: the old set is only removed if the new set commits.
+ */
+export async function replaceWeekShifts(
+  employeeId: number,
+  weekStart: Date,
+  shifts: Omit<InsertScheduleShift, "employeeId" | "weekStart">[],
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(scheduleShifts)
+      .where(
+        and(
+          eq(scheduleShifts.employeeId, employeeId),
+          eq(scheduleShifts.weekStart, weekStart),
+        ),
+      );
+    if (shifts.length > 0) {
+      await tx
+        .insert(scheduleShifts)
+        .values(shifts.map((s) => ({ ...s, employeeId, weekStart })));
+    }
+  });
+}
+
+export async function getShiftsForWeek(weekStart: Date, stores?: string[]) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [eq(scheduleShifts.weekStart, weekStart)] as any[];
+  if (stores && stores.length > 0) {
+    conds.push(inArray(scheduleShifts.storeLocation, stores));
+  }
+  return db
+    .select()
+    .from(scheduleShifts)
+    .where(and(...conds))
+    .orderBy(asc(scheduleShifts.shiftDate));
+}
+
+export async function getShiftsForEmployeeWeek(employeeId: number, weekStart: Date) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(scheduleShifts)
+    .where(
+      and(
+        eq(scheduleShifts.employeeId, employeeId),
+        eq(scheduleShifts.weekStart, weekStart),
+      ),
+    )
+    .orderBy(asc(scheduleShifts.shiftDate));
+}
+
+/* -------------------- SCHEDULE IMPORTS -------------------- */
+
+export async function createScheduleImport(data: InsertScheduleImport) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const result = await db.insert(scheduleImports).values(data);
+  return Number((result as any)[0]?.insertId ?? (result as any).insertId ?? 0);
+}
+
+export async function markImportCommitted(id: number, counts?: { matchedCount?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db
+    .update(scheduleImports)
+    .set({
+      status: "committed",
+      committedAt: new Date(),
+      ...(counts?.matchedCount !== undefined ? { matchedCount: counts.matchedCount } : {}),
+    })
+    .where(eq(scheduleImports.id, id));
+}
+
+export async function getScheduleImportById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(scheduleImports)
+    .where(eq(scheduleImports.id, id))
+    .limit(1);
+  return rows[0];
+}
+
+export async function listScheduleImports(filter?: { stores?: string[]; limit?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [] as any[];
+  if (filter?.stores && filter.stores.length > 0) {
+    conds.push(inArray(scheduleImports.storeLocation, filter.stores));
+  }
+  const where = conds.length > 0 ? and(...conds) : undefined;
+  return db
+    .select()
+    .from(scheduleImports)
+    .where(where as any)
+    .orderBy(desc(scheduleImports.createdAt))
+    .limit(filter?.limit ?? 20);
+}
+
+/* -------------------- AUDIT LOG -------------------- */
+
+/**
+ * Append an audit entry. Never throws: an audit failure must not break the
+ * underlying operation, so errors are logged and swallowed.
+ */
+export async function logAudit(entry: InsertAuditLogEntry): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(auditLog).values({
+      ...entry,
+      detail: entry.detail ? entry.detail.slice(0, 60_000) : entry.detail,
+    });
+  } catch (error) {
+    console.error("[Audit] Failed to write audit entry:", error);
+  }
+}
+
+export async function listAuditLog(filter?: {
+  actorScope?: string;
+  entityType?: string;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [] as any[];
+  if (filter?.actorScope) conds.push(eq(auditLog.actorScope, filter.actorScope));
+  if (filter?.entityType) conds.push(eq(auditLog.entityType, filter.entityType));
+  const where = conds.length > 0 ? and(...conds) : undefined;
+  return db
+    .select()
+    .from(auditLog)
+    .where(where as any)
+    .orderBy(desc(auditLog.createdAt))
+    .limit(filter?.limit ?? 100);
 }

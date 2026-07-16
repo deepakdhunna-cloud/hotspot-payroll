@@ -21,16 +21,14 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck, Clock } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck, Clock, ExternalLink } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
-import { Button } from "./ui/button";
+import { BrandMark } from "./BrandMark";
 import { trpc } from "@/lib/trpc";
 
 type MenuItem = { icon: typeof LayoutDashboard; label: string; path: string; adminOnly?: boolean };
-
-const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
 
 const baseMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -105,7 +103,10 @@ function DashboardLayoutContent({
   });
   const displayName = isAdmin ? "CEO" : greetingQ.data?.name ?? "Manager";
   const menuItems = baseMenuItems.filter(item => !item.adminOnly || isAdmin);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  // Highlight nested routes too (/employees/12 keeps Employees active).
+  const isPathActive = (path: string) =>
+    path === "/" ? location === "/" : location === path || location.startsWith(`${path}/`);
+  const activeMenuItem = menuItems.find(item => isPathActive(item.path));
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -163,28 +164,25 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex flex-col items-center gap-1 min-w-0 flex-1">
-                  <img src={LOGO_URL} alt="Hotspot" className="h-8 w-auto object-contain" />
-                  <span className="inline-flex items-center bg-neutral-950 text-white text-[9px] font-semibold tracking-[0.28em] uppercase px-3 py-0.5 rounded-full -mt-1">
-                    Market
-                  </span>
+                  <BrandMark size="sm" />
                 </div>
               ) : (
-                <img src={LOGO_URL} alt="" className="h-6 w-auto object-contain" />
+                <BrandMark size="sm" withPill={false} />
               )}
             </div>
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
+            <SidebarMenu className="px-2 py-2">
               {menuItems.map(item => {
-                const isActive = location === item.path;
+                const isActive = isPathActive(item.path);
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
                       tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
+                      className={`h-10 transition-all ${isActive ? "font-semibold" : "font-normal"}`}
                     >
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
@@ -195,6 +193,23 @@ function DashboardLayoutContent({
                 );
               })}
             </SidebarMenu>
+            <div className="mt-auto px-2 pb-2">
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => window.open("/clock", "_blank", "noopener,noreferrer")}
+                    tooltip="Time clock kiosk"
+                    className="h-10 font-normal text-muted-foreground hover:text-foreground"
+                  >
+                    <Clock className="h-4 w-4" />
+                    <span className="flex items-center gap-1.5">
+                      Time clock kiosk
+                      <ExternalLink className="h-3 w-3 opacity-60" />
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </div>
           </SidebarContent>
 
           <SidebarFooter className="p-3">
@@ -248,7 +263,7 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
-                <img src={LOGO_URL} alt="Hotspot Market" className="h-7 w-auto object-contain" />
+                <BrandMark size="sm" withPill={false} />
                 <span className="text-sm font-medium tracking-tight text-foreground">
                   {activeMenuItem?.label ?? "Menu"}
                 </span>

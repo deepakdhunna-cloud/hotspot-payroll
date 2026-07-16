@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
+import { fmtDuration } from "@/lib/payweek";
 
 /**
  * Public kiosk page. Behaves in two ways:
@@ -10,14 +13,25 @@ import { trpc } from "@/lib/trpc";
  *    store picker. We intentionally do NOT render any link back into the app:
  *    this tab is meant to live on the counter, and the only way "out" is to
  *    close the tab.
+ *
+ * After every punch the kiosk shows the employee's week so far — hours worked
+ * against hours scheduled — and flags over-clocked time on the spot.
  */
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { STORES, type Store } from "../../../shared/hotspot";
-import { Building2, Clock, Delete, LogIn, LogOut, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  CalendarClock,
+  Clock,
+  Delete,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const LOGO_URL = "/manus-storage/hotspot-wordmark_de6a4f29.png";
+import { BrandMark } from "@/components/BrandMark";
 
 function isStore(value: string | undefined): value is Store {
   return !!value && (STORES as readonly string[]).includes(value);
@@ -40,8 +54,19 @@ function formatDate(d: Date) {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
+// Derive the week-summary shape from the server so the contract has exactly
+// one source of truth.
+type WeekSummary = inferRouterOutputs<AppRouter>["clock"]["punch"]["week"];
+
 type FlashState =
-  | { kind: "success"; action: "in" | "out"; name: string; at: Date; durationHours?: number }
+  | {
+      kind: "success";
+      action: "in" | "out";
+      name: string;
+      at: Date;
+      durationHours?: number | null;
+      week?: WeekSummary;
+    }
   | { kind: "error"; message: string };
 
 export default function ClockKiosk() {
@@ -49,13 +74,8 @@ export default function ClockKiosk() {
   const [, navigate] = useLocation();
   const initialStore = decodeStoreFromUrl(params?.store);
 
-  // If a manager is signed in we know exactly which store this kiosk belongs
-  // to — grab it from the scope endpoint. (CEO sessions are admins with no
-  // single store; they still get the manual picker.)
   const scopeQ = trpc.meta.myScope.useQuery(undefined, {
     retry: false,
-    // The kiosk is a public route, so this can fail when no session exists;
-    // suppress the error — we'll just fall through to the picker.
     throwOnError: false,
   });
   const sessionStore =
@@ -64,7 +84,6 @@ export default function ClockKiosk() {
       : null;
 
   const [store, setStore] = useState<Store | null>(initialStore);
-  // Once scope resolves, pre-fill the store automatically.
   useEffect(() => {
     if (!store && sessionStore && isStore(sessionStore)) {
       setStore(sessionStore as Store);
@@ -72,10 +91,7 @@ export default function ClockKiosk() {
     }
   }, [sessionStore, store, navigate]);
 
-  // Discourage navigating back into the manager app once the kiosk has been
-  // opened in this tab. We trap the popstate by pushing a sentinel entry on
-  // mount and re-pushing on every back attempt. This doesn't prevent closing
-  // the tab — only navigating away with the browser back button.
+  // Trap browser-back so the counter tablet can't navigate into the app.
   useEffect(() => {
     const sentinel = () => window.history.pushState({ kiosk: true }, "");
     sentinel();
@@ -83,15 +99,10 @@ export default function ClockKiosk() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState<FlashState | null>(null);
-  const [now, setNow] = useState(new Date());
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -107,16 +118,18 @@ export default function ClockKiosk() {
         action: data.action,
         name: data.employee.fullName,
         at: new Date(data.at),
-        durationHours: "durationHours" in data ? (data.durationHours as number | undefined) : undefined,
+        durationHours: data.durationHours,
+        week: data.week,
       });
       if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlash(null), 6000);
+      // Punch-out shows the week summary — give people time to read it.
+      flashTimer.current = setTimeout(() => setFlash(null), data.action === "out" ? 9000 : 6000);
     },
     onError: (err) => {
       setCode("");
       setFlash({ kind: "error", message: err.message ?? "Code not recognized." });
       if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlash(null), 4000);
+      flashTimer.current = setTimeout(() => setFlash(null), 5000);
     },
   });
 
@@ -156,20 +169,20 @@ export default function ClockKiosk() {
 
   if (!store) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white via-zinc-50 to-zinc-100">
+      <div className="min-h-screen bg-background">
         <div className="container max-w-5xl pt-12 pb-16">
           <div className="flex flex-col items-center text-center">
-            <div className="flex flex-col items-center gap-2">
-              <img src={LOGO_URL} alt="Hotspot Market" className="h-16 w-auto" />
-              <span className="inline-flex items-center rounded-full bg-zinc-900 px-3 py-1 text-xs font-semibold tracking-[0.18em] text-white">
-                MARKET
-              </span>
-            </div>
-            <div className="mt-8 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-red-600">
+            <BrandMark size="lg" />
+            <div className="mt-8 eyebrow flex items-center gap-2">
               <Clock className="h-4 w-4" /> Time Clock Kiosk
             </div>
-            <h1 className="mt-2 text-3xl font-bold">Select your store</h1>
-            <p className="mt-2 text-zinc-600">
+            <h1
+              className="mt-2 text-3xl font-bold tracking-tight"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Select your store
+            </h1>
+            <p className="mt-2 text-muted-foreground">
               Tap your location to start the time clock. The choice is remembered on this device.
             </p>
             <div className="mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
@@ -180,18 +193,18 @@ export default function ClockKiosk() {
                     setStore(s);
                     navigate(`/clock/${encodeURIComponent(s)}`);
                   }}
-                  className="group flex items-center justify-between rounded-2xl border-2 border-zinc-200 bg-white p-6 text-left shadow-sm transition-all hover:border-red-500 hover:shadow-md active:scale-[0.98]"
+                  className="group flex items-center justify-between rounded-2xl border-2 border-border bg-card p-6 text-left shadow-sm transition-all hover:border-primary hover:shadow-md"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-red-50 p-3 text-red-600 group-hover:bg-red-100">
+                    <div className="rounded-xl bg-primary/10 p-3 text-primary group-hover:bg-primary/15 transition-colors">
                       <Building2 className="h-6 w-6" />
                     </div>
                     <div>
-                      <div className="text-lg font-semibold text-zinc-900">{s}</div>
-                      <div className="text-sm text-zinc-500">Open kiosk</div>
+                      <div className="text-lg font-semibold">{s}</div>
+                      <div className="text-sm text-muted-foreground">Open kiosk</div>
                     </div>
                   </div>
-                  <div className="text-zinc-400 transition-transform group-hover:translate-x-1">
+                  <div className="text-muted-foreground transition-transform group-hover:translate-x-1">
                     →
                   </div>
                 </button>
@@ -206,41 +219,31 @@ export default function ClockKiosk() {
   const overlayClass =
     flash?.kind === "success"
       ? flash.action === "in"
-        ? "from-emerald-500/95 to-emerald-600/95"
-        : "from-sky-500/95 to-sky-600/95"
-      : "from-red-500/95 to-red-600/95";
+        ? "from-emerald-600/95 to-emerald-700/95"
+        : "from-sky-600/95 to-sky-700/95"
+      : "from-red-600/95 to-red-700/95";
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-white via-zinc-50 to-zinc-100">
+    <div className="relative min-h-screen overflow-hidden bg-background">
       {/* Header */}
       <div className="container max-w-3xl pt-8">
         <div className="flex items-center justify-between">
-          <div className="flex flex-col items-start gap-1">
-            <img src={LOGO_URL} alt="Hotspot Market" className="h-10 w-auto" />
-            <span className="inline-flex items-center rounded-full bg-zinc-900 px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.18em] text-white">
-              MARKET
-            </span>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-semibold tabular-nums text-zinc-900">
-              {formatClock(now)}
-            </div>
-            <div className="text-xs text-zinc-500">{formatDate(now)}</div>
-          </div>
+          <BrandMark size="md" className="items-start" />
+          <LiveClock />
         </div>
 
-        <div className="mt-6 flex items-center justify-between rounded-2xl border border-zinc-200 bg-white px-5 py-3 shadow-sm">
+        <div className="mt-6 flex items-center justify-between rounded-2xl border border-border bg-card px-5 py-3 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-red-50 p-2 text-red-600">
+            <div className="rounded-lg bg-primary/10 p-2 text-primary">
               <Building2 className="h-5 w-5" />
             </div>
             <div>
-              <div className="text-xs uppercase tracking-wider text-zinc-500">Punching at</div>
-              <div className="font-semibold text-zinc-900">{store}</div>
+              <div className="kpi-label">Punching at</div>
+              <div className="font-semibold">{store}</div>
             </div>
           </div>
           {sessionStore ? (
-            <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               Locked
             </span>
           ) : (
@@ -250,7 +253,7 @@ export default function ClockKiosk() {
                 setCode("");
                 navigate("/clock");
               }}
-              className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline"
+              className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
             >
               Change store
             </button>
@@ -260,15 +263,20 @@ export default function ClockKiosk() {
 
       {/* Body */}
       <div className="container max-w-3xl pt-8 pb-12">
-        <Card className="border-zinc-200 shadow-md">
+        <Card className="surface-card border-0">
           <CardContent className="px-6 py-8">
             <div className="flex flex-col items-center">
-              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-red-600">
+              <div className="eyebrow flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4" /> Enter your 4-digit code
               </div>
-              <h1 className="mt-2 text-3xl font-bold">Clock In or Out</h1>
-              <p className="mt-1 text-zinc-600">
-                The system will punch you in if you're out, or out if you're in.
+              <h1
+                className="mt-2 text-3xl font-bold tracking-tight"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                Clock In or Out
+              </h1>
+              <p className="mt-1 text-muted-foreground">
+                The system punches you in if you're out, or out if you're in.
               </p>
 
               <div className="mt-6 flex items-center gap-4">
@@ -276,10 +284,8 @@ export default function ClockKiosk() {
                   <div
                     key={i}
                     className={cn(
-                      "h-5 w-5 rounded-full border-2 transition-all",
-                      filled
-                        ? "scale-110 border-red-500 bg-red-500"
-                        : "border-zinc-300 bg-white",
+                      "h-5 w-5 rounded-full border-2 transition-all duration-150",
+                      filled ? "scale-110 border-primary bg-primary" : "border-input bg-card",
                     )}
                   />
                 ))}
@@ -298,13 +304,13 @@ export default function ClockKiosk() {
                 </KeyButton>
               </div>
               {punch.isPending && (
-                <div className="mt-4 text-sm text-zinc-500">Checking…</div>
+                <div className="mt-4 text-sm text-muted-foreground">Checking…</div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-zinc-400">
+        <p className="mt-6 text-center text-xs text-muted-foreground/70">
           Forget your code? Ask your manager — codes are managed from each employee profile.
         </p>
       </div>
@@ -317,10 +323,7 @@ export default function ClockKiosk() {
               "pointer-events-auto w-full max-w-md rounded-3xl bg-gradient-to-br p-8 text-white shadow-2xl",
               overlayClass,
             )}
-            style={{
-              animation:
-                "kiosk-flash 220ms cubic-bezier(0.23, 1, 0.32, 1)",
-            }}
+            style={{ animation: "kiosk-flash 220ms cubic-bezier(0.23, 1, 0.32, 1)" }}
           >
             {flash.kind === "success" ? (
               <div className="text-center">
@@ -338,17 +341,51 @@ export default function ClockKiosk() {
                 <div className="mt-2 text-white/90 tabular-nums">
                   {formatClock(flash.at)} · {formatDate(flash.at)}
                 </div>
-                {flash.action === "out" && flash.durationHours !== undefined && (
-                  <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm">
-                    Shift: {flash.durationHours.toFixed(2)} h
+
+                {flash.action === "out" &&
+                flash.durationHours !== undefined &&
+                flash.durationHours !== null ? (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm tabular-nums">
+                    This shift: {fmtDuration(flash.durationHours)}
                   </div>
-                )}
+                ) : null}
+
+                {flash.action === "in" && flash.week && flash.week.todayShifts.length > 0 ? (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm">
+                    <CalendarClock className="h-4 w-4" />
+                    Today:{" "}
+                    {flash.week.todayShifts
+                      .map((s) =>
+                        s.startLabel && s.endLabel
+                          ? `${s.startLabel} – ${s.endLabel}`
+                          : `${s.hours.toFixed(1)}h`,
+                      )
+                      .join(", ")}
+                  </div>
+                ) : null}
+
+                {flash.week && flash.week.scheduledHours > 0 ? (
+                  <div className="mt-4 rounded-2xl bg-white/10 px-4 py-3 text-sm">
+                    <div className="flex items-center justify-between tabular-nums">
+                      <span className="text-white/85">This week</span>
+                      <span className="font-semibold">
+                        {flash.week.workedHours.toFixed(1)}h of{" "}
+                        {flash.week.scheduledHours.toFixed(1)}h scheduled
+                      </span>
+                    </div>
+                    {flash.week.overClocked ? (
+                      <div className="mt-2 flex items-center justify-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {flash.week.overClockedBy.toFixed(1)}h over schedule — your manager can
+                        see this
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="text-center">
-                <div className="text-sm font-semibold uppercase tracking-[0.18em]">
-                  Try Again
-                </div>
+                <div className="text-sm font-semibold uppercase tracking-[0.18em]">Try Again</div>
                 <div className="mt-1 text-xl font-semibold">{flash.message}</div>
               </div>
             )}
@@ -366,6 +403,30 @@ export default function ClockKiosk() {
   );
 }
 
+/**
+ * Ticking header clock, isolated in its own component so the once-per-second
+ * re-render stays here instead of reconciling the whole kiosk tree — this
+ * page runs 24/7 on the counter tablet.
+ */
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="text-right">
+      <div
+        className="text-3xl font-semibold tabular-nums"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {formatClock(now)}
+      </div>
+      <div className="text-xs text-muted-foreground">{formatDate(now)}</div>
+    </div>
+  );
+}
+
 function KeyButton({
   children,
   onClick,
@@ -379,10 +440,10 @@ function KeyButton({
       variant="outline"
       size="lg"
       className={cn(
-        "h-16 text-2xl font-semibold transition-transform active:scale-95 select-none",
+        "h-16 text-2xl font-semibold select-none",
         variant === "primary"
-          ? "bg-zinc-50 hover:bg-zinc-100 border-zinc-200"
-          : "bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-600",
+          ? "bg-secondary hover:bg-accent border-border"
+          : "bg-card hover:bg-secondary border-border text-muted-foreground",
       )}
       {...rest}
     >

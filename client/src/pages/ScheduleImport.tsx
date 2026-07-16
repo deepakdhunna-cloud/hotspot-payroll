@@ -1,3 +1,11 @@
+/**
+ * Schedule import — upload a Homebase schedule (PDF or photo), read every
+ * employee's shifts day by day, review totals, quick-add anyone new, and
+ * commit the week's schedule to payroll in one step.
+ */
+import { PageHeader } from "@/components/PageHeader";
+import { WeekNavigator } from "@/components/WeekNavigator";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,66 +24,85 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { STORE_ABBR, fmtWeekRange } from "@/lib/format";
+import { fmtDateTime, inProgressPayWeekStart, shortDayLabel } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
-import { fmtWeekRange } from "@/lib/format";
 import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  Upload,
-  CheckCircle2,
   AlertCircle,
+  CheckCircle2,
   FileImage,
   FileText,
-  X,
+  History,
+  Upload,
   UserPlus,
+  X,
   Zap,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { PageHeader } from "@/components/PageHeader";
 
-// Hotspot pay period: Thursday – Wednesday. Schedule Import defaults to the
-// in-progress (upcoming/current) week so managers can upload as soon as they
-// publish in Homebase.
-function startOfWeek(date: Date): Date {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay();
-  const diff = (day - 4 + 7) % 7;
-  d.setUTCDate(d.getUTCDate() - diff);
-  return d;
-}
+type ParsedDay = {
+  ref: string;
+  date: Date | null;
+  startLabel: string | null;
+  endLabel: string | null;
+  hours: number;
+};
 
 type ParsedRow = {
   extractedName: string;
   scheduledHours: number;
+  days: ParsedDay[];
   matchedEmployeeId: number | null;
   matchedFullName: string | null;
   matchedStore: string | null;
 };
 
+const ROLE_OPTIONS = [
+  "Manager",
+  "Assistant Manager",
+  "Cashier",
+  "Kitchen Manager",
+  "Cook",
+  "Janitorial",
+];
+
 export default function ScheduleImport() {
-  const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
-  const [storeFilter, setStoreFilter] = useState<string>("all");
+  const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
+  const [schedStore, setSchedStore] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [rows, setRows] = useState<ParsedRow[] | null>(null);
+  const [importId, setImportId] = useState<number | null>(null);
+  // The week the rows were parsed against. Shift dates are resolved into THIS
+  // week server-side, so commit must use it even if the navigator has since
+  // moved — otherwise scheduled hours and shift dates would land in
+  // different weeks.
+  const [parsedWeek, setParsedWeek] = useState<Date | null>(null);
   const [overrides, setOverrides] = useState<Record<number, number | null>>({});
   const [hourOverrides, setHourOverrides] = useState<Record<number, string>>({});
+  const [qaRole, setQaRole] = useState<Record<number, string>>({});
+  const [qaRate, setQaRate] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scopeQ = trpc.meta.myScope.useQuery();
-  const employeesQ = trpc.employees.list.useQuery({
-    store: storeFilter === "all" ? undefined : (storeFilter as any),
-  });
-
   const stores = scopeQ.data?.stores ?? [];
+  // Single-store managers are always importing for their store.
+  const effectiveStore = stores.length === 1 ? stores[0] : schedStore;
+
+  const employeesQ = trpc.employees.list.useQuery({
+    store: effectiveStore ? (effectiveStore as any) : undefined,
+  });
   const employeesList = employeesQ.data ?? [];
+
+  const importsQ = trpc.schedule.imports.useQuery({ limit: 8 });
+  const utils = trpc.useUtils();
 
   const parseM = trpc.schedule.parseUpload.useMutation({
     onSuccess: (data) => {
-      setRows(data.rows);
+      setRows(data.rows as ParsedRow[]);
+      setImportId(data.importId);
+      setParsedWeek(new Date(data.weekStart));
       const initialOverrides: Record<number, number | null> = {};
       const initialHours: Record<number, string> = {};
       data.rows.forEach((r, i) => {
@@ -84,30 +111,21 @@ export default function ScheduleImport() {
       });
       setOverrides(initialOverrides);
       setHourOverrides(initialHours);
+      setQaRole({});
+      setQaRate({});
       const matched = data.rows.filter((r) => r.matchedEmployeeId).length;
       toast.success(
-        `Extracted ${data.totalExtracted} names — ${matched} auto-matched.`,
+        `Read ${data.totalExtracted} employees, ${data.totalHours.toFixed(1)} scheduled hours — ${matched} auto-matched.`,
       );
+      utils.schedule.imports.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const utils = trpc.useUtils();
-
   const quickCreateM = trpc.employees.quickCreate.useMutation({
-    onSuccess: async (data, vars) => {
+    onSuccess: async (data) => {
       await utils.employees.list.invalidate();
-      const fresh = await utils.employees.list.fetch({
-        store: storeFilter === "all" ? undefined : (storeFilter as any),
-      });
-      // Auto-match this newly created employee to the row that triggered it.
-      const idx = (rows ?? []).findIndex(
-        (r) => r.extractedName === vars.fullName && !overrides[(rows ?? []).indexOf(r)],
-      );
-      if (idx >= 0) {
-        setOverrides((o) => ({ ...o, [idx]: data.id }));
-      }
-      // Also fix any other unmatched rows that share the same name.
+      // Link every unmatched row with this exact name to the new employee.
       setOverrides((o) => {
         const next = { ...o };
         (rows ?? []).forEach((r, i) => {
@@ -116,28 +134,27 @@ export default function ScheduleImport() {
         return next;
       });
       toast.success(`Added ${data.fullName} to ${data.storeLocation}`);
-      // Keep fresh list available for the select dropdown.
-      void fresh;
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const saveScheduleM = trpc.payroll.saveSchedule.useMutation({
-    onSuccess: ({ saved }) => {
-      toast.success(`Saved schedules for ${saved} employee${saved === 1 ? "" : "s"}.`);
+  const commitM = trpc.schedule.commit.useMutation({
+    onSuccess: ({ saved, skipped }) => {
+      toast.success(
+        `Schedule committed for ${saved} employee${saved === 1 ? "" : "s"}.` +
+          (skipped.length > 0 ? ` ${skipped.length} skipped (out of scope).` : ""),
+      );
       utils.payroll.week.invalidate();
       utils.dashboard.summary.invalidate();
+      utils.schedule.imports.invalidate();
+      utils.schedule.week.invalidate();
       setRows(null);
       setFile(null);
+      setImportId(null);
+      setParsedWeek(null);
     },
     onError: (e) => toast.error(e.message),
   });
-
-  const shiftWeek = (delta: number) => {
-    const d = new Date(weekStart);
-    d.setUTCDate(d.getUTCDate() + delta * 7);
-    setWeekStart(d);
-  };
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -158,15 +175,21 @@ export default function ScheduleImport() {
       return;
     }
     const buf = await file.arrayBuffer();
-    const base64 = btoa(
-      new Uint8Array(buf).reduce((acc, b) => acc + String.fromCharCode(b), ""),
-    );
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(
+        null,
+        Array.from(bytes.subarray(i, i + chunk)),
+      );
+    }
     parseM.mutate({
-      fileBase64: base64,
+      fileBase64: btoa(binary),
       mimeType: file.type,
       filename: file.name,
       weekStart,
-      store: storeFilter === "all" ? undefined : (storeFilter as any),
+      store: effectiveStore ? (effectiveStore as any) : undefined,
     });
   };
 
@@ -175,29 +198,46 @@ export default function ScheduleImport() {
     const entries = rows
       .map((r, i) => {
         const empId = overrides[i];
-        const hrsRaw = hourOverrides[i] ?? String(r.scheduledHours);
-        const hrs = Number(hrsRaw);
-        if (!empId || isNaN(hrs) || hrs < 0) return null;
-        return { employeeId: empId, scheduledHours: hrs };
+        const hrs = Number(hourOverrides[i] ?? String(r.scheduledHours));
+        if (!empId || isNaN(hrs) || hrs < 0 || hrs > 168) return null;
+        return {
+          employeeId: empId,
+          scheduledHours: hrs,
+          shifts: r.days.map((d) => ({
+            date: d.date ? new Date(d.date) : null,
+            startLabel: d.startLabel,
+            endLabel: d.endLabel,
+            hours: Math.min(24, Math.max(0, d.hours)),
+          })),
+        };
       })
-      .filter(Boolean) as { employeeId: number; scheduledHours: number }[];
+      .filter(Boolean) as {
+      employeeId: number;
+      scheduledHours: number;
+      shifts: { date: Date | null; startLabel: string | null; endLabel: string | null; hours: number }[];
+    }[];
     if (entries.length === 0) {
       toast.error("Nothing to import — match at least one employee.");
       return;
     }
-    saveScheduleM.mutate({ weekStart, entries });
+    // Commit against the week the file was parsed for, not the navigator's
+    // current position.
+    commitM.mutate({ weekStart: parsedWeek ?? weekStart, importId, entries });
   };
 
-  const matchedCount = useMemo(() => {
-    if (!rows) return 0;
-    return Object.values(overrides).filter(Boolean).length;
-  }, [rows, overrides]);
+  const matchedCount = useMemo(
+    () => Object.values(overrides).filter(Boolean).length,
+    [overrides],
+  );
 
-  // Determine the default store to assign for Quick Add.
-  const quickAddStore = useMemo<string | null>(() => {
-    if (storeFilter !== "all") return storeFilter;
-    return stores[0] ?? null;
-  }, [storeFilter, stores]);
+  const totalHours = useMemo(() => {
+    if (!rows) return 0;
+    return rows.reduce((sum, r, i) => {
+      if (!overrides[i]) return sum;
+      const hrs = Number(hourOverrides[i] ?? String(r.scheduledHours));
+      return sum + (isNaN(hrs) ? 0 : hrs);
+    }, 0);
+  }, [rows, overrides, hourOverrides]);
 
   const unmatchedIndices = useMemo(() => {
     if (!rows) return [];
@@ -207,27 +247,33 @@ export default function ScheduleImport() {
   }, [rows, overrides]);
 
   const quickAddOne = (idx: number) => {
-    if (!rows || !quickAddStore) return;
+    if (!rows || !effectiveStore) return;
     const r = rows[idx];
+    const rate = Number(qaRate[idx]);
     quickCreateM.mutate({
       fullName: r.extractedName.trim(),
-      storeLocation: quickAddStore as any,
+      storeLocation: effectiveStore as any,
+      role: (qaRole[idx] ?? "Cashier") as any,
+      payRate: isNaN(rate) || rate < 0 ? undefined : rate,
     });
   };
 
   const quickAddAll = async () => {
-    if (!rows || !quickAddStore) return;
-    for (const i of unmatchedIndices) {
-      const r = rows[i];
-      try {
-        await quickCreateM.mutateAsync({
+    if (!rows || !effectiveStore) return;
+    // Fire all creates in parallel — each success re-links its rows via the
+    // mutation's onSuccess; failures surface via the onError toast.
+    await Promise.allSettled(
+      unmatchedIndices.map((i) => {
+        const r = rows[i];
+        const rate = Number(qaRate[i]);
+        return quickCreateM.mutateAsync({
           fullName: r.extractedName.trim(),
-          storeLocation: quickAddStore as any,
+          storeLocation: effectiveStore as any,
+          role: (qaRole[i] ?? "Cashier") as any,
+          payRate: isNaN(rate) || rate < 0 ? undefined : rate,
         });
-      } catch {
-        /* surfaced via toast onError */
-      }
-    }
+      }),
+    );
   };
 
   return (
@@ -236,28 +282,16 @@ export default function ScheduleImport() {
         eyebrow="Schedule import"
         icon={<Upload className="h-5 w-5" />}
         title="Import Homebase schedule"
-        description="Drop a PDF or photo of the weekly schedule. Names and scheduled hours are read automatically."
+        description="Drop a PDF or photo. Every employee's shifts are read day by day, hours are totalled, and new names can be added in one click."
         actions={
           <>
-            <div className="flex items-center gap-1 rounded-lg border bg-card/60 p-1">
-              <Button variant="ghost" size="icon" onClick={() => shiftWeek(-1)} className="h-8 w-8">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-2 px-2 text-sm font-medium">
-                <CalendarDays className="h-4 w-4 text-primary" />
-                {fmtWeekRange(weekStart)}
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => shiftWeek(1)} className="h-8 w-8">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-            {stores.length > 1 && (
-              <Select value={storeFilter} onValueChange={setStoreFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="All stores" />
+            <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+            {stores.length > 1 ? (
+              <Select value={schedStore || undefined} onValueChange={setSchedStore}>
+                <SelectTrigger className="h-9 w-52 bg-card shadow-sm">
+                  <SelectValue placeholder="Schedule is for store…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All my stores</SelectItem>
                   {stores.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
@@ -265,12 +299,13 @@ export default function ScheduleImport() {
                   ))}
                 </SelectContent>
               </Select>
-            )}
+            ) : null}
           </>
         }
       />
 
-      <Card>
+      {/* Step 1 — upload */}
+      <Card className="surface-card border-0">
         <CardContent className="p-6">
           <div
             onDragOver={(e) => {
@@ -301,7 +336,8 @@ export default function ScheduleImport() {
                 <div>
                   <p className="font-medium">Drop your Homebase schedule here</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    PDF, PNG, JPG or WEBP &nbsp;·&nbsp; up to 8MB
+                    PDF, PNG, JPG or WEBP &nbsp;·&nbsp; up to 8MB &nbsp;·&nbsp; week of{" "}
+                    {fmtWeekRange(weekStart)}
                   </p>
                 </div>
               </div>
@@ -314,9 +350,7 @@ export default function ScheduleImport() {
                 )}
                 <div className="text-left">
                   <p className="font-medium">{file.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(file.size / 1024).toFixed(0)} KB
-                  </p>
+                  <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -325,6 +359,7 @@ export default function ScheduleImport() {
                     e.stopPropagation();
                     setFile(null);
                     setRows(null);
+                    setImportId(null);
                   }}
                 >
                   <X className="h-4 w-4" />
@@ -333,8 +368,15 @@ export default function ScheduleImport() {
             )}
           </div>
 
-          <div className="flex justify-end mt-4">
-            <Button onClick={startParse} disabled={!file || parseM.isPending} className="shadow-lg">
+          <div className="flex items-center justify-between gap-3 mt-4">
+            <p className="text-xs text-muted-foreground">
+              {stores.length > 1 && !effectiveStore
+                ? "Pick which store this schedule is for so new names land in the right place."
+                : effectiveStore
+                  ? `New names will be added to ${effectiveStore}.`
+                  : ""}
+            </p>
+            <Button onClick={startParse} disabled={!file || parseM.isPending}>
               <Upload className="h-4 w-4 mr-2" />
               {parseM.isPending ? "Reading schedule…" : "Extract schedule"}
             </Button>
@@ -342,99 +384,195 @@ export default function ScheduleImport() {
         </CardContent>
       </Card>
 
+      {/* Step 2 — new employees found */}
+      {rows && unmatchedIndices.length > 0 ? (
+        <Card className="surface-card border-0 border-l-4 border-l-warning rise-in">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-warning" />
+              {unmatchedIndices.length} new name{unmatchedIndices.length === 1 ? "" : "s"} on this
+              schedule
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              These people aren't on the roster yet. Set a role and pay rate (both can be edited
+              later on their profile) and add them — their scheduled hours import automatically.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {unmatchedIndices.map((i) => (
+              <div
+                key={i}
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2"
+              >
+                <span className="font-medium text-sm min-w-40">{rows[i].extractedName}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {Number(hourOverrides[i] ?? rows[i].scheduledHours).toFixed(1)}h scheduled
+                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Select
+                    value={qaRole[i] ?? "Cashier"}
+                    onValueChange={(v) => setQaRole((m) => ({ ...m, [i]: v }))}
+                  >
+                    <SelectTrigger className="h-8 w-40 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLE_OPTIONS.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    placeholder="$/hr"
+                    value={qaRate[i] ?? ""}
+                    onChange={(e) => setQaRate((m) => ({ ...m, [i]: e.target.value }))}
+                    className="h-8 w-24 text-xs text-right tabular-nums"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    disabled={quickCreateM.isPending || !effectiveStore}
+                    onClick={() => quickAddOne(i)}
+                  >
+                    <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Add
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {unmatchedIndices.length > 1 ? (
+              <div className="flex justify-end pt-1">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={quickAddAll}
+                  disabled={quickCreateM.isPending || !effectiveStore}
+                >
+                  <Zap className="h-4 w-4 mr-1.5 text-primary" />
+                  {quickCreateM.isPending
+                    ? "Adding…"
+                    : `Add all ${unmatchedIndices.length} to ${effectiveStore || "store"}`}
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Step 3 — review & commit */}
       {rows && (
-        <Card>
+        <Card className="surface-card border-0 rise-in">
           <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle>Review extracted schedule</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                {rows.length} row{rows.length === 1 ? "" : "s"} extracted &middot;{" "}
-                <span className="text-emerald-400">{matchedCount} matched</span> &middot;{" "}
-                <span className="text-amber-400">{rows.length - matchedCount} need review</span>
+                {rows.length} row{rows.length === 1 ? "" : "s"} ·{" "}
+                <span className="text-success font-medium">{matchedCount} matched</span> ·{" "}
+                <span className={rows.length - matchedCount > 0 ? "text-warning font-medium" : ""}>
+                  {rows.length - matchedCount} need review
+                </span>{" "}
+                · <span className="font-medium tabular-nums">{totalHours.toFixed(1)}h total</span>{" "}
+                · commits to week of {fmtWeekRange(parsedWeek ?? weekStart)}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {unmatchedIndices.length > 0 && quickAddStore && (
-                <Button
-                  variant="secondary"
-                  onClick={quickAddAll}
-                  disabled={quickCreateM.isPending}
-                >
-                  <Zap className="h-4 w-4 mr-2 text-primary" />
-                  {quickCreateM.isPending
-                    ? "Adding…"
-                    : `Quick add ${unmatchedIndices.length} to ${quickAddStore}`}
-                </Button>
-              )}
-              <Button onClick={commit} disabled={saveScheduleM.isPending}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                {saveScheduleM.isPending ? "Saving…" : `Import ${matchedCount} schedules`}
-              </Button>
-            </div>
+            <Button onClick={commit} disabled={commitM.isPending || matchedCount === 0}>
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              {commitM.isPending
+                ? "Committing…"
+                : `Commit schedule (${matchedCount} employee${matchedCount === 1 ? "" : "s"})`}
+            </Button>
           </CardHeader>
           <CardContent className="px-0">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="w-28">Status</TableHead>
                     <TableHead>Extracted name</TableHead>
                     <TableHead>Match to employee</TableHead>
-                    <TableHead className="text-right w-[150px]">Scheduled hours</TableHead>
+                    <TableHead>Shifts (day by day)</TableHead>
+                    <TableHead className="text-right w-[130px]">Week total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row, i) => {
                     const matchedId = overrides[i];
+                    const unresolvedDays = row.days.filter((d) => !d.date).length;
                     return (
                       <TableRow key={i}>
                         <TableCell>
                           {matchedId ? (
-                            <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                              <CheckCircle2 className="h-3 w-3 mr-1" /> Matched
-                            </Badge>
+                            <span className="chip-good">
+                              <CheckCircle2 className="h-3 w-3" /> Matched
+                            </span>
                           ) : (
-                            <Badge className="bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                              <AlertCircle className="h-3 w-3 mr-1" /> Review
-                            </Badge>
+                            <span className="chip-warn">
+                              <AlertCircle className="h-3 w-3" /> Review
+                            </span>
                           )}
                         </TableCell>
                         <TableCell className="font-medium">{row.extractedName}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Select
-                              value={matchedId ? String(matchedId) : "skip"}
-                              onValueChange={(v) =>
-                                setOverrides((o) => ({
-                                  ...o,
-                                  [i]: v === "skip" ? null : Number(v),
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="max-w-[260px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="skip">— Skip this row —</SelectItem>
-                                {employeesList.map((e) => (
-                                  <SelectItem key={e.id} value={String(e.id)}>
-                                    {e.fullName} · {e.storeLocation}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {!matchedId && quickAddStore && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-9 shrink-0"
-                                disabled={quickCreateM.isPending}
-                                onClick={() => quickAddOne(i)}
-                                title={`Create "${row.extractedName}" at ${quickAddStore}`}
-                              >
-                                <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Quick add
-                              </Button>
+                          <Select
+                            value={matchedId ? String(matchedId) : "skip"}
+                            onValueChange={(v) =>
+                              setOverrides((o) => ({
+                                ...o,
+                                [i]: v === "skip" ? null : Number(v),
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="max-w-[240px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="skip">— Skip this row —</SelectItem>
+                              {employeesList.map((e) => (
+                                <SelectItem key={e.id} value={String(e.id)}>
+                                  {e.fullName} · {STORE_ABBR[e.storeLocation] ?? e.storeLocation}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1.5 max-w-[380px]">
+                            {row.days.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">
+                                no shift detail
+                              </span>
+                            ) : (
+                              row.days.map((d, di) => (
+                                <Badge
+                                  key={di}
+                                  variant="secondary"
+                                  className="font-normal tabular-nums text-[11px]"
+                                  title={
+                                    d.startLabel && d.endLabel
+                                      ? `${d.startLabel} – ${d.endLabel}`
+                                      : undefined
+                                  }
+                                >
+                                  {d.date ? shortDayLabel(new Date(d.date)) : d.ref}
+                                  {" · "}
+                                  {d.hours.toFixed(1)}h
+                                </Badge>
+                              ))
                             )}
+                            {unresolvedDays > 0 ? (
+                              <span
+                                className="chip-warn"
+                                title="These days couldn't be placed in the selected week — check the week selector."
+                              >
+                                <AlertCircle className="h-3 w-3" />
+                                {unresolvedDays} day{unresolvedDays === 1 ? "" : "s"} unresolved
+                              </span>
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -442,6 +580,7 @@ export default function ScheduleImport() {
                             type="number"
                             step="0.25"
                             min="0"
+                            max="168"
                             value={hourOverrides[i] ?? String(row.scheduledHours)}
                             onChange={(e) =>
                               setHourOverrides((h) => ({ ...h, [i]: e.target.value }))
@@ -459,18 +598,74 @@ export default function ScheduleImport() {
         </Card>
       )}
 
+      {/* How it works + import history */}
       {!rows && (
-        <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            <p className="font-medium text-foreground mb-2">How this works</p>
-            <ol className="list-decimal list-inside space-y-1">
-              <li>Export the weekly schedule from Homebase as PDF, or take a clear photo of it.</li>
-              <li>Drop the file above and click <span className="text-foreground">Extract schedule</span>.</li>
-              <li>Review the auto-matched employees and click Import.</li>
-              <li>Scheduled hours now appear on the dashboard for over/under tracking.</li>
-            </ol>
-          </CardContent>
-        </Card>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="surface-card border-0">
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground mb-2">How this works</p>
+              <ol className="list-decimal list-inside space-y-1.5">
+                <li>Export the weekly schedule from Homebase as PDF, or take a clear photo.</li>
+                <li>
+                  Drop the file above and click{" "}
+                  <span className="text-foreground font-medium">Extract schedule</span> — every
+                  shift is read day by day and hours are totalled per person.
+                </li>
+                <li>New names get flagged so you can add them to the roster in one click.</li>
+                <li>
+                  Commit: scheduled hours flow to the dashboard and payroll, and daily coverage
+                  shows on the dashboard's day strip.
+                </li>
+              </ol>
+            </CardContent>
+          </Card>
+
+          <Card className="surface-card border-0">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <History className="h-4 w-4 text-muted-foreground" /> Recent imports
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {importsQ.isLoading ? (
+                <p className="text-sm text-muted-foreground py-3 text-center">Loading…</p>
+              ) : (importsQ.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground py-3 text-center">
+                  No imports yet — your upload history will appear here.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {(importsQ.data ?? []).map((imp) => (
+                    <li key={imp.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{imp.filename}</p>
+                        <p className="text-xs text-muted-foreground">
+                          week of {fmtWeekRange(new Date(imp.weekStart))} ·{" "}
+                          {imp.storeLocation
+                            ? (STORE_ABBR[imp.storeLocation] ?? imp.storeLocation)
+                            : "all stores"}{" "}
+                          · {fmtDateTime(imp.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {Number(imp.totalHours).toFixed(0)}h
+                        </span>
+                        {imp.status === "committed" ? (
+                          <span className="chip-good">
+                            <CheckCircle2 className="h-3 w-3" /> committed
+                          </span>
+                        ) : (
+                          <span className="chip-neutral">parsed only</span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );

@@ -160,3 +160,101 @@ export const pinCodes = mysqlTable(
 
 export type PinCode = typeof pinCodes.$inferSelect;
 export type InsertPinCode = typeof pinCodes.$inferInsert;
+
+/**
+ * One scheduled shift for one employee on one calendar day.
+ * Rows are produced by the schedule import (day-level extraction) or manual
+ * edits, and are replaced as a set per (employeeId, weekStart) on commit.
+ */
+export const scheduleShifts = mysqlTable(
+  "schedule_shifts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    employeeId: int("employeeId").notNull(),
+    storeLocation: varchar("storeLocation", { length: 64 }).notNull(),
+    /** Thursday-anchored pay-week start (00:00 UTC). */
+    weekStart: timestamp("weekStart").notNull(),
+    /** The calendar day of the shift (00:00 UTC). */
+    shiftDate: timestamp("shiftDate").notNull(),
+    /** Shift times as printed on the schedule, e.g. "9:00am". Optional. */
+    startLabel: varchar("startLabel", { length: 32 }),
+    endLabel: varchar("endLabel", { length: 32 }),
+    hours: decimal("hours", { precision: 5, scale: 2 }).notNull(),
+    source: mysqlEnum("source", ["import", "manual"]).default("import").notNull(),
+    /** Link back to the schedule_imports row that produced this shift. */
+    importId: int("importId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    employeeWeekIdx: index("idx_schedule_shifts_emp_week").on(
+      table.employeeId,
+      table.weekStart,
+    ),
+    storeWeekIdx: index("idx_schedule_shifts_store_week").on(
+      table.storeLocation,
+      table.weekStart,
+    ),
+  }),
+);
+
+export type ScheduleShift = typeof scheduleShifts.$inferSelect;
+export type InsertScheduleShift = typeof scheduleShifts.$inferInsert;
+
+/**
+ * Audit trail of schedule uploads: who uploaded what file for which week,
+ * what was extracted, and whether it was committed to payroll.
+ */
+export const scheduleImports = mysqlTable(
+  "schedule_imports",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** PIN scope that performed the upload ("ceo" or a store name). */
+    uploadedBy: varchar("uploadedBy", { length: 64 }).notNull(),
+    storeLocation: varchar("storeLocation", { length: 64 }),
+    weekStart: timestamp("weekStart").notNull(),
+    fileUrl: text("fileUrl").notNull(),
+    filename: varchar("filename", { length: 200 }).notNull(),
+    status: mysqlEnum("status", ["parsed", "committed"]).default("parsed").notNull(),
+    employeeCount: int("employeeCount").default(0).notNull(),
+    matchedCount: int("matchedCount").default(0).notNull(),
+    unmatchedCount: int("unmatchedCount").default(0).notNull(),
+    totalHours: decimal("totalHours", { precision: 8, scale: 2 }).notNull().default("0"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    committedAt: timestamp("committedAt"),
+  },
+  (table) => ({
+    weekIdx: index("idx_schedule_imports_week").on(table.weekStart),
+  }),
+);
+
+export type ScheduleImport = typeof scheduleImports.$inferSelect;
+export type InsertScheduleImport = typeof scheduleImports.$inferInsert;
+
+/**
+ * Append-only audit log. Every sensitive mutation writes a row so data is
+ * never silently lost: deletes keep a JSON snapshot of what was removed.
+ */
+export const auditLog = mysqlTable(
+  "audit_log",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** PIN scope that performed the action ("ceo", a store name, or "kiosk"). */
+    actorScope: varchar("actorScope", { length: 64 }).notNull(),
+    /** Dotted action name, e.g. "employees.delete", "auth.pin_failed". */
+    action: varchar("action", { length: 64 }).notNull(),
+    entityType: varchar("entityType", { length: 64 }),
+    entityId: int("entityId"),
+    /** JSON payload with action detail / snapshots of removed data. */
+    detail: text("detail"),
+    ip: varchar("ip", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    createdIdx: index("idx_audit_log_created").on(table.createdAt),
+    entityIdx: index("idx_audit_log_entity").on(table.entityType, table.entityId),
+  }),
+);
+
+export type AuditLogEntry = typeof auditLog.$inferSelect;
+export type InsertAuditLogEntry = typeof auditLog.$inferInsert;

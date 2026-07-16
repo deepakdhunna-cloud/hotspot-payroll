@@ -24,6 +24,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -40,83 +44,100 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
-  /* Hotspot Market red */
-  --brand-red: oklch(0.628 0.243 27.5);
-  --brand-red-deep: oklch(0.55 0.235 27.5);
-  --primary: var(--brand-red);
-  --primary-foreground: oklch(0.985 0 0);
-  --sidebar-primary: var(--brand-red);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --chart-1: oklch(0.7 0.22 27.5);
-  --chart-2: oklch(0.62 0.18 50);
-  --chart-3: oklch(0.78 0.16 80);
-  --chart-4: oklch(0.65 0.12 200);
-  --chart-5: oklch(0.55 0.1 260);
-  --radius: 0.6rem;
-
-  /* Light theme (used inside .light class only; dark is default) */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.18 0.01 270);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.01 270);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.01 270);
-  --secondary: oklch(0.97 0.005 270);
-  --secondary-foreground: oklch(0.3 0.01 270);
-  --muted: oklch(0.96 0.005 270);
-  --muted-foreground: oklch(0.5 0.012 270);
-  --accent: oklch(0.96 0.005 270);
-  --accent-foreground: oklch(0.18 0.01 270);
-  --destructive: var(--brand-red);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.9 0.005 270);
-  --input: oklch(0.9 0.005 270);
-  --ring: var(--brand-red);
-  --sidebar: oklch(0.98 0 0);
-  --sidebar-foreground: oklch(0.18 0.01 270);
-  --sidebar-accent: oklch(0.96 0.005 270);
-  --sidebar-accent-foreground: oklch(0.18 0.01 270);
-  --sidebar-border: oklch(0.9 0.005 270);
-  --sidebar-ring: var(--brand-red);
-}
-
-.dark {
-  --brand-red: oklch(0.66 0.245 27.5);
-  --brand-red-deep: oklch(0.55 0.235 27.5);
+  /* ------------------------------------------------------------------ */
+  /* Hotspot Market design language                                      */
+  /*  - deep signal red as the single brand accent                       */
+  /*  - warm paper-white surfaces, ink-dark type                         */
+  /*  - status colors reserved for state (never decoration)              */
+  /* ------------------------------------------------------------------ */
+  --brand-red: oklch(0.52 0.2 27);
+  --brand-red-bright: oklch(0.628 0.243 27.5);
   --primary: var(--brand-red);
   --primary-foreground: oklch(0.99 0 0);
   --sidebar-primary: var(--brand-red);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  /* Near-black professional palette */
-  --background: oklch(0.13 0.005 270);
-  --foreground: oklch(0.95 0.005 80);
-  --card: oklch(0.175 0.006 270);
-  --card-foreground: oklch(0.95 0.005 80);
-  --popover: oklch(0.175 0.006 270);
-  --popover-foreground: oklch(0.95 0.005 80);
-  --secondary: oklch(0.22 0.006 270);
-  --secondary-foreground: oklch(0.92 0.005 80);
-  --muted: oklch(0.21 0.006 270);
-  --muted-foreground: oklch(0.68 0.015 270);
-  --accent: oklch(0.24 0.008 270);
-  --accent-foreground: oklch(0.97 0.005 80);
-  --destructive: oklch(0.7 0.22 27.5);
+
+  /* Data-mark hues: validated categorical set (CVD-safe adjacent pairs).
+     Brand red stays out of the series palette — red is reserved for state. */
+  --chart-1: #2a78d6; /* blue    */
+  --chart-2: #008300; /* green   */
+  --chart-3: #e87ba4; /* magenta */
+  --chart-4: #eda100; /* yellow  */
+  --chart-5: #1baf7a; /* aqua    */
+  --radius: 0.65rem;
+
+  /* Light theme */
+  --background: oklch(0.978 0.003 85);
+  --foreground: oklch(0.21 0.012 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.012 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.012 260);
+  --secondary: oklch(0.955 0.004 260);
+  --secondary-foreground: oklch(0.3 0.012 260);
+  --muted: oklch(0.955 0.004 260);
+  --muted-foreground: oklch(0.5 0.014 260);
+  --accent: oklch(0.945 0.006 260);
+  --accent-foreground: oklch(0.21 0.012 260);
+  --destructive: oklch(0.52 0.2 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 12%);
+  --success: oklch(0.52 0.13 160);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.62 0.15 65);
+  --warning-foreground: oklch(0.2 0.02 65);
+  --border: oklch(0.905 0.006 260);
+  --input: oklch(0.885 0.006 260);
   --ring: var(--brand-red);
-  --chart-1: oklch(0.7 0.22 27.5);
-  --chart-2: oklch(0.78 0.16 70);
-  --chart-3: oklch(0.82 0.14 110);
-  --chart-4: oklch(0.7 0.14 200);
-  --chart-5: oklch(0.65 0.16 290);
-  --sidebar: oklch(0.1 0.005 270);
-  --sidebar-foreground: oklch(0.93 0.005 80);
-  --sidebar-accent: oklch(0.2 0.008 270);
-  --sidebar-accent-foreground: oklch(0.99 0 0);
+  --sidebar: oklch(0.995 0.001 85);
+  --sidebar-foreground: oklch(0.28 0.012 260);
+  --sidebar-accent: oklch(0.945 0.008 30);
+  --sidebar-accent-foreground: oklch(0.32 0.05 27);
+  --sidebar-border: oklch(0.915 0.005 260);
+  --sidebar-ring: var(--brand-red);
+}
+
+.dark {
+  --brand-red: oklch(0.62 0.21 27);
+  --brand-red-bright: oklch(0.68 0.23 27.5);
+  --primary: var(--brand-red);
+  --primary-foreground: oklch(0.99 0 0);
+  --sidebar-primary: var(--brand-red);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --background: oklch(0.14 0.006 260);
+  --foreground: oklch(0.94 0.005 80);
+  --card: oklch(0.185 0.007 260);
+  --card-foreground: oklch(0.94 0.005 80);
+  --popover: oklch(0.185 0.007 260);
+  --popover-foreground: oklch(0.94 0.005 80);
+  --secondary: oklch(0.23 0.007 260);
+  --secondary-foreground: oklch(0.92 0.005 80);
+  --muted: oklch(0.22 0.007 260);
+  --muted-foreground: oklch(0.68 0.014 260);
+  --accent: oklch(0.25 0.009 260);
+  --accent-foreground: oklch(0.96 0.005 80);
+  --destructive: oklch(0.66 0.2 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.68 0.13 160);
+  --success-foreground: oklch(0.14 0.02 160);
+  --warning: oklch(0.75 0.14 70);
+  --warning-foreground: oklch(0.2 0.03 70);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: var(--brand-red);
+  --chart-1: #3987e5; /* blue    */
+  --chart-2: #008300; /* green   */
+  --chart-3: #d55181; /* magenta */
+  --chart-4: #c98500; /* yellow  */
+  --chart-5: #199e70; /* aqua    */
+  --sidebar: oklch(0.115 0.006 260);
+  --sidebar-foreground: oklch(0.92 0.005 80);
+  --sidebar-accent: oklch(0.22 0.02 27);
+  --sidebar-accent-foreground: oklch(0.96 0.01 27);
   --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: var(--brand-red);
 }
@@ -125,18 +146,17 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    background-image:
-      radial-gradient(circle at 0% 0%, oklch(0.95 0.06 27.5 / 0.12), transparent 50%),
-      radial-gradient(circle at 100% 100%, oklch(0.92 0.05 27.5 / 0.10), transparent 55%);
-    background-attachment: fixed;
+    font-family: var(--font-sans);
   }
   h1, h2, h3, h4 {
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
   }
-  /* Slightly larger numeric figures everywhere for tabular readability. */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
@@ -152,27 +172,28 @@
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
   }
+  /* Physical button feedback — quick press, instant release. */
+  @media (prefers-reduced-motion: no-preference) {
+    button:not(:disabled),
+    [role="button"]:not([aria-disabled="true"]) {
+      transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    button:not(:disabled):active,
+    [role="button"]:not([aria-disabled="true"]):active {
+      transform: scale(0.97);
+    }
+  }
 }
 
 @layer components {
   /**
    * Custom container utility that centers content and adds responsive padding.
-   *
-   * This overrides Tailwind's default container behavior to:
-   * - Auto-center content (mx-auto)
-   * - Add responsive horizontal padding
-   * - Set max-width for large screens
-   *
-   * Usage: <div className="container">...</div>
-   *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
    */
   .container {
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
+    padding-left: 1rem;
     padding-right: 1rem;
   }
 
@@ -181,33 +202,84 @@
     min-width: 0;
   }
 
-  /* Reusable visual primitives — keep page chrome consistent across screens. */
+  /* ---------- Page chrome primitives ---------- */
   .eyebrow {
-    @apply text-[11px] uppercase tracking-[0.22em] text-primary font-semibold;
+    @apply text-[11px] uppercase tracking-[0.18em] text-primary font-semibold;
   }
   .page-title {
-    @apply text-3xl font-bold tracking-tight mt-1;
+    @apply text-[1.7rem] leading-tight font-bold tracking-tight mt-1;
+    font-family: var(--font-display);
   }
   .page-subtitle {
-    @apply text-sm text-muted-foreground mt-1 max-w-2xl;
+    @apply text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed;
   }
-  /* Soft elevated card surface used for KPI/info cards. */
+
+  /* Elevated card surface for KPI/info cards. */
   .surface-card {
-    @apply rounded-xl border border-border bg-card/95 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_12px_-6px_rgba(15,23,42,0.06)];
+    @apply rounded-xl border border-border bg-card;
+    box-shadow:
+      0 1px 2px rgb(16 24 40 / 0.04),
+      0 6px 16px -8px rgb(16 24 40 / 0.08);
+  }
+
+  /* Hero numbers on stat tiles: display face, tabular, ink-colored. */
+  .kpi-value {
+    @apply text-[1.75rem] leading-none font-semibold tracking-tight tabular-nums text-foreground;
+    font-family: var(--font-display);
+  }
+  .kpi-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  /* ---------- Status chips: state is icon + label, never color alone ---------- */
+  .chip-good,
+  .chip-warn,
+  .chip-bad,
+  .chip-neutral {
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap;
+  }
+  .chip-good {
+    @apply border-transparent bg-[oklch(0.52_0.13_160_/_0.12)] text-[oklch(0.4_0.11_160)] dark:bg-[oklch(0.68_0.13_160_/_0.16)] dark:text-[oklch(0.8_0.12_160)];
+  }
+  .chip-warn {
+    @apply border-transparent bg-[oklch(0.62_0.15_65_/_0.15)] text-[oklch(0.46_0.13_60)] dark:bg-[oklch(0.75_0.14_70_/_0.16)] dark:text-[oklch(0.85_0.13_75)];
+  }
+  .chip-bad {
+    @apply border-transparent bg-[oklch(0.52_0.2_27_/_0.12)] text-[oklch(0.44_0.18_27)] dark:bg-[oklch(0.66_0.2_27_/_0.16)] dark:text-[oklch(0.8_0.15_27)];
+  }
+  .chip-neutral {
+    @apply border-border bg-muted/60 text-muted-foreground;
+  }
+
+  /* Card entrance: subtle rise, staggered by inline delay. */
+  @media (prefers-reduced-motion: no-preference) {
+    .rise-in {
+      animation: rise-in 420ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @media (min-width: 640px) {
     .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
+      padding-left: 1.5rem;
       padding-right: 1.5rem;
     }
   }
 
   @media (min-width: 1024px) {
     .container {
-      padding-left: 2rem; /* 32px - desktop padding */
+      padding-left: 2rem;
       padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
+      max-width: 1280px;
     }
   }
 }
