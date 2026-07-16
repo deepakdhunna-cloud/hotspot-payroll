@@ -1,4 +1,4 @@
-import { PIN_COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { PIN_COOKIE_NAME, PIN_SESSION_TTL_MS } from "@shared/const";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -15,6 +15,7 @@ import {
   countEmployees,
   createEmployee,
   createManualPunch,
+  createScheduleImport,
   deactivateEmployee,
   deleteEmployee,
   deletePunch,
@@ -22,14 +23,23 @@ import {
   findOpenPunch,
   getEmployeeById,
   getEmployeePayrollHistory,
+  getEmployeesByIds,
   getPayrollByWeek,
   getPayrollRange,
   getPunchById,
+  getScheduleImportById,
+  getShiftsForWeek,
   hoursWorkedForWeek,
   hoursWorkedForWeekBulk,
+  listAuditLog,
   listEmployees,
+  listOpenPunches,
   listPunches,
+  listScheduleImports,
+  logAudit,
+  markImportCommitted,
   openPunch,
+  replaceWeekShifts,
   setClockCodeHash,
   updateEmployee,
   updatePunch,
@@ -37,23 +47,28 @@ import {
 } from "./db";
 import { hashClockCode, verifyClockCode } from "./_core/clockAuth";
 import {
+  OVERCLOCK_THRESHOLD_HOURS,
   ROLES,
   STORES,
   type Store,
   computeGrossPay,
   estimateWithholding,
   getWeekStart,
+  resolveScheduleDay,
 } from "@shared/hotspot";
 import { TRPCError } from "@trpc/server";
 import {
   ALL_SCOPES,
+  checkPinHash,
   listPinScopes,
+  listPinScopesWithHashes,
   setPin,
   signPinSession,
   verifyPin,
   type PinScope,
   type PinSession,
 } from "./_core/pinAuth";
+import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
 
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
@@ -66,6 +81,15 @@ function getScope(session: PinSession) {
     isAdmin: false as const,
     stores: session.store ? ([session.store] as Store[]) : [],
   };
+}
+
+/** Uniform "locked out" error with a human-readable wait time. */
+function lockedError(ms: number): TRPCError {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  return new TRPCError({
+    code: "TOO_MANY_REQUESTS",
+    message: `Too many incorrect attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+  });
 }
 
 export const appRouter = router({
@@ -85,17 +109,25 @@ export const appRouter = router({
     verifyPin: publicProcedure
       .input(z.object({ pin: z.string().min(4).max(8) }))
       .mutation(async ({ ctx, input }) => {
+        const ip = requestIp(ctx.req);
+        const lockedMs = pinLoginLimiter.lockedForMs(ip);
+        if (lockedMs > 0) throw lockedError(lockedMs);
+
         const scope = await verifyPin(input.pin);
         if (!scope) {
-          // Brief delay to slow brute force.
-          await new Promise((r) => setTimeout(r, 400));
+          pinLoginLimiter.recordFailure(ip);
+          void logAudit({ actorScope: "anonymous", action: "auth.pin_failed", ip });
+          // Brief randomized delay to slow serial guessing.
+          await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
           throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect PIN" });
         }
+        pinLoginLimiter.reset(ip);
+        void logAudit({ actorScope: scope, action: "auth.pin_success", ip });
         const token = await signPinSession(scope);
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(PIN_COOKIE_NAME, token, {
           ...cookieOptions,
-          maxAge: ONE_YEAR_MS,
+          maxAge: PIN_SESSION_TTL_MS,
         });
         return {
           role: scope === "ceo" ? ("admin" as const) : ("manager" as const),
@@ -169,14 +201,17 @@ export const appRouter = router({
       }),
 
     /**
-     * Quick Add: create a placeholder employee from a parsed schedule row.
-     * Pay rate is 0, role is Cashier, phone is "—". Edit later from the profile.
+     * Quick Add: create an employee from a parsed schedule row with minimal
+     * friction. Role and pay rate are optional so managers can fill them in
+     * during import review; anything omitted gets a placeholder to edit later.
      */
     quickCreate: protectedProcedure
       .input(
         z.object({
           fullName: z.string().min(1).max(200),
           storeLocation: StoreEnum,
+          role: RoleEnum.optional(),
+          payRate: z.number().min(0).max(1000).optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -190,9 +225,17 @@ export const appRouter = router({
         const id = await createEmployee({
           fullName: input.fullName.trim(),
           phone: "—",
-          payRate: "0",
-          role: "Cashier",
+          payRate: String(input.payRate ?? 0),
+          role: input.role ?? "Cashier",
           storeLocation: input.storeLocation,
+        });
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.quickCreate",
+          entityType: "employee",
+          entityId: id,
+          detail: JSON.stringify({ fullName: input.fullName.trim(), store: input.storeLocation }),
+          ip: requestIp(ctx.req),
         });
         return { id, fullName: input.fullName.trim(), storeLocation: input.storeLocation };
       }),
@@ -222,6 +265,14 @@ export const appRouter = router({
           role: input.role,
           storeLocation: input.storeLocation,
         });
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.create",
+          entityType: "employee",
+          entityId: id,
+          detail: JSON.stringify({ fullName: input.fullName, store: input.storeLocation }),
+          ip: requestIp(ctx.req),
+        });
         return { id };
       }),
 
@@ -250,6 +301,23 @@ export const appRouter = router({
         if (input.role !== undefined) update.role = input.role;
         if (input.storeLocation !== undefined) update.storeLocation = input.storeLocation;
         await updateEmployee(input.id, update);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.update",
+          entityType: "employee",
+          entityId: input.id,
+          detail: JSON.stringify({
+            changed: Object.keys(update),
+            before: {
+              fullName: emp.fullName,
+              phone: emp.phone,
+              payRate: emp.payRate,
+              role: emp.role,
+              storeLocation: emp.storeLocation,
+            },
+          }),
+          ip: requestIp(ctx.req),
+        });
         return { success: true };
       }),
 
@@ -285,10 +353,12 @@ export const appRouter = router({
         if (input.storeLocation !== undefined) update.storeLocation = input.storeLocation;
         if (input.role !== undefined) update.role = input.role;
 
+        const found = await getEmployeesByIds(input.ids);
+        const foundById = new Map(found.map((e) => [e.id, e]));
         let updated = 0;
         const skipped: number[] = [];
         for (const id of input.ids) {
-          const emp = await getEmployeeById(id);
+          const emp = foundById.get(id);
           if (!emp) {
             skipped.push(id);
             continue;
@@ -300,6 +370,13 @@ export const appRouter = router({
           await updateEmployee(id, update);
           updated += 1;
         }
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.bulkUpdate",
+          entityType: "employee",
+          detail: JSON.stringify({ ids: input.ids, update, updated, skipped }),
+          ip: requestIp(ctx.req),
+        });
         return { updated, skipped };
       }),
 
@@ -313,12 +390,22 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         await deactivateEmployee(input.id);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.deactivate",
+          entityType: "employee",
+          entityId: input.id,
+          detail: JSON.stringify({ fullName: emp.fullName, store: emp.storeLocation }),
+          ip: requestIp(ctx.req),
+        });
         return { success: true };
       }),
 
     /**
-     * Permanently delete an employee plus their full payroll history.
-     * Cannot be undone. Manager scope: must own the employee's store.
+     * Permanently delete an employee plus their payroll history, punches and
+     * scheduled shifts (single transaction). A full JSON snapshot of the
+     * employee and their payroll history is written to the audit log first,
+     * so even a hard delete is never silent data loss.
      */
     delete: protectedProcedure
       .input(z.object({ id: z.number().int() }))
@@ -329,6 +416,15 @@ export const appRouter = router({
         if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
+        const history = await getEmployeePayrollHistory(input.id, 520);
+        await logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.delete",
+          entityType: "employee",
+          entityId: input.id,
+          detail: JSON.stringify({ employee: emp, payrollHistory: history }),
+          ip: requestIp(ctx.req),
+        });
         await deleteEmployee(input.id);
         return { success: true };
       }),
@@ -420,6 +516,20 @@ export const appRouter = router({
           grossPay: String(grossPay.toFixed(2)),
           notes: input.notes ?? null,
         });
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "payroll.saveHours",
+          entityType: "payrollEntry",
+          entityId: id,
+          detail: JSON.stringify({
+            employeeId: emp.id,
+            weekStart: week.toISOString(),
+            hoursWorked: input.hoursWorked,
+            payRate,
+            grossPay: Number(grossPay.toFixed(2)),
+          }),
+          ip: requestIp(ctx.req),
+        });
         return { id, grossPay, regularPay };
       }),
 
@@ -438,16 +548,19 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const scope = getScope(ctx.session);
         const week = getWeekStart(input.weekStart);
+        const emps = await getEmployeesByIds(input.entries.map((e) => e.employeeId));
+        const empById = new Map(emps.map((e) => [e.id, e]));
+        const existing = await getPayrollByWeek(week);
+        const existingByEmp = new Map(existing.map((e) => [e.employeeId, e]));
+
         let saved = 0;
         for (const item of input.entries) {
-          const emp = await getEmployeeById(item.employeeId);
+          const emp = empById.get(item.employeeId);
           if (!emp) continue;
           if (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store)) continue;
 
           const payRate = Number(emp.payRate);
-          const existing = await getPayrollByWeek(week);
-          const existingForEmp = existing.find((e) => e.employeeId === emp.id);
-          const hoursWorked = Number(existingForEmp?.hoursWorked ?? 0);
+          const hoursWorked = Number(existingByEmp.get(emp.id)?.hoursWorked ?? 0);
           const { regularPay, grossPay } = computeGrossPay(hoursWorked, payRate);
 
           await upsertPayrollEntry({
@@ -463,6 +576,13 @@ export const appRouter = router({
           });
           saved++;
         }
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "payroll.saveSchedule",
+          entityType: "payrollEntry",
+          detail: JSON.stringify({ weekStart: week.toISOString(), saved }),
+          ip: requestIp(ctx.req),
+        });
         return { saved };
       }),
 
@@ -500,17 +620,13 @@ export const appRouter = router({
         const entries = await getPayrollRange(start, end, stores);
         // Hydrate employees so the UI can show names without N+1 calls.
         const empIds = Array.from(new Set(entries.map((e) => e.employeeId)));
-        const empById = new Map<number, { id: number; fullName: string; storeLocation: string; role: string }>();
-        for (const id of empIds) {
-          const e = await getEmployeeById(id);
-          if (e)
-            empById.set(id, {
-              id: e.id,
-              fullName: e.fullName,
-              storeLocation: e.storeLocation,
-              role: e.role,
-            });
-        }
+        const empRows = await getEmployeesByIds(empIds);
+        const empById = new Map(
+          empRows.map((e) => [
+            e.id,
+            { id: e.id, fullName: e.fullName, storeLocation: e.storeLocation, role: e.role },
+          ]),
+        );
         // Build per-employee aggregates.
         type Agg = {
           employeeId: number;
@@ -567,6 +683,8 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         const scope = getScope(ctx.session);
         const week = getWeekStart(input?.weekStart ?? new Date());
+        const weekEnd = new Date(week);
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
 
         const storesFilter =
           input?.store && (scope.isAdmin || scope.stores.includes(input.store))
@@ -575,15 +693,34 @@ export const appRouter = router({
               ? [...STORES]
               : scope.stores;
 
-        const employees = await listEmployees({ stores: storesFilter });
-        const entries = await getPayrollByWeek(week, storesFilter);
+        const [employees, entries, clockHours, openPunches, shifts] = await Promise.all([
+          listEmployees({ stores: storesFilter }),
+          getPayrollByWeek(week, storesFilter),
+          hoursWorkedForWeekBulk(week, weekEnd, storesFilter),
+          listOpenPunches(storesFilter),
+          getShiftsForWeek(week, storesFilter),
+        ]);
 
         const byStore: Record<
           string,
-          { totalHours: number; totalScheduled: number; totalGross: number; employeeCount: number }
+          {
+            totalHours: number;
+            totalScheduled: number;
+            totalGross: number;
+            employeeCount: number;
+            clockedInCount: number;
+            overClockedCount: number;
+          }
         > = {};
         for (const s of storesFilter) {
-          byStore[s] = { totalHours: 0, totalScheduled: 0, totalGross: 0, employeeCount: 0 };
+          byStore[s] = {
+            totalHours: 0,
+            totalScheduled: 0,
+            totalGross: 0,
+            employeeCount: 0,
+            clockedInCount: 0,
+            overClockedCount: 0,
+          };
         }
         for (const e of employees) {
           if (byStore[e.storeLocation]) byStore[e.storeLocation].employeeCount++;
@@ -599,11 +736,26 @@ export const appRouter = router({
         const totalScheduled = Object.values(byStore).reduce((a, b) => a + b.totalScheduled, 0);
         const totalGross = Object.values(byStore).reduce((a, b) => a + b.totalGross, 0);
 
+        const entryByEmp = new Map(entries.map((e) => [e.employeeId, e]));
+        // Scheduled hours can come from the payroll entry or, if that is
+        // still 0, from the sum of imported day-level shifts.
+        const shiftHoursByEmp = new Map<number, number>();
+        for (const s of shifts) {
+          shiftHoursByEmp.set(
+            s.employeeId,
+            (shiftHoursByEmp.get(s.employeeId) ?? 0) + Number(s.hours),
+          );
+        }
+
         const empBreakdown = employees.map((emp) => {
-          const entry = entries.find((e) => e.employeeId === emp.id);
+          const entry = entryByEmp.get(emp.id);
           const hoursWorked = Number(entry?.hoursWorked ?? 0);
-          const scheduled = Number(entry?.scheduledHours ?? 0);
+          const scheduled =
+            Number(entry?.scheduledHours ?? 0) || (shiftHoursByEmp.get(emp.id) ?? 0);
           const grossPay = Number(entry?.grossPay ?? 0);
+          const clocked = clockHours.get(emp.id) ?? 0;
+          const overClockedBy =
+            scheduled > 0 ? Math.max(0, clocked - scheduled) : 0;
           return {
             id: emp.id,
             fullName: emp.fullName,
@@ -612,10 +764,53 @@ export const appRouter = router({
             payRate: Number(emp.payRate),
             hoursWorked,
             scheduledHours: scheduled,
+            clockHours: clocked,
             variance: hoursWorked - scheduled,
+            overClocked: overClockedBy > OVERCLOCK_THRESHOLD_HOURS,
+            overClockedBy,
             grossPay,
+            hasClockCode: !!emp.clockCodeHash,
           };
         });
+
+        for (const emp of empBreakdown) {
+          if (emp.overClocked && byStore[emp.storeLocation]) {
+            byStore[emp.storeLocation].overClockedCount++;
+          }
+        }
+
+        // Live "on the clock" list with names and shift start times.
+        const empById = new Map(employees.map((e) => [e.id, e]));
+        const clockedInNow = openPunches
+          .filter((p) => empById.has(p.employeeId))
+          .map((p) => ({
+            punchId: p.id,
+            employeeId: p.employeeId,
+            fullName: empById.get(p.employeeId)!.fullName,
+            role: empById.get(p.employeeId)!.role,
+            storeLocation: p.storeLocation,
+            clockInAt: p.clockInAt,
+          }));
+        for (const p of clockedInNow) {
+          if (byStore[p.storeLocation]) byStore[p.storeLocation].clockedInCount++;
+        }
+
+        // Day-level schedule coverage for the week (drives the day strip).
+        const scheduleByDay = new Map<
+          string,
+          { date: Date; totalHours: number; shiftCount: number }
+        >();
+        for (const s of shifts) {
+          const key = new Date(s.shiftDate).toISOString();
+          const day = scheduleByDay.get(key) ?? {
+            date: new Date(s.shiftDate),
+            totalHours: 0,
+            shiftCount: 0,
+          };
+          day.totalHours += Number(s.hours);
+          day.shiftCount += 1;
+          scheduleByDay.set(key, day);
+        }
 
         return {
           weekStart: week,
@@ -628,6 +823,12 @@ export const appRouter = router({
             variance: totalHours - totalScheduled,
           },
           employees: empBreakdown,
+          clockedInNow,
+          scheduleDays: Array.from(scheduleByDay.values()).sort(
+            (a, b) => a.date.getTime() - b.date.getTime(),
+          ),
+          hasScheduleImport: shifts.length > 0,
+          missingClockCodes: employees.filter((e) => !e.clockCodeHash).length,
         };
       }),
   }),
@@ -637,9 +838,15 @@ export const appRouter = router({
       .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
       .query(async ({ input }) => {
         const week = getWeekStart(input.weekStart);
+        const weekEnd = new Date(week);
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
         const stores = input.store ? [input.store] : [...STORES];
-        const employees = await listEmployees({ stores });
-        const entries = await getPayrollByWeek(week, stores);
+        const [employees, entries, clockHours, openPunches] = await Promise.all([
+          listEmployees({ stores }),
+          getPayrollByWeek(week, stores),
+          hoursWorkedForWeekBulk(week, weekEnd, stores),
+          listOpenPunches(stores),
+        ]);
 
         const byStore: Record<
           string,
@@ -651,6 +858,8 @@ export const appRouter = router({
             totalNet: number;
             totalScheduled: number;
             employeeCount: number;
+            clockedInCount: number;
+            overClockedCount: number;
           }
         > = {};
         for (const s of stores) {
@@ -662,14 +871,23 @@ export const appRouter = router({
             totalNet: 0,
             totalScheduled: 0,
             employeeCount: 0,
+            clockedInCount: 0,
+            overClockedCount: 0,
           };
         }
+        for (const p of openPunches) {
+          if (byStore[p.storeLocation]) byStore[p.storeLocation].clockedInCount++;
+        }
 
+        const entryByEmp = new Map(entries.map((e) => [e.employeeId, e]));
         const rows = employees.map((emp) => {
-          const entry = entries.find((e) => e.employeeId === emp.id);
+          const entry = entryByEmp.get(emp.id);
           const hoursWorked = Number(entry?.hoursWorked ?? 0);
           const scheduled = Number(entry?.scheduledHours ?? 0);
           const grossPay = Number(entry?.grossPay ?? 0);
+          const clocked = clockHours.get(emp.id) ?? 0;
+          const overClocked =
+            scheduled > 0 && clocked - scheduled > OVERCLOCK_THRESHOLD_HOURS;
           const { federal, state, totalTax, netPay } = estimateWithholding(grossPay);
           if (byStore[emp.storeLocation]) {
             byStore[emp.storeLocation].employeeCount++;
@@ -679,6 +897,7 @@ export const appRouter = router({
             byStore[emp.storeLocation].totalFederal += federal;
             byStore[emp.storeLocation].totalState += state;
             byStore[emp.storeLocation].totalNet += netPay;
+            if (overClocked) byStore[emp.storeLocation].overClockedCount++;
           }
           return {
             id: emp.id,
@@ -688,7 +907,9 @@ export const appRouter = router({
             payRate: Number(emp.payRate),
             hoursWorked,
             scheduledHours: scheduled,
+            clockHours: clocked,
             variance: hoursWorked - scheduled,
+            overClocked,
             grossPay,
             federal,
             state,
@@ -740,7 +961,12 @@ export const appRouter = router({
       });
     }),
 
-    /** Update a PIN (CEO master, or any of the four store PINs). */
+    /**
+     * Update a PIN (CEO master, or any of the four store PINs).
+     * Rejects a PIN that already belongs to a different scope — sign-in
+     * matches a PIN against every scope, so duplicates would be ambiguous.
+     * Rotating a PIN also revokes all sessions issued before the rotation.
+     */
     updatePin: adminProcedure
       .input(
         z.object({
@@ -748,9 +974,48 @@ export const appRouter = router({
           pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits"),
         }),
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const existing = await listPinScopesWithHashes();
+        const conflict = existing.find(
+          (row) => row.scope !== input.scope && checkPinHash(input.pin, row.scope, row.pinHash),
+        );
+        if (conflict) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `That PIN is already in use by ${
+              conflict.scope === "ceo" ? "the CEO master PIN" : conflict.scope
+            }. Choose a different one.`,
+          });
+        }
         await setPin(input.scope, input.pin);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "ceo.updatePin",
+          entityType: "pin",
+          detail: JSON.stringify({ scope: input.scope }),
+          ip: requestIp(ctx.req),
+        });
         return { success: true };
+      }),
+
+    /**
+     * Recent audit-log entries — the CEO's paper trail of every sensitive
+     * action (logins, deletions, PIN rotations, payroll edits).
+     */
+    auditLog: adminProcedure
+      .input(
+        z
+          .object({
+            actorScope: z.string().max(64).optional(),
+            limit: z.number().int().min(1).max(500).optional(),
+          })
+          .optional(),
+      )
+      .query(async ({ input }) => {
+        return listAuditLog({
+          actorScope: input?.actorScope,
+          limit: input?.limit ?? 100,
+        });
       }),
   }),
 
@@ -768,7 +1033,11 @@ export const appRouter = router({
           code: z.string().regex(/^\d{4}$/),
         }),
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const limiterKey = `${requestIp(ctx.req)}:${input.store}`;
+        const lockedMs = clockPunchLimiter.lockedForMs(limiterKey);
+        if (lockedMs > 0) throw lockedError(lockedMs);
+
         const employees = await findEmployeesWithClockCodes(input.store);
         let matched: (typeof employees)[number] | undefined;
         for (const emp of employees) {
@@ -778,14 +1047,64 @@ export const appRouter = router({
           }
         }
         if (!matched) {
-          await new Promise((r) => setTimeout(r, 400));
+          clockPunchLimiter.recordFailure(limiterKey);
+          void logAudit({
+            actorScope: "kiosk",
+            action: "clock.punch_failed",
+            detail: JSON.stringify({ store: input.store }),
+            ip: requestIp(ctx.req),
+          });
+          await new Promise((r) => setTimeout(r, 400 + Math.random() * 200));
           throw new TRPCError({
             code: "UNAUTHORIZED",
             message: "Code not recognized at this store.",
           });
         }
-        const open = await findOpenPunch(matched.id);
+        clockPunchLimiter.reset(limiterKey);
+
         const now = new Date();
+        const week = getWeekStart(now);
+        const weekEnd = new Date(week);
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+
+        /**
+         * Week context shown on the kiosk after a punch: hours worked so far,
+         * hours scheduled, and how far over schedule the employee is. This is
+         * how over-clocked hours get reported at the source.
+         */
+        const buildWeekSummary = async () => {
+          const [worked, entryRows, empShifts] = await Promise.all([
+            hoursWorkedForWeek(matched!.id, week, weekEnd, now),
+            getPayrollByWeek(week, [matched!.storeLocation]),
+            getShiftsForWeek(week, [matched!.storeLocation]),
+          ]);
+          const entry = entryRows.find((e) => e.employeeId === matched!.id);
+          const shiftHours = empShifts
+            .filter((s) => s.employeeId === matched!.id)
+            .reduce((sum, s) => sum + Number(s.hours), 0);
+          const scheduled = Number(entry?.scheduledHours ?? 0) || shiftHours;
+          const overBy = scheduled > 0 ? Math.max(0, worked - scheduled) : 0;
+          const todayShifts = empShifts.filter(
+            (s) =>
+              s.employeeId === matched!.id &&
+              new Date(s.shiftDate).toDateString() === new Date(
+                Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+              ).toDateString(),
+          );
+          return {
+            workedHours: worked,
+            scheduledHours: scheduled,
+            overClocked: overBy > OVERCLOCK_THRESHOLD_HOURS,
+            overClockedBy: overBy,
+            todayShifts: todayShifts.map((s) => ({
+              startLabel: s.startLabel,
+              endLabel: s.endLabel,
+              hours: Number(s.hours),
+            })),
+          };
+        };
+
+        const open = await findOpenPunch(matched.id);
         if (open) {
           await closePunch(open.id, now);
           const durationMs = now.getTime() - new Date(open.clockInAt).getTime();
@@ -794,6 +1113,7 @@ export const appRouter = router({
             employee: { id: matched.id, fullName: matched.fullName },
             at: now,
             durationHours: Math.max(0, durationMs / 3_600_000),
+            week: await buildWeekSummary(),
           };
         }
         await openPunch({
@@ -806,6 +1126,8 @@ export const appRouter = router({
           action: "in" as const,
           employee: { id: matched.id, fullName: matched.fullName },
           at: now,
+          durationHours: null,
+          week: await buildWeekSummary(),
         };
       }),
 
@@ -844,6 +1166,14 @@ export const appRouter = router({
         }
         const hash = hashClockCode(input.code, emp.id);
         await setClockCodeHash(emp.id, hash);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "clock.setCode",
+          entityType: "employee",
+          entityId: emp.id,
+          detail: JSON.stringify({ fullName: emp.fullName }),
+          ip: requestIp(ctx.req),
+        });
         return { success: true, cleared: false };
       }),
 
@@ -936,6 +1266,18 @@ export const appRouter = router({
           source: "manual",
           note: input.note ?? null,
         });
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "clock.createManual",
+          entityType: "punch",
+          entityId: id,
+          detail: JSON.stringify({
+            employeeId: emp.id,
+            clockInAt: input.clockInAt.toISOString(),
+            clockOutAt: input.clockOutAt?.toISOString() ?? null,
+          }),
+          ip: requestIp(ctx.req),
+        });
         return { id };
       }),
 
@@ -969,6 +1311,20 @@ export const appRouter = router({
         if (input.clockOutAt !== undefined) update.clockOutAt = input.clockOutAt;
         if (input.note !== undefined) update.note = input.note;
         await updatePunch(input.id, update as any);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "clock.updatePunch",
+          entityType: "punch",
+          entityId: input.id,
+          detail: JSON.stringify({
+            before: {
+              clockInAt: punch.clockInAt,
+              clockOutAt: punch.clockOutAt,
+              note: punch.note,
+            },
+          }),
+          ip: requestIp(ctx.req),
+        });
         return { success: true };
       }),
 
@@ -983,6 +1339,14 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         await deletePunch(input.id);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "clock.deletePunch",
+          entityType: "punch",
+          entityId: input.id,
+          detail: JSON.stringify({ deleted: punch }),
+          ip: requestIp(ctx.req),
+        });
         return { success: true };
       }),
 
@@ -1029,10 +1393,15 @@ export const appRouter = router({
   }),
 
   schedule: router({
+    /**
+     * Parse an uploaded Homebase schedule (PDF or photo) into day-level
+     * shifts per employee. Returns matched/unmatched rows for review; nothing
+     * is written to payroll until `schedule.commit`.
+     */
     parseUpload: protectedProcedure
       .input(
         z.object({
-          fileBase64: z.string().min(1),
+          fileBase64: z.string().min(1).max(12_000_000), // ~8.5MB decoded
           mimeType: z.string().min(1),
           filename: z.string().min(1).max(200),
           weekStart: z.date(),
@@ -1046,28 +1415,28 @@ export const appRouter = router({
         const key = `schedules/${ctx.session.scope}-${Date.now()}.${ext}`;
         const { url } = await storagePut(key, buf, input.mimeType);
 
+        const week = getWeekStart(input.weekStart);
         const isPdf = input.mimeType === "application/pdf";
         const origin = `${ctx.req.protocol}://${ctx.req.get("host")}`;
         const absoluteUrl = `${origin}${url}`;
 
+        const instructions =
+          "Extract EVERY employee and EVERY shift from this weekly schedule. " +
+          "For each employee output their full name exactly as printed, and one entry per scheduled shift: " +
+          "the day (as printed, e.g. \"Thursday\" or a date like \"5/7\"), the printed start and end times, " +
+          "and the shift length in hours (use the printed hours if shown, otherwise compute from the times, subtracting any printed unpaid break). " +
+          "Also output each employee's total weekly hours. Return JSON.";
+
         const userContent = isPdf
           ? [
-              {
-                type: "text" as const,
-                text:
-                  "This is a Homebase weekly schedule export. Extract every employee's full name and total scheduled hours for the week. Return JSON.",
-              },
+              { type: "text" as const, text: instructions },
               {
                 type: "file_url" as const,
                 file_url: { url: absoluteUrl, mime_type: "application/pdf" as const },
               },
             ]
           : [
-              {
-                type: "text" as const,
-                text:
-                  "This is a Homebase weekly schedule (photo or screenshot). Extract every employee's full name and total scheduled hours for the week. If only daily shift times are shown, sum them across the week. Return JSON.",
-              },
+              { type: "text" as const, text: instructions },
               {
                 type: "image_url" as const,
                 image_url: { url: absoluteUrl, detail: "high" as const },
@@ -1079,7 +1448,10 @@ export const appRouter = router({
             {
               role: "system",
               content:
-                "You are a precise data-extraction assistant. Read a Homebase schedule (PDF or image) and output the total weekly scheduled hours for each employee. Names should be the employee's full name as printed. If a name appears multiple times, sum the hours. Only output JSON matching the provided schema. Do not invent employees.",
+                "You are a precise data-extraction assistant reading a Homebase weekly work schedule (PDF or image). " +
+                "Output every employee with their individual shifts per day. Names must be copied exactly as printed. " +
+                "Never invent employees, days, or hours. If a shift's hours are not printed, compute them from the start/end times. " +
+                "Only output JSON matching the provided schema.",
             },
             { role: "user", content: userContent },
           ],
@@ -1098,13 +1470,41 @@ export const appRouter = router({
                       type: "object",
                       additionalProperties: false,
                       properties: {
-                        name: { type: "string", description: "Employee full name" },
-                        scheduledHours: {
+                        name: { type: "string", description: "Employee full name as printed" },
+                        days: {
+                          type: "array",
+                          description: "One entry per scheduled shift",
+                          items: {
+                            type: "object",
+                            additionalProperties: false,
+                            properties: {
+                              day: {
+                                type: "string",
+                                description:
+                                  "Day of the shift as printed, e.g. 'Thursday', 'Thu', or '5/7'",
+                              },
+                              start: {
+                                type: ["string", "null"],
+                                description: "Printed start time, e.g. '9:00am'",
+                              },
+                              end: {
+                                type: ["string", "null"],
+                                description: "Printed end time, e.g. '5:00pm'",
+                              },
+                              hours: {
+                                type: "number",
+                                description: "Length of this shift in hours",
+                              },
+                            },
+                            required: ["day", "start", "end", "hours"],
+                          },
+                        },
+                        totalHours: {
                           type: "number",
                           description: "Total scheduled hours for the week",
                         },
                       },
-                      required: ["name", "scheduledHours"],
+                      required: ["name", "days", "totalHours"],
                     },
                   },
                 },
@@ -1114,13 +1514,14 @@ export const appRouter = router({
           },
         });
 
-        let parsed: { employees: { name: string; scheduledHours: number }[] } = {
-          employees: [],
-        };
+        type ExtractedDay = { day: string; start: string | null; end: string | null; hours: number };
+        type ExtractedEmployee = { name: string; days: ExtractedDay[]; totalHours: number };
+        let parsed: { employees: ExtractedEmployee[] } = { employees: [] };
         try {
           const raw = response.choices[0]?.message?.content;
           const text = typeof raw === "string" ? raw : JSON.stringify(raw);
           parsed = JSON.parse(text);
+          if (!Array.isArray(parsed.employees)) throw new Error("bad shape");
         } catch {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -1140,7 +1541,24 @@ export const appRouter = router({
         const normalize = (s: string) =>
           s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-        const matched = parsed.employees.map((row) => {
+        const rows = parsed.employees.map((row) => {
+          // Resolve each printed day to a concrete date within the pay week.
+          const days = (row.days ?? [])
+            .filter((d) => Number.isFinite(d.hours) && d.hours >= 0)
+            .map((d) => ({
+              ref: d.day,
+              date: resolveScheduleDay(week, d.day),
+              startLabel: d.start ?? null,
+              endLabel: d.end ?? null,
+              hours: Math.min(24, Math.max(0, d.hours)),
+            }));
+          // Trust the itemized shifts over the printed total when they disagree.
+          const daySum = days.reduce((sum, d) => sum + d.hours, 0);
+          const totalHours =
+            days.length > 0 && Math.abs(daySum - row.totalHours) > 0.51
+              ? daySum
+              : row.totalHours;
+
           const target = normalize(row.name);
           let emp = dbEmployees.find((e) => normalize(e.fullName) === target);
           if (!emp) {
@@ -1159,19 +1577,184 @@ export const appRouter = router({
           }
           return {
             extractedName: row.name,
-            scheduledHours: row.scheduledHours,
+            scheduledHours: Math.round(totalHours * 100) / 100,
+            days,
             matchedEmployeeId: emp?.id ?? null,
             matchedFullName: emp?.fullName ?? null,
             matchedStore: emp?.storeLocation ?? null,
           };
         });
 
+        const matchedCount = rows.filter((r) => r.matchedEmployeeId !== null).length;
+        const totalHours = rows.reduce((sum, r) => sum + r.scheduledHours, 0);
+
+        let importId: number | null = null;
+        try {
+          importId = await createScheduleImport({
+            uploadedBy: ctx.session.scope,
+            storeLocation: input.store ?? (scope.isAdmin ? null : scope.stores[0] ?? null),
+            weekStart: week,
+            fileUrl: url,
+            filename: safeName,
+            status: "parsed",
+            employeeCount: rows.length,
+            matchedCount,
+            unmatchedCount: rows.length - matchedCount,
+            totalHours: String(totalHours.toFixed(2)),
+          });
+        } catch (error) {
+          // Import bookkeeping must not block the parse result.
+          console.warn("[Schedule] Failed to record import:", error);
+        }
+
         return {
+          importId,
           fileUrl: url,
-          weekStart: getWeekStart(input.weekStart),
-          rows: matched,
-          totalExtracted: parsed.employees.length,
+          weekStart: week,
+          rows,
+          totalExtracted: rows.length,
+          totalHours: Math.round(totalHours * 100) / 100,
         };
+      }),
+
+    /**
+     * Commit a reviewed schedule: writes each employee's total scheduled
+     * hours into the payroll week AND stores the day-level shifts that power
+     * the dashboard day strip and kiosk shift hints.
+     */
+    commit: protectedProcedure
+      .input(
+        z.object({
+          weekStart: z.date(),
+          importId: z.number().int().nullable().optional(),
+          entries: z
+            .array(
+              z.object({
+                employeeId: z.number().int(),
+                scheduledHours: z.number().min(0).max(168),
+                shifts: z
+                  .array(
+                    z.object({
+                      date: z.date().nullable(),
+                      startLabel: z.string().max(32).nullable().optional(),
+                      endLabel: z.string().max(32).nullable().optional(),
+                      hours: z.number().min(0).max(24),
+                    }),
+                  )
+                  .optional(),
+              }),
+            )
+            .min(1)
+            .max(200),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const week = getWeekStart(input.weekStart);
+        const emps = await getEmployeesByIds(input.entries.map((e) => e.employeeId));
+        const empById = new Map(emps.map((e) => [e.id, e]));
+        const existing = await getPayrollByWeek(week);
+        const existingByEmp = new Map(existing.map((e) => [e.employeeId, e]));
+
+        let saved = 0;
+        const skipped: number[] = [];
+        for (const item of input.entries) {
+          const emp = empById.get(item.employeeId);
+          if (!emp || (!scope.isAdmin && !scope.stores.includes(emp.storeLocation as Store))) {
+            skipped.push(item.employeeId);
+            continue;
+          }
+
+          const payRate = Number(emp.payRate);
+          const hoursWorked = Number(existingByEmp.get(emp.id)?.hoursWorked ?? 0);
+          const { regularPay, grossPay } = computeGrossPay(hoursWorked, payRate);
+
+          await upsertPayrollEntry({
+            employeeId: emp.id,
+            storeLocation: emp.storeLocation,
+            weekStart: week,
+            hoursWorked: String(hoursWorked),
+            scheduledHours: String(item.scheduledHours),
+            payRateSnapshot: String(payRate),
+            regularPay: String(regularPay.toFixed(2)),
+            overtimePay: "0.00",
+            grossPay: String(grossPay.toFixed(2)),
+          });
+
+          // Day-level shifts: only dated shifts are persisted.
+          const shifts = (item.shifts ?? []).filter((s) => s.date !== null);
+          await replaceWeekShifts(
+            emp.id,
+            week,
+            shifts.map((s) => ({
+              storeLocation: emp.storeLocation,
+              shiftDate: s.date!,
+              startLabel: s.startLabel ?? null,
+              endLabel: s.endLabel ?? null,
+              hours: String(s.hours),
+              source: "import" as const,
+              importId: input.importId ?? null,
+            })),
+          );
+          saved++;
+        }
+
+        if (input.importId) {
+          try {
+            const imp = await getScheduleImportById(input.importId);
+            if (imp) await markImportCommitted(input.importId, { matchedCount: saved });
+          } catch (error) {
+            console.warn("[Schedule] Failed to mark import committed:", error);
+          }
+        }
+
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "schedule.commit",
+          entityType: "scheduleImport",
+          entityId: input.importId ?? undefined,
+          detail: JSON.stringify({ weekStart: week.toISOString(), saved, skipped }),
+          ip: requestIp(ctx.req),
+        });
+        return { saved, skipped };
+      }),
+
+    /** Day-level shifts for a week, hydrated with employee names. */
+    week: protectedProcedure
+      .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
+      .query(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const week = getWeekStart(input.weekStart);
+        const stores =
+          input.store && (scope.isAdmin || scope.stores.includes(input.store))
+            ? [input.store]
+            : scope.isAdmin
+              ? undefined
+              : scope.stores;
+        const shifts = await getShiftsForWeek(week, stores);
+        const empRows = await getEmployeesByIds(
+          Array.from(new Set(shifts.map((s) => s.employeeId))),
+        );
+        const empById = new Map(empRows.map((e) => [e.id, e]));
+        return {
+          weekStart: week,
+          shifts: shifts.map((s) => ({
+            ...s,
+            hours: Number(s.hours),
+            employeeName: empById.get(s.employeeId)?.fullName ?? `Employee #${s.employeeId}`,
+          })),
+        };
+      }),
+
+    /** Recent schedule uploads for this scope (audit trail of imports). */
+    imports: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(50).optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        return listScheduleImports({
+          stores: scope.isAdmin ? undefined : scope.stores,
+          limit: input?.limit ?? 10,
+        });
       }),
   }),
 });

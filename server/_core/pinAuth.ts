@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { SignJWT, jwtVerify } from "jose";
 import type { Request } from "express";
 import { parse as parseCookieHeader } from "cookie";
-import { ONE_YEAR_MS, PIN_COOKIE_NAME } from "@shared/const";
+import { PIN_COOKIE_NAME, PIN_SESSION_TTL_MS } from "@shared/const";
 import { pinCodes } from "../../drizzle/schema";
 import { STORES, type Store } from "../../shared/hotspot";
 import { getDb } from "../db";
@@ -19,7 +19,8 @@ export type PinSession = {
 
 /**
  * Default PINs created on first boot if the table is empty.
- * The CEO can change any of these from the Settings panel.
+ * The CEO can change any of these from the Settings panel — and should:
+ * rotating a PIN also revokes every session issued before the rotation.
  */
 const DEFAULT_PINS: Record<PinScope, string> = {
   ceo: "9999",
@@ -31,9 +32,63 @@ const DEFAULT_PINS: Record<PinScope, string> = {
 
 export const ALL_SCOPES: PinScope[] = ["ceo", ...STORES];
 
-function hashPin(pin: string, scope: PinScope) {
-  const salt = ENV.cookieSecret || "hotspot-fallback-salt";
-  return crypto.createHash("sha256").update(`${scope}:${pin}:${salt}`).digest("hex");
+// Fail fast in production if the signing secret is missing: falling back to a
+// public string would let anyone forge an admin session cookie.
+if (!ENV.cookieSecret && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "[PinAuth] JWT_SECRET is not configured. Refusing to start with a guessable session secret.",
+  );
+}
+
+function getSalt() {
+  return ENV.cookieSecret || "hotspot-fallback-salt";
+}
+
+/**
+ * Legacy hash format (v7 and earlier): a single fast sha256 pass.
+ * Kept only so PINs stored before the scrypt upgrade keep working; rows are
+ * transparently re-hashed to scrypt on the next successful verification.
+ */
+export function hashPinLegacy(pin: string, scope: PinScope) {
+  return crypto
+    .createHash("sha256")
+    .update(`${scope}:${pin}:${getSalt()}`)
+    .digest("hex");
+}
+
+const SCRYPT_PREFIX = "scrypt$";
+const SCRYPT_KEYLEN = 32;
+const SCRYPT_OPTS = { N: 16384, r: 8, p: 1 } as const;
+
+/** Current hash format: scrypt with a random per-record salt. */
+export function hashPinScrypt(pin: string, scope: PinScope, saltHex?: string): string {
+  const salt = saltHex ?? crypto.randomBytes(16).toString("hex");
+  const derived = crypto
+    .scryptSync(`${scope}:${pin}:${getSalt()}`, Buffer.from(salt, "hex"), SCRYPT_KEYLEN, SCRYPT_OPTS)
+    .toString("hex");
+  return `${SCRYPT_PREFIX}${salt}$${derived}`;
+}
+
+function timingSafeHexEqual(aHex: string, bHex: string): boolean {
+  try {
+    const a = Buffer.from(aHex, "hex");
+    const b = Buffer.from(bHex, "hex");
+    if (a.length !== b.length || a.length === 0) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+/** Check a raw PIN against a stored hash of either format. */
+export function checkPinHash(pin: string, scope: PinScope, stored: string): boolean {
+  if (stored.startsWith(SCRYPT_PREFIX)) {
+    const [, salt, digest] = stored.split("$");
+    if (!salt || !digest) return false;
+    const candidate = hashPinScrypt(pin, scope, salt).split("$")[2]!;
+    return timingSafeHexEqual(candidate, digest);
+  }
+  return timingSafeHexEqual(hashPinLegacy(pin, scope), stored);
 }
 
 export function normalizePin(raw: string) {
@@ -55,13 +110,16 @@ export async function ensureDefaultPins(): Promise<void> {
     if (haveScopes.has(scope)) continue;
     await db.insert(pinCodes).values({
       scope,
-      pinHash: hashPin(DEFAULT_PINS[scope], scope),
+      pinHash: hashPinScrypt(DEFAULT_PINS[scope], scope),
     });
   }
   console.log("[PinAuth] Default PINs ensured");
 }
 
-/** Verify a submitted PIN against any scope. Returns the matched scope, or null. */
+/**
+ * Verify a submitted PIN against any scope. Returns the matched scope, or null.
+ * Legacy sha256 rows are upgraded to scrypt in place after a successful match.
+ */
 export async function verifyPin(pin: string): Promise<PinScope | null> {
   const clean = normalizePin(pin);
   if (!isValidPin(clean)) return null;
@@ -69,9 +127,21 @@ export async function verifyPin(pin: string): Promise<PinScope | null> {
   if (!db) return null;
   const rows = await db.select().from(pinCodes);
   for (const row of rows) {
-    if (row.pinHash === hashPin(clean, row.scope as PinScope)) {
-      return row.scope as PinScope;
+    const scope = row.scope as PinScope;
+    if (!checkPinHash(clean, scope, row.pinHash)) continue;
+    if (!row.pinHash.startsWith(SCRYPT_PREFIX)) {
+      // Upgrade the stored hash without touching updatedAt-based revocation:
+      // this is the same PIN, so existing sessions must stay valid.
+      try {
+        await db
+          .update(pinCodes)
+          .set({ pinHash: hashPinScrypt(clean, scope), updatedAt: row.updatedAt })
+          .where(eq(pinCodes.scope, scope));
+      } catch (error) {
+        console.warn("[PinAuth] Hash upgrade failed (non-fatal):", error);
+      }
     }
+    return scope;
   }
   return null;
 }
@@ -82,14 +152,14 @@ export async function setPin(scope: PinScope, newPin: string): Promise<void> {
   if (!isValidPin(clean)) throw new Error("PIN must be 4-8 digits");
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const hash = hashPin(clean, scope);
-  // Ensure all scopes can collide; one row per scope is enforced via unique key.
+  const hash = hashPinScrypt(clean, scope);
   const existing = await db.select().from(pinCodes).where(eq(pinCodes.scope, scope)).limit(1);
   if (existing[0]) {
     await db.update(pinCodes).set({ pinHash: hash }).where(eq(pinCodes.scope, scope));
   } else {
     await db.insert(pinCodes).values({ scope, pinHash: hash });
   }
+  invalidateRotationCache(scope);
 }
 
 function getSecret() {
@@ -98,7 +168,7 @@ function getSecret() {
 
 export async function signPinSession(scope: PinScope): Promise<string> {
   const isCeo = scope === "ceo";
-  const exp = Math.floor((Date.now() + ONE_YEAR_MS) / 1000);
+  const exp = Math.floor((Date.now() + PIN_SESSION_TTL_MS) / 1000);
   return new SignJWT({
     scope,
     role: isCeo ? "admin" : "manager",
@@ -108,6 +178,33 @@ export async function signPinSession(scope: PinScope): Promise<string> {
     .setExpirationTime(exp)
     .setIssuedAt()
     .sign(getSecret());
+}
+
+/**
+ * PIN-rotation revocation: a session is only valid if it was issued after the
+ * scope's PIN was last changed. Lookups are cached briefly so session checks
+ * do not add a query to every request.
+ */
+const ROTATION_CACHE_TTL_MS = 60_000;
+const rotationCache = new Map<string, { rotatedAt: number | null; fetchedAt: number }>();
+
+function invalidateRotationCache(scope: PinScope) {
+  rotationCache.delete(scope);
+}
+
+async function pinRotatedAt(scope: PinScope): Promise<number | null> {
+  const cached = rotationCache.get(scope);
+  if (cached && Date.now() - cached.fetchedAt < ROTATION_CACHE_TTL_MS) {
+    return cached.rotatedAt;
+  }
+  const db = await getDb();
+  // Fail open when the DB is unavailable (dev/test) — the JWT signature and
+  // expiry still gate access.
+  if (!db) return null;
+  const rows = await db.select().from(pinCodes).where(eq(pinCodes.scope, scope)).limit(1);
+  const rotatedAt = rows[0]?.updatedAt ? new Date(rows[0].updatedAt).getTime() : null;
+  rotationCache.set(scope, { rotatedAt, fetchedAt: Date.now() });
+  return rotatedAt;
 }
 
 export async function verifyPinSession(req: Request): Promise<PinSession | null> {
@@ -122,12 +219,13 @@ export async function verifyPinSession(req: Request): Promise<PinSession | null>
     const role = payload.role as "admin" | "manager" | undefined;
     const store = (payload.store as Store | null | undefined) ?? null;
     if (!scope || !role) return null;
-    return {
-      scope,
-      role,
-      store,
-      issuedAt: Number(payload.iat ?? 0) * 1000,
-    };
+    const issuedAt = Number(payload.iat ?? 0) * 1000;
+
+    const rotatedAt = await pinRotatedAt(scope);
+    // 5s of tolerance covers the login that immediately follows a rotation.
+    if (rotatedAt !== null && issuedAt + 5_000 < rotatedAt) return null;
+
+    return { scope, role, store, issuedAt };
   } catch {
     return null;
   }
@@ -139,4 +237,15 @@ export async function listPinScopes() {
   if (!db) return [];
   const rows = await db.select().from(pinCodes);
   return rows.map((r) => ({ scope: r.scope as PinScope, updatedAt: r.updatedAt }));
+}
+
+/**
+ * Server-internal: scopes with their stored hashes, used to detect PIN
+ * collisions across scopes before a rotation. Never expose to the client.
+ */
+export async function listPinScopesWithHashes() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(pinCodes);
+  return rows.map((r) => ({ scope: r.scope as PinScope, pinHash: r.pinHash }));
 }

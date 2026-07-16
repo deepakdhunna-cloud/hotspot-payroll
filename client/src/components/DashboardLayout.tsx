@@ -21,7 +21,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck, Clock } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Building2, ShieldCheck, Clock, ExternalLink } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -105,7 +105,10 @@ function DashboardLayoutContent({
   });
   const displayName = isAdmin ? "CEO" : greetingQ.data?.name ?? "Manager";
   const menuItems = baseMenuItems.filter(item => !item.adminOnly || isAdmin);
-  const activeMenuItem = menuItems.find(item => item.path === location);
+  // Highlight nested routes too (/employees/12 keeps Employees active).
+  const isPathActive = (path: string) =>
+    path === "/" ? location === "/" : location === path || location.startsWith(`${path}/`);
+  const activeMenuItem = menuItems.find(item => isPathActive(item.path));
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -175,16 +178,16 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
-            <SidebarMenu className="px-2 py-1">
+            <SidebarMenu className="px-2 py-2">
               {menuItems.map(item => {
-                const isActive = location === item.path;
+                const isActive = isPathActive(item.path);
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
                       tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
+                      className={`h-10 transition-all ${isActive ? "font-semibold" : "font-normal"}`}
                     >
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
@@ -195,6 +198,23 @@ function DashboardLayoutContent({
                 );
               })}
             </SidebarMenu>
+            <div className="mt-auto px-2 pb-2">
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => window.open("/clock", "_blank", "noopener,noreferrer")}
+                    tooltip="Time clock kiosk"
+                    className="h-10 font-normal text-muted-foreground hover:text-foreground"
+                  >
+                    <Clock className="h-4 w-4" />
+                    <span className="flex items-center gap-1.5">
+                      Time clock kiosk
+                      <ExternalLink className="h-3 w-3 opacity-60" />
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </div>
           </SidebarContent>
 
           <SidebarFooter className="p-3">

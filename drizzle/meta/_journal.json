@@ -15,6 +15,13 @@
       "when": 1778768345075,
       "tag": "0001_demonic_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784223676058,
+      "tag": "0002_even_gamora",
+      "breakpoints": true
     }
   ]
 }

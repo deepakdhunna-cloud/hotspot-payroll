@@ -37,6 +37,29 @@ async function startServer() {
   registerStorageProxy(app);
   // Ensure the default Hotspot PINs exist (CEO + 4 store PINs).
   ensureDefaultPins().catch((err) => console.error("[PinAuth] init failed:", err));
+  // CSRF guard: session cookies are SameSite=None (the platform preview runs
+  // the app inside an iframe), so cross-site POSTs would otherwise carry them.
+  // Mutating API requests must come from our own origin (or a non-browser
+  // client that sends no Origin header at all).
+  app.use("/api", (req, res, next) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+      return next();
+    }
+    const origin = req.headers.origin;
+    if (!origin) return next();
+    try {
+      const host = new URL(origin).host;
+      const expected = req.headers["x-forwarded-host"] ?? req.headers.host;
+      const expectedHosts = (Array.isArray(expected) ? expected : [expected ?? ""])
+        .flatMap((h) => h.split(","))
+        .map((h) => h.trim())
+        .filter(Boolean);
+      if (expectedHosts.includes(host)) return next();
+    } catch {
+      // Malformed Origin header — treat as cross-site.
+    }
+    res.status(403).json({ error: "Cross-origin request rejected" });
+  });
   // tRPC API
   app.use(
     "/api/trpc",
