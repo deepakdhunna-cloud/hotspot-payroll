@@ -149,7 +149,7 @@ export default function CeoView() {
                 style={{ animationDelay: "80ms" }}
               />
               <StatCard
-                label="Net pay (after est. tax)"
+                label="Net pay (est.)"
                 value={fmtMoney(grand.totalNet)}
                 sub={`${data?.employeeCount ?? 0} active employees company-wide`}
                 icon={<Users />}

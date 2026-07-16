@@ -20,44 +20,49 @@ import {
 } from "@/components/ui/table";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
-import { FileSpreadsheet, CalendarRange } from "lucide-react";
+import { StatCard } from "@/components/StatCard";
+import {
+  currentPayPeriodStart,
+  fromDateInput,
+  shiftPayWeek,
+  startOfPayWeek,
+  toDateInput,
+} from "@/lib/payweek";
+import {
+  CalendarRange,
+  ClipboardList,
+  Clock,
+  DollarSign,
+  FileSpreadsheet,
+} from "lucide-react";
 import { toast } from "sonner";
-
-function startOfPayWeek(date: Date): Date {
-  const d = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-  const day = d.getUTCDay();
-  const diff = (day - 4 + 7) % 7;
-  d.setUTCDate(d.getUTCDate() - diff);
-  return d;
-}
-function toDateInput(d: Date): string {
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-function fromDateInput(value: string): Date {
-  return new Date(`${value}T00:00:00Z`);
-}
 
 export default function HistoryTab({
   storeFilter,
 }: {
   storeFilter: string;
 }) {
-  // Default: last 8 closed pay periods.
-  const [startWeek, setStartWeek] = useState<Date>(() => {
-    const d = startOfPayWeek(new Date());
-    d.setUTCDate(d.getUTCDate() - 7 * 8);
-    return d;
-  });
-  const [endWeek, setEndWeek] = useState<Date>(() => {
-    const d = startOfPayWeek(new Date());
-    d.setUTCDate(d.getUTCDate() - 7); // last closed week
-    return d;
-  });
+  // Default: last 8 closed pay periods, ending at the last closed week.
+  const [startWeek, setStartWeek] = useState<Date>(() =>
+    shiftPayWeek(currentPayPeriodStart(), -7),
+  );
+  const [endWeek, setEndWeek] = useState<Date>(() => currentPayPeriodStart());
+
+  // Keep the range ordered: if start ends up after end, clamp end to start.
+  const changeStart = (d: Date) => {
+    setStartWeek(d);
+    if (d.getTime() > endWeek.getTime()) setEndWeek(new Date(d));
+  };
+  const changeEnd = (d: Date) => {
+    setEndWeek(d.getTime() < startWeek.getTime() ? new Date(startWeek) : d);
+  };
+
+  // Quick presets: N closed pay weeks ending at the last closed week.
+  const applyPreset = (weeks: number) => {
+    const end = currentPayPeriodStart();
+    setEndWeek(end);
+    setStartWeek(shiftPayWeek(end, -(weeks - 1)));
+  };
 
   const rangeQ = trpc.payroll.range.useQuery({
     startWeek,
@@ -147,8 +152,8 @@ export default function HistoryTab({
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardContent className="p-4 flex flex-col md:flex-row md:items-end gap-3">
+      <Card className="surface-card border-0">
+        <CardContent className="p-4 flex flex-col md:flex-row md:items-end md:flex-wrap gap-3">
           <div className="grid gap-1.5">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
               From pay week
@@ -158,7 +163,7 @@ export default function HistoryTab({
               value={toDateInput(startWeek)}
               onChange={(e) => {
                 if (!e.target.value) return;
-                setStartWeek(startOfPayWeek(fromDateInput(e.target.value)));
+                changeStart(startOfPayWeek(fromDateInput(e.target.value)));
               }}
               className="w-44"
             />
@@ -172,10 +177,30 @@ export default function HistoryTab({
               value={toDateInput(endWeek)}
               onChange={(e) => {
                 if (!e.target.value) return;
-                setEndWeek(startOfPayWeek(fromDateInput(e.target.value)));
+                changeEnd(startOfPayWeek(fromDateInput(e.target.value)));
               }}
               className="w-44"
             />
+          </div>
+          <div className="grid gap-1.5">
+            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              Quick range
+            </Label>
+            <div className="flex gap-1.5">
+              {[4, 8, 13].map((w) => (
+                <Button
+                  key={w}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => applyPreset(w)}
+                  title={`Last ${w} closed pay weeks`}
+                >
+                  Last {w} weeks
+                </Button>
+              ))}
+            </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
@@ -195,36 +220,27 @@ export default function HistoryTab({
       </Card>
 
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Range total hours
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {totals.hours.toFixed(1)} h
-          </div>
-        </div>
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Range total gross
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {fmtMoney(totals.gross)}
-          </div>
-        </div>
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Payroll entries
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {totals.weeks}
-          </div>
-          <div className="text-[11px] text-muted-foreground mt-2">
-            employee-weeks in range
-          </div>
-        </div>
+        <StatCard
+          label="Range total hours"
+          value={`${totals.hours.toFixed(1)} h`}
+          icon={<Clock />}
+        />
+        <StatCard
+          label="Range total gross"
+          value={fmtMoney(totals.gross)}
+          icon={<DollarSign />}
+          style={{ animationDelay: "60ms" }}
+        />
+        <StatCard
+          label="Payroll entries"
+          value={totals.weeks}
+          sub="employee-weeks in range"
+          icon={<ClipboardList />}
+          style={{ animationDelay: "120ms" }}
+        />
       </section>
 
-      <Card>
+      <Card className="surface-card border-0">
         <CardHeader>
           <CardTitle>Per employee</CardTitle>
         </CardHeader>

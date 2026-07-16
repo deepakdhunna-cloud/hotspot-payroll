@@ -245,7 +245,7 @@ export const appRouter = router({
         z.object({
           fullName: z.string().min(1).max(200),
           phone: z.string().min(1).max(32),
-          payRate: z.number().positive().max(1000),
+          payRate: z.number().min(0).max(1000),
           role: RoleEnum,
           storeLocation: StoreEnum,
         }),
@@ -282,7 +282,7 @@ export const appRouter = router({
           id: z.number().int(),
           fullName: z.string().min(1).max(200).optional(),
           phone: z.string().min(1).max(32).optional(),
-          payRate: z.number().positive().max(1000).optional(),
+          payRate: z.number().min(0).max(1000).optional(),
           role: RoleEnum.optional(),
           storeLocation: StoreEnum.optional(),
         }),
@@ -1084,13 +1084,16 @@ export const appRouter = router({
             .reduce((sum, s) => sum + Number(s.hours), 0);
           const scheduled = Number(entry?.scheduledHours ?? 0) || shiftHours;
           const overBy = scheduled > 0 ? Math.max(0, worked - scheduled) : 0;
-          const todayShifts = empShifts.filter(
-            (s) =>
-              s.employeeId === matched!.id &&
-              new Date(s.shiftDate).toDateString() === new Date(
-                Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-              ).toDateString(),
-          );
+          // Shift dates are stored at 00:00 UTC; compare UTC date parts only.
+          const todayShifts = empShifts.filter((s) => {
+            if (s.employeeId !== matched!.id) return false;
+            const d = new Date(s.shiftDate);
+            return (
+              d.getUTCFullYear() === now.getUTCFullYear() &&
+              d.getUTCMonth() === now.getUTCMonth() &&
+              d.getUTCDate() === now.getUTCDate()
+            );
+          });
           return {
             workedHours: worked,
             scheduledHours: scheduled,

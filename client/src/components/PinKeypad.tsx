@@ -4,7 +4,8 @@ import { ArrowRight, Delete, Lock, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
+import { BrandMark } from "@/components/BrandMark";
+
 const MIN_PIN = 4;
 const MAX_PIN = 8;
 
@@ -71,12 +72,7 @@ export default function PinKeypad() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background via-background to-primary/5">
       <div className="w-full max-w-sm flex flex-col items-center gap-8">
-        <div className="flex flex-col items-center gap-2">
-          <img src={LOGO_URL} alt="Hotspot" className="h-14 w-auto object-contain" />
-          <span className="inline-flex items-center bg-neutral-950 text-white text-[10px] font-semibold tracking-[0.32em] uppercase px-4 py-1 rounded-full">
-            Market
-          </span>
-        </div>
+        <BrandMark size="lg" />
         <div className="flex flex-col items-center gap-2 text-center">
           <span className="eyebrow flex items-center gap-2">
             <Lock className="h-3 w-3" /> Secure access

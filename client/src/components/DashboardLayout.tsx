@@ -25,12 +25,10 @@ import { LayoutDashboard, LogOut, PanelLeft, Users, ClipboardList, Upload, Build
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
-import { Button } from "./ui/button";
+import { BrandMark } from "./BrandMark";
 import { trpc } from "@/lib/trpc";
 
 type MenuItem = { icon: typeof LayoutDashboard; label: string; path: string; adminOnly?: boolean };
-
-const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
 
 const baseMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -166,13 +164,10 @@ function DashboardLayoutContent({
               </button>
               {!isCollapsed ? (
                 <div className="flex flex-col items-center gap-1 min-w-0 flex-1">
-                  <img src={LOGO_URL} alt="Hotspot" className="h-8 w-auto object-contain" />
-                  <span className="inline-flex items-center bg-neutral-950 text-white text-[9px] font-semibold tracking-[0.28em] uppercase px-3 py-0.5 rounded-full -mt-1">
-                    Market
-                  </span>
+                  <BrandMark size="sm" />
                 </div>
               ) : (
-                <img src={LOGO_URL} alt="" className="h-6 w-auto object-contain" />
+                <BrandMark size="sm" withPill={false} />
               )}
             </div>
           </SidebarHeader>
@@ -268,7 +263,7 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
-                <img src={LOGO_URL} alt="Hotspot Market" className="h-7 w-auto object-contain" />
+                <BrandMark size="sm" withPill={false} />
                 <span className="text-sm font-medium tracking-tight text-foreground">
                   {activeMenuItem?.label ?? "Menu"}
                 </span>

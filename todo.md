@@ -129,6 +129,19 @@
 - [x] Routing: remove "Time Clock" sidebar item; alias `/time-clock` to `/payroll?tab=punches`
 - [x] Run tests (48/48 passing), checkpoint
 
+## v9 — Full professional redesign + backend hardening
+- [x] Security: scrypt PIN hashing (legacy hashes still verify + auto-upgrade), 7-day sessions, PIN-rotation revocation, cross-scope PIN collision guard, login + kiosk brute-force lockout, CSRF origin check, production JWT_SECRET assertion
+- [x] Data safety: append-only audit_log (snapshots on delete), transactional employee delete (payroll + punches + shifts), schedule_imports upload trail
+- [x] Day-level schedules: schedule_shifts table, per-day LLM extraction (day, start, end, hours), schedule.commit / schedule.week / schedule.imports procedures
+- [x] Dashboard v2: live clocked-in list, punch-derived hours, over-clock flags + alerts strip, scheduled-hours day strip, missing-clock-code count
+- [x] CEO view: hooks-order fix, all-stores glance grid with live badges, activity log tab, PIN UX (4–8 digits, revocation notice)
+- [x] Schedule import: day-by-day shift chips, new-employee quick-add queue (role + rate), commit with day-level shifts, import history
+- [x] Kiosk: matches app design language, week summary + over-clock warning at punch, brand fallback mark
+- [x] Design system: warm paper surfaces, deep signal red, Space Grotesk display numerals, status chips (icon + label), validated chart palette, shared StatCard/WeekNavigator/StoreSelect/ConfirmDialog/payweek kit
+- [x] PIN login: 4–8 digit support, hardware keyboard, explicit submit
+- [x] Employees/Payroll pages restyled to the new system; shared date helpers; native confirm() replaced with styled dialogs
+- [x] Tests: 76 passing (rate limiter, PIN hashing, schedule day resolution, commit gates, lockout integration)
+
 ## v8 — Kiosk hardening + sitewide design refresh
 - [x] Add "Open kiosk" button to the dashboard header (same behavior as Payroll page button — new tab, noopener)
 - [x] Kiosk auto-detects the calling manager's store from session cookie when launched from a manager login (skip the store-picker; pre-fill it and let CEO still pick)

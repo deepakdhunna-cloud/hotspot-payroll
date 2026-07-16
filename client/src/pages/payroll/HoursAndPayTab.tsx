@@ -15,13 +15,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { StatCard } from "@/components/StatCard";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
 import {
+  AlertTriangle,
+  CalendarDays,
   Check,
+  Clock,
   Download,
+  DollarSign,
   FileSpreadsheet,
   Loader2,
   Pencil,
@@ -226,34 +230,27 @@ export default function HoursAndPayTab({
   return (
     <div className="space-y-6">
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Total hours entered
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {totals.hoursTotal.toFixed(1)} h
-          </div>
-        </div>
-        <div className="surface-card p-5">
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-            Projected gross
-          </div>
-          <div className="text-[28px] leading-none font-bold mt-3 tabular-nums">
-            {fmtMoney(totals.grossTotal)}
-          </div>
-        </div>
-        <div className="surface-card p-5 flex items-center justify-between gap-3 flex-wrap">
-          <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground font-medium">
-              Week of
-            </div>
-            <div className="text-lg font-semibold mt-1">
-              {fmtWeekRange(weekStart)}
-            </div>
-          </div>
-            <div className="flex gap-2">
+        <StatCard
+          label="Total hours entered"
+          value={`${totals.hoursTotal.toFixed(1)} h`}
+          icon={<Clock />}
+        />
+        <StatCard
+          label="Projected gross"
+          value={fmtMoney(totals.grossTotal)}
+          icon={<DollarSign />}
+          style={{ animationDelay: "60ms" }}
+        />
+        <StatCard
+          label="Week of"
+          value={fmtWeekRange(weekStart)}
+          icon={<CalendarDays />}
+          style={{ animationDelay: "120ms" }}
+          footer={
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
+                size="sm"
                 onClick={handleExport}
                 disabled={!weekQ.data || weekQ.data.employees.length === 0}
                 title="Download this week as an .xlsx spreadsheet (opens in Google Sheets)"
@@ -261,15 +258,20 @@ export default function HoursAndPayTab({
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Export .xlsx
               </Button>
-              <Button onClick={handleSaveAll} disabled={saveHoursM.isPending}>
+              <Button
+                size="sm"
+                onClick={handleSaveAll}
+                disabled={saveHoursM.isPending}
+              >
                 <Save className="h-4 w-4 mr-2" />
                 {saveHoursM.isPending ? "Saving…" : "Save all"}
               </Button>
             </div>
-        </div>
+          }
+        />
       </section>
 
-      <Card>
+      <Card className="surface-card border-0">
         <CardHeader>
           <CardTitle>Hours worked</CardTitle>
         </CardHeader>
@@ -288,7 +290,7 @@ export default function HoursAndPayTab({
                     Hours worked
                   </TableHead>
                   <TableHead className="text-right">Gross</TableHead>
-                  <TableHead className="w-[100px]" />
+                  <TableHead className="w-[100px] text-right">Saved</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -326,6 +328,14 @@ export default function HoursAndPayTab({
                     clockHours !== undefined && clockHours > 0;
                   const isManual = manualOverride[emp.id] === true;
                   const showReadOnlyClock = hasClockHours && !isManual;
+                  // Clocked meaningfully past schedule — flag it for the
+                  // manager while they enter payroll.
+                  const overBy =
+                    clockHours !== undefined &&
+                    scheduled > 0 &&
+                    clockHours > scheduled + 0.25
+                      ? clockHours - scheduled
+                      : null;
                   return (
                     <TableRow key={emp.id}>
                       <TableCell className="font-medium">
@@ -365,7 +375,18 @@ export default function HoursAndPayTab({
                         />
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {scheduled.toFixed(1)} h
+                        <div className="flex items-center justify-end gap-2">
+                          {overBy !== null && (
+                            <span
+                              className="chip-warn"
+                              title="Clock hours exceed scheduled hours"
+                            >
+                              <AlertTriangle className="h-3 w-3" /> +
+                              {overBy.toFixed(1)}h over
+                            </span>
+                          )}
+                          <span>{scheduled.toFixed(1)} h</span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         {showReadOnlyClock ? (
@@ -376,12 +397,9 @@ export default function HoursAndPayTab({
                             >
                               {Number(clockHours).toFixed(2)}
                             </span>
-                            <Badge
-                              variant="outline"
-                              className="border-emerald-500/40 text-emerald-700 bg-emerald-50 text-[10px]"
-                            >
-                              clock
-                            </Badge>
+                            <span className="chip-good">
+                              <Clock className="h-3 w-3" /> clock
+                            </span>
                             <Button
                               size="icon"
                               variant="ghost"
@@ -431,12 +449,9 @@ export default function HoursAndPayTab({
                             />
                             {hasClockHours && isManual && (
                               <div className="flex items-center gap-2 text-[10px]">
-                                <Badge
-                                  variant="outline"
-                                  className="border-amber-500/40 text-amber-700 bg-amber-50"
-                                >
-                                  manual
-                                </Badge>
+                                <span className="chip-warn">
+                                  <Pencil className="h-3 w-3" /> manual
+                                </span>
                                 <button
                                   type="button"
                                   className="text-primary hover:underline inline-flex items-center gap-1"

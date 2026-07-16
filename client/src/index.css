@@ -232,20 +232,23 @@
   }
 
   /* ---------- Status chips: state is icon + label, never color alone ---------- */
-  .chip {
+  .chip-good,
+  .chip-warn,
+  .chip-bad,
+  .chip-neutral {
     @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap;
   }
   .chip-good {
-    @apply chip border-transparent bg-[oklch(0.52_0.13_160_/_0.12)] text-[oklch(0.4_0.11_160)] dark:bg-[oklch(0.68_0.13_160_/_0.16)] dark:text-[oklch(0.8_0.12_160)];
+    @apply border-transparent bg-[oklch(0.52_0.13_160_/_0.12)] text-[oklch(0.4_0.11_160)] dark:bg-[oklch(0.68_0.13_160_/_0.16)] dark:text-[oklch(0.8_0.12_160)];
   }
   .chip-warn {
-    @apply chip border-transparent bg-[oklch(0.62_0.15_65_/_0.15)] text-[oklch(0.46_0.13_60)] dark:bg-[oklch(0.75_0.14_70_/_0.16)] dark:text-[oklch(0.85_0.13_75)];
+    @apply border-transparent bg-[oklch(0.62_0.15_65_/_0.15)] text-[oklch(0.46_0.13_60)] dark:bg-[oklch(0.75_0.14_70_/_0.16)] dark:text-[oklch(0.85_0.13_75)];
   }
   .chip-bad {
-    @apply chip border-transparent bg-[oklch(0.52_0.2_27_/_0.12)] text-[oklch(0.44_0.18_27)] dark:bg-[oklch(0.66_0.2_27_/_0.16)] dark:text-[oklch(0.8_0.15_27)];
+    @apply border-transparent bg-[oklch(0.52_0.2_27_/_0.12)] text-[oklch(0.44_0.18_27)] dark:bg-[oklch(0.66_0.2_27_/_0.16)] dark:text-[oklch(0.8_0.15_27)];
   }
   .chip-neutral {
-    @apply chip border-border bg-muted/60 text-muted-foreground;
+    @apply border-border bg-muted/60 text-muted-foreground;
   }
 
   /* Card entrance: subtle rise, staggered by inline delay. */

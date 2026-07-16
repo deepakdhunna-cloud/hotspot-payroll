@@ -28,6 +28,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange } from "@/lib/format";
+import { fmtDateTime, fmtDuration } from "@/lib/payweek";
+import { StatCard } from "@/components/StatCard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,12 +44,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
+  ArrowRight,
   Building2,
+  CalendarDays,
   Phone,
   Pencil,
   DollarSign,
   Clock,
   Briefcase,
+  Timer,
   Trash2,
   KeyRound,
   Trash,
@@ -54,6 +60,11 @@ import {
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
 import { toast } from "sonner";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
+
+/** Full employee record as returned by employees.get. */
+type EmployeeRecord = inferRouterOutputs<AppRouter>["employees"]["get"];
 
 export default function EmployeeProfile() {
   const params = useParams();
@@ -122,10 +133,10 @@ export default function EmployeeProfile() {
 
       {emp && (
         <>
-          <Card className="overflow-hidden">
-            <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-transparent p-6 border-b border-border">
+          <Card className="surface-card border-0 overflow-hidden rise-in">
+            <div className="bg-primary/5 p-6 border-b border-primary/10">
               <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-2xl font-bold">
+                <div className="h-16 w-16 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center text-2xl font-bold">
                   {emp.fullName
                     .split(" ")
                     .map((p) => p[0])
@@ -156,30 +167,27 @@ export default function EmployeeProfile() {
           </Card>
 
           <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                  Lifetime hours
-                </div>
-                <div className="text-2xl font-bold mt-2 tabular-nums">{ytdHours.toFixed(1)} h</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                  Lifetime gross
-                </div>
-                <div className="text-2xl font-bold mt-2 tabular-nums">{fmtMoney(ytdGross)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-5">
-                <div className="text-xs text-muted-foreground uppercase tracking-wider">
-                  Weeks recorded
-                </div>
-                <div className="text-2xl font-bold mt-2 tabular-nums">{history.length}</div>
-              </CardContent>
-            </Card>
+            <StatCard
+              label="Hours on record"
+              value={`${ytdHours.toFixed(1)} h`}
+              sub="last 52 weeks"
+              icon={<Timer />}
+              style={{ animationDelay: "0ms" }}
+            />
+            <StatCard
+              label="Gross on record"
+              value={fmtMoney(ytdGross)}
+              sub="last 52 weeks"
+              icon={<DollarSign />}
+              style={{ animationDelay: "40ms" }}
+            />
+            <StatCard
+              label="Weeks recorded"
+              value={history.length}
+              sub="last 52 weeks"
+              icon={<CalendarDays />}
+              style={{ animationDelay: "80ms" }}
+            />
           </section>
 
           <ClockCodeCard
@@ -188,7 +196,7 @@ export default function EmployeeProfile() {
             hasCode={!!emp.clockCodeHash}
           />
 
-          <Card>
+          <Card className="surface-card border-0 rise-in">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" /> Payroll history
@@ -282,7 +290,7 @@ function ClockCodeCard({
   };
 
   return (
-    <Card>
+    <Card className="surface-card border-0 rise-in">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-primary" /> Time clock code
@@ -296,16 +304,15 @@ function ClockCodeCard({
               : "No clock code has been set yet. Assign one so this employee can use the kiosk."}
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={
-                hasCode
-                  ? "border-emerald-500/40 text-emerald-700 bg-emerald-50"
-                  : "border-amber-500/40 text-amber-700 bg-amber-50"
-              }
-            >
-              {hasCode ? "•••• set" : "No code"}
-            </Badge>
+            {hasCode ? (
+              <span className="chip-good">
+                <KeyRound className="h-3 w-3" /> •••• set
+              </span>
+            ) : (
+              <span className="chip-warn">
+                <KeyRound className="h-3 w-3" /> No code
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">
               Codes are stored hashed — not visible after creation.
             </span>
@@ -354,22 +361,22 @@ function ClockCodeCard({
             </DialogContent>
           </Dialog>
           {hasCode && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-red-600 hover:text-red-700"
-              onClick={() => {
-                if (
-                  confirm(
-                    "Clear this employee's clock code? They won't be able to punch in until you assign a new one.",
-                  )
-                ) {
-                  setCodeM.mutate({ employeeId, code: "" });
-                }
-              }}
-            >
-              <Trash className="h-4 w-4 mr-2" /> Clear code
-            </Button>
+            <ConfirmDialog
+              trigger={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash className="h-4 w-4 mr-2" /> Clear code
+                </Button>
+              }
+              title={`Clear clock code for ${employeeName}?`}
+              description="They won't be able to punch in at the kiosk until you assign a new code."
+              confirmLabel="Clear code"
+              destructive
+              onConfirm={() => setCodeM.mutate({ employeeId, code: "" })}
+            />
           )}
         </div>
       </CardContent>
@@ -391,22 +398,18 @@ function PunchHistoryCard({
     note: string | null;
   }>;
 }) {
-  const fmt = (v: Date | string | null | undefined) => {
-    if (!v) return "—";
-    return new Date(v).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
   return (
-    <Card>
-      <CardHeader>
+    <Card className="surface-card border-0 rise-in">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="flex items-center gap-2">
           <Clock className="h-5 w-5 text-primary" /> Recent punches
         </CardTitle>
+        <Link
+          href="/payroll?tab=punches"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+        >
+          View all punches <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
       </CardHeader>
       <CardContent className="px-0">
         <div className="overflow-x-auto">
@@ -443,35 +446,29 @@ function PunchHistoryCard({
               )}
               {punches.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="tabular-nums">{fmt(p.clockInAt)}</TableCell>
+                  <TableCell className="tabular-nums">{fmtDateTime(p.clockInAt)}</TableCell>
                   <TableCell className="tabular-nums">
                     {p.clockOutAt ? (
-                      fmt(p.clockOutAt)
+                      fmtDateTime(p.clockOutAt)
                     ) : (
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-500/40 text-emerald-700 bg-emerald-50"
-                      >
-                        Clocked in
-                      </Badge>
+                      <span className="chip-good">
+                        <Clock className="h-3 w-3" /> Clocked in
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {p.durationHours === null || p.durationHours === undefined
-                      ? "—"
-                      : `${p.durationHours.toFixed(2)} h`}
+                    {fmtDuration(p.durationHours)}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        p.source === "manual"
-                          ? "border-amber-500/40 text-amber-700 bg-amber-50"
-                          : "border-zinc-300 text-zinc-600 bg-zinc-50"
-                      }
-                    >
-                      {p.source === "manual" ? "Manual" : "Kiosk"}
-                    </Badge>
+                    {p.source === "manual" ? (
+                      <span className="chip-warn">
+                        <Pencil className="h-3 w-3" /> Manual
+                      </span>
+                    ) : (
+                      <span className="chip-neutral">
+                        <Clock className="h-3 w-3" /> Kiosk
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">
                     {p.note ?? "—"}
@@ -554,7 +551,7 @@ function EditEmployeeDialog({
   stores,
   onClose,
 }: {
-  emp: any;
+  emp: EmployeeRecord;
   roles: string[];
   stores: string[];
   onClose: () => void;
@@ -582,8 +579,32 @@ function EditEmployeeDialog({
   const [fullName, setFullName] = useState(emp.fullName);
   const [phone, setPhone] = useState(emp.phone);
   const [payRate, setPayRate] = useState(String(emp.payRate));
-  const [role, setRole] = useState(emp.role);
-  const [storeLocation, setStoreLocation] = useState(emp.storeLocation);
+  const [role, setRole] = useState<string>(emp.role);
+  const [storeLocation, setStoreLocation] = useState<string>(emp.storeLocation);
+
+  const save = () => {
+    const rate = Number(payRate);
+    if (!fullName.trim()) {
+      toast.error("Name can't be empty.");
+      return;
+    }
+    if (!phone.trim()) {
+      toast.error("Phone can't be empty.");
+      return;
+    }
+    if (payRate === "" || Number.isNaN(rate) || rate < 0) {
+      toast.error("Pay rate must be 0 or more.");
+      return;
+    }
+    update.mutate({
+      id: emp.id,
+      fullName: fullName.trim(),
+      phone: phone.trim(),
+      payRate: rate,
+      role: role as any,
+      storeLocation: storeLocation as any,
+    });
+  };
 
   return (
     <DialogContent className="sm:max-w-md">
@@ -642,30 +663,19 @@ function EditEmployeeDialog({
         </div>
       </div>
       <DialogFooter className="flex-col sm:flex-row gap-2">
-        <Button
-          variant="destructive"
-          onClick={() => {
-            if (confirm("Deactivate this employee? Past payroll history is preserved.")) {
-              deactivate.mutate({ id: emp.id });
-            }
-          }}
-          className="sm:mr-auto"
-        >
-          Deactivate
-        </Button>
-        <Button
-          onClick={() =>
-            update.mutate({
-              id: emp.id,
-              fullName,
-              phone,
-              payRate: Number(payRate),
-              role: role as any,
-              storeLocation: storeLocation as any,
-            })
+        <ConfirmDialog
+          trigger={
+            <Button variant="destructive" className="sm:mr-auto">
+              Deactivate
+            </Button>
           }
-          disabled={update.isPending}
-        >
+          title={`Deactivate ${emp.fullName}?`}
+          description="They are removed from the active roster, but past payroll history is preserved."
+          confirmLabel="Deactivate"
+          destructive
+          onConfirm={() => deactivate.mutate({ id: emp.id })}
+        />
+        <Button onClick={save} disabled={update.isPending}>
           {update.isPending ? "Saving…" : "Save changes"}
         </Button>
       </DialogFooter>

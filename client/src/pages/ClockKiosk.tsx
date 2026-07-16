@@ -28,8 +28,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const LOGO_URL = "/manus-storage/hotspot-wordmark_ddfb64c0.png";
+import { BrandMark } from "@/components/BrandMark";
 
 function isStore(value: string | undefined): value is Store {
   return !!value && (STORES as readonly string[]).includes(value);
@@ -180,12 +179,7 @@ export default function ClockKiosk() {
       <div className="min-h-screen bg-background">
         <div className="container max-w-5xl pt-12 pb-16">
           <div className="flex flex-col items-center text-center">
-            <div className="flex flex-col items-center gap-2">
-              <img src={LOGO_URL} alt="Hotspot Market" className="h-16 w-auto" />
-              <span className="inline-flex items-center rounded-full bg-neutral-950 px-3 py-1 text-xs font-semibold tracking-[0.18em] text-white">
-                MARKET
-              </span>
-            </div>
+            <BrandMark size="lg" />
             <div className="mt-8 eyebrow flex items-center gap-2">
               <Clock className="h-4 w-4" /> Time Clock Kiosk
             </div>
@@ -241,12 +235,7 @@ export default function ClockKiosk() {
       {/* Header */}
       <div className="container max-w-3xl pt-8">
         <div className="flex items-center justify-between">
-          <div className="flex flex-col items-start gap-1">
-            <img src={LOGO_URL} alt="Hotspot Market" className="h-10 w-auto" />
-            <span className="inline-flex items-center rounded-full bg-neutral-950 px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.18em] text-white">
-              MARKET
-            </span>
-          </div>
+          <BrandMark size="md" className="items-start" />
           <div className="text-right">
             <div
               className="text-3xl font-semibold tabular-nums"

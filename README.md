@@ -1,3 +1,35 @@
+# Hotspot Market Payroll
+
+Payroll, scheduling and time clock for the four Hotspot Market stores.
+
+## What's inside
+
+- **PIN sign-in** — one PIN per store (manager scope) plus a CEO master PIN.
+  Sessions last 7 days; rotating a PIN instantly revokes every session that
+  used the old one. Brute-force attempts are rate-limited and logged.
+- **Manager dashboard** — live "on the clock" list, hours vs schedule, pace
+  projection, day-by-day schedule coverage, over-clock alerts, gross pay.
+- **Schedule import** — upload a Homebase schedule (PDF/photo); every shift is
+  extracted day by day, hours are totalled per employee, unknown names go to a
+  quick-add queue (role + rate inline), and committing writes both weekly
+  scheduled hours and day-level shifts.
+- **Time clock kiosk** (`/clock`) — public, isolated punch-in/out keypad for
+  the counter tablet. After each punch it shows the employee's week so far and
+  flags over-clocked hours on the spot.
+- **Payroll** — weekly hours & pay grid (auto-filled from clock punches, with
+  manual override), punch editor, multi-week history, formatted .xlsx exports.
+- **CEO view** — all stores at one glance (live clock-ins, over-schedule
+  counts, withholding estimates), per-employee detail, PIN management, and a
+  full audit log.
+- **Data safety** — every sensitive mutation is written to an append-only
+  `audit_log` (deletes keep a JSON snapshot), employee deletion is
+  transactional, and schedule uploads are kept as import records.
+
+Store isolation is enforced server-side on every procedure: a store PIN can
+only ever read or write its own store's data; the CEO PIN sees everything.
+
+---
+
 # Web App Template (tRPC + Manus Auth + Database)
 
 This template gives you a React 19 + Tailwind 4 + Express 4 + tRPC 11 stack with Manus OAuth already wired. Procedures are your contracts, types flow end to end, and authentication "just works".
