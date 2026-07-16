@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { csrfOriginGuard } from "../csrf";
+import { runBootstrap } from "../bootstrap";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ensureDefaultPins } from "./pinAuth";
@@ -36,6 +37,9 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
+  // Apply migrations (idempotent) and, when configured, the one-time data
+  // import — must finish before the app serves queries.
+  await runBootstrap();
   // Ensure the default Hotspot PINs exist (CEO + 4 store PINs).
   ensureDefaultPins().catch((err) => console.error("[PinAuth] init failed:", err));
   // CSRF guard for mutating API requests (see server/csrf.ts + its tests).
