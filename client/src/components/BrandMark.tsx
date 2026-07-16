@@ -1,8 +1,11 @@
 /**
  * Hotspot Market brand mark. Renders the uploaded wordmark image and falls
- * back to a styled text wordmark if the asset can't load (e.g. running
- * outside the production storage proxy), so the brand never shows a broken
- * image icon.
+ * back to a styled text wordmark if the asset can't load, so the brand never
+ * shows a broken image icon.
+ *
+ * `tone="ink"` renders the text mark in white for dark ("ink") surfaces —
+ * the sidebar, login backdrop and kiosk — where the image (dark lettering)
+ * and the black pill would vanish.
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -18,23 +21,33 @@ const SIZES = {
 export function BrandMark({
   size = "md",
   withPill = true,
+  tone = "paper",
   className,
 }: {
   size?: keyof typeof SIZES;
   withPill?: boolean;
+  tone?: "paper" | "ink";
   className?: string;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
   const s = SIZES[size];
+  const onInk = tone === "ink";
+  // The wordmark image has dark lettering — on ink surfaces always use the
+  // styled text mark instead.
+  const useText = onInk || imgFailed;
 
   return (
     <span className={cn("inline-flex flex-col items-center gap-1", className)}>
-      {imgFailed ? (
+      {useText ? (
         <span
-          className={cn("font-extrabold tracking-tight leading-none text-foreground", s.text)}
+          className={cn(
+            "font-extrabold tracking-tight leading-none",
+            onInk ? "text-white" : "text-foreground",
+            s.text,
+          )}
           style={{ fontFamily: "var(--font-display)" }}
         >
-          HOT<span className="text-primary">SPOT</span>
+          HOT<span className={onInk ? "text-[oklch(0.68_0.21_27)]" : "text-primary"}>SPOT</span>
         </span>
       ) : (
         <img
@@ -47,7 +60,8 @@ export function BrandMark({
       {withPill ? (
         <span
           className={cn(
-            "inline-flex items-center rounded-full bg-neutral-950 font-semibold uppercase tracking-[0.28em] text-white",
+            "inline-flex items-center rounded-full font-semibold uppercase tracking-[0.28em]",
+            onInk ? "bg-white/10 text-white/90" : "bg-neutral-950 text-white",
             s.pill,
           )}
         >

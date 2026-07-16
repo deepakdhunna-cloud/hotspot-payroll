@@ -32,15 +32,16 @@ export function PageHeader({
     >
       <div className="min-w-0">
         {eyebrow ? <div className="eyebrow">{eyebrow}</div> : null}
-        <h1 className="page-title flex items-center gap-2 leading-tight">
+        <h1 className="page-title flex items-center gap-2.5 leading-tight">
           {icon ? (
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-[inset_0_1px_0_rgb(255_255_255/0.6)]">
               {icon}
             </span>
           ) : null}
           <span>{title}</span>
         </h1>
         {description ? <p className="page-subtitle">{description}</p> : null}
+        <div className="accent-hairline w-14 mt-3" aria-hidden="true" />
       </div>
       {actions ? (
         <div className="flex flex-wrap items-center gap-2 shrink-0">

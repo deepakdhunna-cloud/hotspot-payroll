@@ -157,17 +157,17 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-3 px-2 transition-all w-full">
               <button
                 onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                className="h-8 w-8 flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
                 aria-label="Toggle navigation"
               >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                <PanelLeft className="h-4 w-4 text-sidebar-foreground/70" />
               </button>
               {!isCollapsed ? (
                 <div className="flex flex-col items-center gap-1 min-w-0 flex-1">
-                  <BrandMark size="sm" />
+                  <BrandMark size="sm" tone="ink" />
                 </div>
               ) : (
-                <BrandMark size="sm" withPill={false} />
+                <BrandMark size="sm" withPill={false} tone="ink" />
               )}
             </div>
           </SidebarHeader>
@@ -199,7 +199,7 @@ function DashboardLayoutContent({
                   <SidebarMenuButton
                     onClick={() => window.open("/clock", "_blank", "noopener,noreferrer")}
                     tooltip="Time clock kiosk"
-                    className="h-10 font-normal text-muted-foreground hover:text-foreground"
+                    className="h-10 font-normal text-sidebar-foreground/60 hover:text-sidebar-foreground"
                   >
                     <Clock className="h-4 w-4" />
                     <span className="flex items-center gap-1.5">

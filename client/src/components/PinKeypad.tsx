@@ -74,64 +74,77 @@ export default function PinKeypad() {
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-background via-background to-primary/5">
-      <div className="w-full max-w-sm flex flex-col items-center gap-8">
-        <BrandMark size="lg" />
-        <div className="flex flex-col items-center gap-2 text-center">
-          <span className="eyebrow flex items-center gap-2">
-            <Lock className="h-3 w-3" /> Secure access
-          </span>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
-            Enter your PIN
-          </h1>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            Use your store PIN, or the CEO master PIN for full access.
-          </p>
-        </div>
+    <div className="ink-panel min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-sm flex flex-col items-center gap-7">
+        <BrandMark size="lg" tone="ink" />
 
-        {/* PIN dots */}
-        <div
-          className={`flex items-center gap-3 ${shake ? "animate-shake" : ""}`}
-          style={{ minHeight: 32 }}
-          aria-label={`${pin.length} digits entered`}
-        >
-          {Array.from({ length: dotCount }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-4 w-4 rounded-full border-2 transition-all duration-150 ${
-                pin.length > i
-                  ? "bg-primary border-primary scale-110"
-                  : "border-muted-foreground/30"
-              }`}
-            />
-          ))}
-        </div>
+        {/* Floating paper card — the keypad lives on a warm surface that
+            pops against the ink backdrop. */}
+        <div className="w-full rounded-3xl bg-card text-card-foreground p-7 shadow-[0_1px_2px_rgb(0_0_0/0.3),0_24px_60px_-24px_rgb(0_0_0/0.7)]">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <span className="eyebrow flex items-center gap-2">
+              <Lock className="h-3 w-3" /> Secure access
+            </span>
+            <h1
+              className="text-2xl font-bold tracking-tight"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
+              Enter your PIN
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              Use your store PIN, or the CEO master PIN for full access.
+            </p>
+          </div>
 
-        {/* Keypad */}
-        <div className="grid grid-cols-3 gap-3 w-full">
-          {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-            <KeypadKey key={d} onClick={() => push(d)} disabled={verify.isPending}>
-              {d}
-            </KeypadKey>
-          ))}
-          <KeypadKey onClick={back} disabled={verify.isPending || pin.length === 0} variant="ghost" aria-label="Delete digit">
-            <Delete className="h-5 w-5" />
-          </KeypadKey>
-          <KeypadKey onClick={() => push("0")} disabled={verify.isPending}>
-            0
-          </KeypadKey>
-          <Button
-            type="button"
-            onClick={submit}
-            disabled={!canSubmit}
-            aria-label="Sign in"
-            className="h-16 text-lg font-semibold"
+          {/* PIN dots */}
+          <div
+            className={`flex items-center justify-center gap-3 my-6 ${shake ? "animate-shake" : ""}`}
+            style={{ minHeight: 24 }}
+            aria-label={`${pin.length} digits entered`}
           >
-            {verify.isPending ? "…" : <ArrowRight className="h-6 w-6" />}
-          </Button>
+            {Array.from({ length: dotCount }).map((_, i) => (
+              <div
+                key={i}
+                className={`h-3.5 w-3.5 rounded-full border-2 transition-all duration-150 ${
+                  pin.length > i
+                    ? "bg-primary border-primary scale-110"
+                    : "border-muted-foreground/30"
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Keypad */}
+          <div className="grid grid-cols-3 gap-2.5 w-full">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+              <KeypadKey key={d} onClick={() => push(d)} disabled={verify.isPending}>
+                {d}
+              </KeypadKey>
+            ))}
+            <KeypadKey
+              onClick={back}
+              disabled={verify.isPending || pin.length === 0}
+              variant="ghost"
+              aria-label="Delete digit"
+            >
+              <Delete className="h-5 w-5" />
+            </KeypadKey>
+            <KeypadKey onClick={() => push("0")} disabled={verify.isPending}>
+              0
+            </KeypadKey>
+            <Button
+              type="button"
+              onClick={submit}
+              disabled={!canSubmit}
+              aria-label="Sign in"
+              className="h-16 text-lg font-semibold rounded-xl"
+            >
+              {verify.isPending ? "…" : <ArrowRight className="h-6 w-6" />}
+            </Button>
+          </div>
         </div>
 
-        <p className="text-[11px] text-muted-foreground text-center flex items-center gap-1.5">
+        <p className="text-[11px] text-white/50 text-center flex items-center gap-1.5">
           <ShieldCheck className="h-3 w-3" /> Hotspot Market 11 &middot; 13 &middot; 14 &middot; Travel Center
         </p>
       </div>
@@ -168,7 +181,7 @@ function KeypadKey({
       variant={variant === "ghost" ? "ghost" : "secondary"}
       onClick={onClick}
       disabled={disabled}
-      className="h-16 text-2xl font-semibold tabular-nums"
+      className="h-16 text-2xl font-semibold tabular-nums rounded-xl"
       {...rest}
     >
       {children}

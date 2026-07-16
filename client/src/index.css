@@ -93,11 +93,15 @@
   --border: oklch(0.905 0.006 260);
   --input: oklch(0.885 0.006 260);
   --ring: var(--brand-red);
-  --sidebar: oklch(0.995 0.001 85);
-  --sidebar-foreground: oklch(0.28 0.012 260);
-  --sidebar-accent: oklch(0.945 0.008 30);
-  --sidebar-accent-foreground: oklch(0.32 0.05 27);
-  --sidebar-border: oklch(0.915 0.005 260);
+  /* Ink frame: the sidebar is deep ink even in light mode — it frames the
+     paper work surface and gives the app its signature contrast. */
+  --ink: oklch(0.17 0.012 265);
+  --ink-soft: oklch(0.22 0.014 265);
+  --sidebar: var(--ink);
+  --sidebar-foreground: oklch(0.88 0.008 80);
+  --sidebar-accent: oklch(0.62 0.21 27 / 0.16);
+  --sidebar-accent-foreground: oklch(0.97 0.01 27);
+  --sidebar-border: oklch(1 0 0 / 8%);
   --sidebar-ring: var(--brand-red);
 }
 
@@ -129,6 +133,8 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 13%);
   --ring: var(--brand-red);
+  --ink: oklch(0.115 0.006 260);
+  --ink-soft: oklch(0.17 0.008 260);
   --chart-1: #3987e5; /* blue    */
   --chart-2: #008300; /* green   */
   --chart-3: #d55181; /* magenta */
@@ -153,6 +159,11 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    /* Barely-there warm washes so the paper canvas never reads flat. */
+    background-image:
+      radial-gradient(48rem 30rem at 100% 0%, oklch(0.62 0.15 40 / 0.05), transparent 60%),
+      radial-gradient(40rem 26rem at 0% 100%, oklch(0.52 0.2 27 / 0.04), transparent 55%);
+    background-attachment: fixed;
   }
   h1, h2, h3, h4 {
     letter-spacing: -0.015em;
@@ -207,24 +218,54 @@
     @apply text-[11px] uppercase tracking-[0.18em] text-primary font-semibold;
   }
   .page-title {
-    @apply text-[1.7rem] leading-tight font-bold tracking-tight mt-1;
+    @apply text-[1.85rem] leading-tight font-bold tracking-tight mt-1;
     font-family: var(--font-display);
   }
   .page-subtitle {
     @apply text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed;
   }
 
-  /* Elevated card surface for KPI/info cards. */
+  /* Elevated card surface: layered shadow + faint inner top highlight give
+     the "premium paper" depth without visual noise. */
   .surface-card {
-    @apply rounded-xl border border-border bg-card;
+    @apply rounded-2xl border border-border bg-card;
     box-shadow:
-      0 1px 2px rgb(16 24 40 / 0.04),
-      0 6px 16px -8px rgb(16 24 40 / 0.08);
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      0 1px 2px rgb(16 24 40 / 0.05),
+      0 8px 24px -12px rgb(16 24 40 / 0.12);
+  }
+  .dark .surface-card {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 1px 2px rgb(0 0 0 / 0.3),
+      0 8px 24px -12px rgb(0 0 0 / 0.5);
+  }
+
+  /* Ink panel: the dark "frame" surface (login backdrop, kiosk, hero bands).
+     Carries a soft signal-red aurora in the corner — the brand's thread. */
+  .ink-panel {
+    background:
+      radial-gradient(56rem 32rem at 85% -10%, oklch(0.52 0.2 27 / 0.28), transparent 60%),
+      radial-gradient(40rem 24rem at -10% 110%, oklch(0.45 0.12 27 / 0.14), transparent 55%),
+      var(--ink);
+    color: oklch(0.95 0.006 80);
+  }
+
+  /* Signature gradient hairline — used as a top rule on hero cards. */
+  .accent-hairline {
+    background: linear-gradient(
+      90deg,
+      oklch(0.52 0.2 27),
+      oklch(0.66 0.19 40) 45%,
+      oklch(0.52 0.2 27 / 0) 100%
+    );
+    height: 3px;
+    border-radius: 999px;
   }
 
   /* Hero numbers on stat tiles: display face, tabular, ink-colored. */
   .kpi-value {
-    @apply text-[1.75rem] leading-none font-semibold tracking-tight tabular-nums text-foreground;
+    @apply text-[2rem] leading-none font-bold tracking-tight tabular-nums text-foreground;
     font-family: var(--font-display);
   }
   .kpi-label {

@@ -169,20 +169,20 @@ export default function ClockKiosk() {
 
   if (!store) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="ink-panel min-h-screen">
         <div className="container max-w-5xl pt-12 pb-16">
           <div className="flex flex-col items-center text-center">
-            <BrandMark size="lg" />
+            <BrandMark size="lg" tone="ink" />
             <div className="mt-8 eyebrow flex items-center gap-2">
               <Clock className="h-4 w-4" /> Time Clock Kiosk
             </div>
             <h1
-              className="mt-2 text-3xl font-bold tracking-tight"
+              className="mt-2 text-3xl font-bold tracking-tight text-white"
               style={{ fontFamily: "var(--font-display)" }}
             >
               Select your store
             </h1>
-            <p className="mt-2 text-muted-foreground">
+            <p className="mt-2 text-white/60">
               Tap your location to start the time clock. The choice is remembered on this device.
             </p>
             <div className="mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
@@ -193,18 +193,18 @@ export default function ClockKiosk() {
                     setStore(s);
                     navigate(`/clock/${encodeURIComponent(s)}`);
                   }}
-                  className="group flex items-center justify-between rounded-2xl border-2 border-border bg-card p-6 text-left shadow-sm transition-all hover:border-primary hover:shadow-md"
+                  className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-6 text-left transition-all hover:border-[oklch(0.62_0.21_27)] hover:bg-white/10"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-primary/10 p-3 text-primary group-hover:bg-primary/15 transition-colors">
+                    <div className="rounded-xl bg-[oklch(0.62_0.21_27/0.15)] p-3 text-[oklch(0.72_0.19_27)] transition-colors">
                       <Building2 className="h-6 w-6" />
                     </div>
                     <div>
-                      <div className="text-lg font-semibold">{s}</div>
-                      <div className="text-sm text-muted-foreground">Open kiosk</div>
+                      <div className="text-lg font-semibold text-white">{s}</div>
+                      <div className="text-sm text-white/50">Open kiosk</div>
                     </div>
                   </div>
-                  <div className="text-muted-foreground transition-transform group-hover:translate-x-1">
+                  <div className="text-white/40 transition-transform group-hover:translate-x-1 group-hover:text-white/80">
                     →
                   </div>
                 </button>
@@ -224,28 +224,28 @@ export default function ClockKiosk() {
       : "from-red-600/95 to-red-700/95";
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
+    <div className="ink-panel relative min-h-screen overflow-hidden">
       {/* Header */}
       <div className="container max-w-3xl pt-8">
         <div className="flex items-center justify-between">
-          <BrandMark size="md" className="items-start" />
+          <BrandMark size="md" className="items-start" tone="ink" />
           <LiveClock />
         </div>
 
-        <div className="mt-6 flex items-center justify-between rounded-2xl border border-border bg-card px-5 py-3 shadow-sm">
+        <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
+            <div className="rounded-lg bg-[oklch(0.62_0.21_27/0.15)] p-2 text-[oklch(0.72_0.19_27)]">
               <Building2 className="h-5 w-5" />
             </div>
             <div>
-              <div className="kpi-label">Punching at</div>
-              <div className="font-semibold">{store}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
+                Punching at
+              </div>
+              <div className="font-semibold text-white">{store}</div>
             </div>
           </div>
           {sessionStore ? (
-            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              Locked
-            </span>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-white/40">Locked</span>
           ) : (
             <button
               onClick={() => {
@@ -253,7 +253,7 @@ export default function ClockKiosk() {
                 setCode("");
                 navigate("/clock");
               }}
-              className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              className="text-xs font-medium text-white/50 underline-offset-2 hover:text-white hover:underline"
             >
               Change store
             </button>
@@ -261,9 +261,9 @@ export default function ClockKiosk() {
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body — the keypad floats on a paper card against the ink frame. */}
       <div className="container max-w-3xl pt-8 pb-12">
-        <Card className="surface-card border-0">
+        <Card className="border-0 rounded-3xl bg-card text-card-foreground shadow-[0_1px_2px_rgb(0_0_0/0.3),0_24px_60px_-24px_rgb(0_0_0/0.7)]">
           <CardContent className="px-6 py-8">
             <div className="flex flex-col items-center">
               <div className="eyebrow flex items-center gap-2">
@@ -310,7 +310,7 @@ export default function ClockKiosk() {
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground/70">
+        <p className="mt-6 text-center text-xs text-white/40">
           Forget your code? Ask your manager — codes are managed from each employee profile.
         </p>
       </div>
@@ -417,12 +417,12 @@ function LiveClock() {
   return (
     <div className="text-right">
       <div
-        className="text-3xl font-semibold tabular-nums"
+        className="text-3xl font-semibold tabular-nums text-white"
         style={{ fontFamily: "var(--font-display)" }}
       >
         {formatClock(now)}
       </div>
-      <div className="text-xs text-muted-foreground">{formatDate(now)}</div>
+      <div className="text-xs text-white/50">{formatDate(now)}</div>
     </div>
   );
 }
