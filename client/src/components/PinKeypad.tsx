@@ -36,24 +36,28 @@ export default function PinKeypad() {
 
   const canSubmit = pin.length >= MIN_PIN && !verify.isPending;
 
+  // verify.mutate is stable across renders (react-query); depending on it +
+  // primitives keeps these callbacks (and the keydown effect below) stable.
+  const { mutate, isPending } = verify;
+
   const submit = useCallback(() => {
-    if (pin.length >= MIN_PIN && !verify.isPending) {
-      verify.mutate({ pin });
+    if (pin.length >= MIN_PIN && !isPending) {
+      mutate({ pin });
     }
-  }, [pin, verify]);
+  }, [pin, isPending, mutate]);
 
   const push = useCallback(
     (d: string) => {
-      if (verify.isPending) return;
+      if (isPending) return;
       setPin((p) => (p.length >= MAX_PIN ? p : p + d));
     },
-    [verify.isPending],
+    [isPending],
   );
 
   const back = useCallback(() => {
-    if (verify.isPending) return;
+    if (isPending) return;
     setPin((p) => p.slice(0, -1));
-  }, [verify.isPending]);
+  }, [isPending]);
 
   // Hardware keyboard: digits, Backspace, Enter.
   useEffect(() => {

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
+import { fmtDuration } from "@/lib/payweek";
 
 /**
  * Public kiosk page. Behaves in two ways:
@@ -51,13 +54,9 @@ function formatDate(d: Date) {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
-type WeekSummary = {
-  workedHours: number;
-  scheduledHours: number;
-  overClocked: boolean;
-  overClockedBy: number;
-  todayShifts: { startLabel: string | null; endLabel: string | null; hours: number }[];
-};
+// Derive the week-summary shape from the server so the contract has exactly
+// one source of truth.
+type WeekSummary = inferRouterOutputs<AppRouter>["clock"]["punch"]["week"];
 
 type FlashState =
   | {
@@ -103,13 +102,7 @@ export default function ClockKiosk() {
 
   const [code, setCode] = useState("");
   const [flash, setFlash] = useState<FlashState | null>(null);
-  const [now, setNow] = useState(new Date());
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -236,15 +229,7 @@ export default function ClockKiosk() {
       <div className="container max-w-3xl pt-8">
         <div className="flex items-center justify-between">
           <BrandMark size="md" className="items-start" />
-          <div className="text-right">
-            <div
-              className="text-3xl font-semibold tabular-nums"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              {formatClock(now)}
-            </div>
-            <div className="text-xs text-muted-foreground">{formatDate(now)}</div>
-          </div>
+          <LiveClock />
         </div>
 
         <div className="mt-6 flex items-center justify-between rounded-2xl border border-border bg-card px-5 py-3 shadow-sm">
@@ -361,7 +346,7 @@ export default function ClockKiosk() {
                 flash.durationHours !== undefined &&
                 flash.durationHours !== null ? (
                   <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm tabular-nums">
-                    This shift: {flash.durationHours.toFixed(2)} h
+                    This shift: {fmtDuration(flash.durationHours)}
                   </div>
                 ) : null}
 
@@ -414,6 +399,30 @@ export default function ClockKiosk() {
           100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
+    </div>
+  );
+}
+
+/**
+ * Ticking header clock, isolated in its own component so the once-per-second
+ * re-render stays here instead of reconciling the whole kiosk tree — this
+ * page runs 24/7 on the counter tablet.
+ */
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="text-right">
+      <div
+        className="text-3xl font-semibold tabular-nums"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
+        {formatClock(now)}
+      </div>
+      <div className="text-xs text-muted-foreground">{formatDate(now)}</div>
     </div>
   );
 }

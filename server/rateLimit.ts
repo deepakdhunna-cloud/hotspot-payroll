@@ -64,10 +64,22 @@ export class SlidingWindowLimiter {
 /** PIN login: 5 failures in 10 minutes → locked for 15 minutes. */
 export const pinLoginLimiter = new SlidingWindowLimiter(5, 10 * 60_000, 15 * 60_000);
 
-/** Kiosk clock codes: 8 failures in 10 minutes → locked for 5 minutes. */
-export const clockPunchLimiter = new SlidingWindowLimiter(8, 10 * 60_000, 5 * 60_000);
+/**
+ * Kiosk clock codes. The kiosk is one shared tablet per store, so the
+ * threshold is generous and the lock short: a few collective mistypes at
+ * shift change must never freeze the whole store's time clock, while a
+ * sustained guessing attack still gets throttled hard (and audited).
+ */
+export const clockPunchLimiter = new SlidingWindowLimiter(15, 5 * 60_000, 2 * 60_000);
 
-/** Best-effort client IP, proxy-aware. */
+/**
+ * Best-effort client IP, proxy-aware.
+ *
+ * Uses the LAST X-Forwarded-For hop: reverse proxies append the address they
+ * accepted the connection from, so the last entry is the one our own proxy
+ * wrote and the only one the client cannot forge. Taking the first hop would
+ * let an attacker rotate a fake header per request and dodge the limiter.
+ */
 export function requestIp(req: {
   headers: Record<string, unknown>;
   socket?: { remoteAddress?: string | null };
@@ -75,7 +87,9 @@ export function requestIp(req: {
 }): string {
   const fwd = req.headers["x-forwarded-for"];
   if (typeof fwd === "string" && fwd.length > 0) {
-    return fwd.split(",")[0]!.trim().slice(0, 64);
+    const hops = fwd.split(",").map((h) => h.trim()).filter(Boolean);
+    const last = hops[hops.length - 1];
+    if (last) return last.slice(0, 64);
   }
   return (req.ip || req.socket?.remoteAddress || "unknown").slice(0, 64);
 }

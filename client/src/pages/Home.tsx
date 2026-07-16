@@ -70,18 +70,21 @@ export default function Home() {
   const isCurrentWeek =
     weekStart.getTime() === inProgressPayWeekStart().getTime();
 
-  // Pace: how worked hours track against schedule at this point in the week.
+  // Pace: worked-so-far vs what the schedule expects by this point in the
+  // week (±tolerance in hours). Comparing hours-to-date keeps early-week
+  // noise from exploding into false flags; the projection is display-only.
   // Over pace = trending past the scheduled labor budget = a warning.
   const pace = useMemo(() => {
     if (!isCurrentWeek || totals.totalScheduled <= 0) return null;
     const elapsedMs = Date.now() - weekStart.getTime();
-    const frac = Math.min(1, Math.max(0.02, elapsedMs / (7 * 86_400_000)));
+    const frac = Math.min(1, Math.max(0, elapsedMs / (7 * 86_400_000)));
+    if (frac <= 0) return null;
+    const expected = totals.totalScheduled * frac;
+    const diff = totals.totalHours - expected;
     const projected = totals.totalHours / frac;
     const tolerance = Math.max(2, totals.totalScheduled * 0.03);
-    if (projected > totals.totalScheduled + tolerance)
-      return { kind: "over" as const, projected };
-    if (projected < totals.totalScheduled - tolerance)
-      return { kind: "under" as const, projected };
+    if (diff > tolerance) return { kind: "over" as const, projected };
+    if (diff < -tolerance) return { kind: "under" as const, projected };
     return { kind: "on" as const, projected };
   }, [isCurrentWeek, totals.totalHours, totals.totalScheduled, weekStart]);
 
@@ -317,7 +320,7 @@ export default function Home() {
           <CardContent>
             {summaryQ.isLoading ? (
               <Skeleton className="h-28 rounded-md" />
-            ) : !data?.hasScheduleImport ? (
+            ) : !data?.hasDaySchedule ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 No day-level schedule yet — upload this week's Homebase schedule to see daily
                 coverage.

@@ -384,8 +384,9 @@ export async function deletePunch(id: number) {
 
 /**
  * Sum of completed punch durations (in hours) for an employee in [start, end).
- * Open punches (no clockOutAt yet) are counted up to `now` so the in-progress
- * shift contributes to the running week total.
+ * Open punches (no clockOutAt yet) are counted up to `now`, but never past the
+ * end of the queried week — otherwise a forgotten clock-out would inflate a
+ * past week's totals a little more every day it stays open.
  */
 export async function hoursWorkedForWeek(
   employeeId: number,
@@ -406,10 +407,11 @@ export async function hoursWorkedForWeek(
       ),
     )
     .orderBy(asc(timePunches.clockInAt));
+  const openCap = Math.min(now.getTime(), end.getTime());
   let totalMs = 0;
   for (const r of rows) {
     const inAt = new Date(r.clockInAt).getTime();
-    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : now.getTime();
+    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : openCap;
     if (outAt > inAt) totalMs += outAt - inAt;
   }
   return totalMs / 3_600_000;
@@ -438,9 +440,11 @@ export async function hoursWorkedForWeekBulk(
     .from(timePunches)
     .where(and(...conds));
   const map = new Map<number, number>();
+  // Same open-punch cap as hoursWorkedForWeek: never count past the week end.
+  const openCap = Math.min(now.getTime(), end.getTime());
   for (const r of rows) {
     const inAt = new Date(r.clockInAt).getTime();
-    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : now.getTime();
+    const outAt = r.clockOutAt ? new Date(r.clockOutAt).getTime() : openCap;
     if (outAt <= inAt) continue;
     const hrs = (outAt - inAt) / 3_600_000;
     map.set(r.employeeId, (map.get(r.employeeId) ?? 0) + hrs);

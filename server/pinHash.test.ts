@@ -8,36 +8,36 @@ import {
 } from "./_core/pinAuth";
 
 describe("PIN hashing", () => {
-  it("verifies a scrypt hash and rejects wrong PINs", () => {
-    const hash = hashPinScrypt("4821", "ceo");
+  it("verifies a scrypt hash and rejects wrong PINs", async () => {
+    const hash = await hashPinScrypt("4821", "ceo");
     expect(hash.startsWith("scrypt$")).toBe(true);
-    expect(checkPinHash("4821", "ceo", hash)).toBe(true);
-    expect(checkPinHash("4822", "ceo", hash)).toBe(false);
+    expect(await checkPinHash("4821", "ceo", hash)).toBe(true);
+    expect(await checkPinHash("4822", "ceo", hash)).toBe(false);
   });
 
-  it("scopes hashes: the same PIN under another scope does not match", () => {
-    const hash = hashPinScrypt("4821", "Hotspot Market 11");
-    expect(checkPinHash("4821", "ceo", hash)).toBe(false);
+  it("scopes hashes: the same PIN under another scope does not match", async () => {
+    const hash = await hashPinScrypt("4821", "Hotspot Market 11");
+    expect(await checkPinHash("4821", "ceo", hash)).toBe(false);
   });
 
-  it("produces a different salt (and hash) every time", () => {
-    const a = hashPinScrypt("4821", "ceo");
-    const b = hashPinScrypt("4821", "ceo");
+  it("produces a different salt (and hash) every time", async () => {
+    const a = await hashPinScrypt("4821", "ceo");
+    const b = await hashPinScrypt("4821", "ceo");
     expect(a).not.toBe(b);
-    expect(checkPinHash("4821", "ceo", a)).toBe(true);
-    expect(checkPinHash("4821", "ceo", b)).toBe(true);
+    expect(await checkPinHash("4821", "ceo", a)).toBe(true);
+    expect(await checkPinHash("4821", "ceo", b)).toBe(true);
   });
 
-  it("still verifies legacy sha256 hashes (pre-upgrade rows)", () => {
+  it("still verifies legacy sha256 hashes (pre-upgrade rows)", async () => {
     const legacy = hashPinLegacy("1313", "Hotspot Market 13");
-    expect(checkPinHash("1313", "Hotspot Market 13", legacy)).toBe(true);
-    expect(checkPinHash("1314", "Hotspot Market 13", legacy)).toBe(false);
+    expect(await checkPinHash("1313", "Hotspot Market 13", legacy)).toBe(true);
+    expect(await checkPinHash("1314", "Hotspot Market 13", legacy)).toBe(false);
   });
 
-  it("rejects malformed stored hashes without throwing", () => {
-    expect(checkPinHash("1234", "ceo", "scrypt$broken")).toBe(false);
-    expect(checkPinHash("1234", "ceo", "not-a-hash")).toBe(false);
-    expect(checkPinHash("1234", "ceo", "")).toBe(false);
+  it("rejects malformed stored hashes without throwing", async () => {
+    expect(await checkPinHash("1234", "ceo", "scrypt$broken")).toBe(false);
+    expect(await checkPinHash("1234", "ceo", "not-a-hash")).toBe(false);
+    expect(await checkPinHash("1234", "ceo", "")).toBe(false);
   });
 });
 

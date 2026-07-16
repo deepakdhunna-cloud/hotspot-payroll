@@ -54,10 +54,22 @@ describe("SlidingWindowLimiter", () => {
 });
 
 describe("requestIp", () => {
-  it("prefers the first x-forwarded-for hop", () => {
+  it("uses the LAST x-forwarded-for hop — the one our proxy wrote", () => {
+    // A client can prepend fake hops, but cannot forge the last one.
     expect(
-      requestIp({ headers: { "x-forwarded-for": "203.0.113.9, 10.0.0.1" } }),
+      requestIp({ headers: { "x-forwarded-for": "6.6.6.6, 203.0.113.9" } }),
     ).toBe("203.0.113.9");
+    expect(requestIp({ headers: { "x-forwarded-for": "203.0.113.9" } })).toBe(
+      "203.0.113.9",
+    );
+  });
+
+  it("spoofed extra hops cannot change the resolved IP", () => {
+    const real = requestIp({ headers: { "x-forwarded-for": "203.0.113.9" } });
+    const spoofed = requestIp({
+      headers: { "x-forwarded-for": "1.2.3.4, 5.6.7.8, 203.0.113.9" },
+    });
+    expect(spoofed).toBe(real);
   });
 
   it("falls back to socket address, then 'unknown'", () => {

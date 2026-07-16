@@ -74,6 +74,11 @@ export default function ScheduleImport() {
   const [dragOver, setDragOver] = useState(false);
   const [rows, setRows] = useState<ParsedRow[] | null>(null);
   const [importId, setImportId] = useState<number | null>(null);
+  // The week the rows were parsed against. Shift dates are resolved into THIS
+  // week server-side, so commit must use it even if the navigator has since
+  // moved — otherwise scheduled hours and shift dates would land in
+  // different weeks.
+  const [parsedWeek, setParsedWeek] = useState<Date | null>(null);
   const [overrides, setOverrides] = useState<Record<number, number | null>>({});
   const [hourOverrides, setHourOverrides] = useState<Record<number, string>>({});
   const [qaRole, setQaRole] = useState<Record<number, string>>({});
@@ -97,6 +102,7 @@ export default function ScheduleImport() {
     onSuccess: (data) => {
       setRows(data.rows as ParsedRow[]);
       setImportId(data.importId);
+      setParsedWeek(new Date(data.weekStart));
       const initialOverrides: Record<number, number | null> = {};
       const initialHours: Record<number, string> = {};
       data.rows.forEach((r, i) => {
@@ -145,6 +151,7 @@ export default function ScheduleImport() {
       setRows(null);
       setFile(null);
       setImportId(null);
+      setParsedWeek(null);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -213,7 +220,9 @@ export default function ScheduleImport() {
       toast.error("Nothing to import — match at least one employee.");
       return;
     }
-    commitM.mutate({ weekStart, importId, entries });
+    // Commit against the week the file was parsed for, not the navigator's
+    // current position.
+    commitM.mutate({ weekStart: parsedWeek ?? weekStart, importId, entries });
   };
 
   const matchedCount = useMemo(
@@ -251,20 +260,20 @@ export default function ScheduleImport() {
 
   const quickAddAll = async () => {
     if (!rows || !effectiveStore) return;
-    for (const i of unmatchedIndices) {
-      const r = rows[i];
-      const rate = Number(qaRate[i]);
-      try {
-        await quickCreateM.mutateAsync({
+    // Fire all creates in parallel — each success re-links its rows via the
+    // mutation's onSuccess; failures surface via the onError toast.
+    await Promise.allSettled(
+      unmatchedIndices.map((i) => {
+        const r = rows[i];
+        const rate = Number(qaRate[i]);
+        return quickCreateM.mutateAsync({
           fullName: r.extractedName.trim(),
           storeLocation: effectiveStore as any,
           role: (qaRole[i] ?? "Cashier") as any,
           payRate: isNaN(rate) || rate < 0 ? undefined : rate,
         });
-      } catch {
-        /* surfaced via toast onError */
-      }
-    }
+      }),
+    );
   };
 
   return (
@@ -467,7 +476,8 @@ export default function ScheduleImport() {
                 <span className={rows.length - matchedCount > 0 ? "text-warning font-medium" : ""}>
                   {rows.length - matchedCount} need review
                 </span>{" "}
-                · <span className="font-medium tabular-nums">{totalHours.toFixed(1)}h total</span>
+                · <span className="font-medium tabular-nums">{totalHours.toFixed(1)}h total</span>{" "}
+                · commits to week of {fmtWeekRange(parsedWeek ?? weekStart)}
               </p>
             </div>
             <Button onClick={commit} disabled={commitM.isPending || matchedCount === 0}>

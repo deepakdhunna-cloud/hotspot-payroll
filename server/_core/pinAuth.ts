@@ -60,12 +60,25 @@ const SCRYPT_PREFIX = "scrypt$";
 const SCRYPT_KEYLEN = 32;
 const SCRYPT_OPTS = { N: 16384, r: 8, p: 1 } as const;
 
+// Async scrypt runs on the libuv threadpool: PIN checks must never block the
+// event loop, or a burst of failed logins would stall kiosk punches app-wide.
+const scryptAsync = (password: string, salt: Buffer, keylen: number) =>
+  new Promise<Buffer>((resolve, reject) => {
+    crypto.scrypt(password, salt, keylen, SCRYPT_OPTS, (err, derived) =>
+      err ? reject(err) : resolve(derived),
+    );
+  });
+
 /** Current hash format: scrypt with a random per-record salt. */
-export function hashPinScrypt(pin: string, scope: PinScope, saltHex?: string): string {
+export async function hashPinScrypt(
+  pin: string,
+  scope: PinScope,
+  saltHex?: string,
+): Promise<string> {
   const salt = saltHex ?? crypto.randomBytes(16).toString("hex");
-  const derived = crypto
-    .scryptSync(`${scope}:${pin}:${getSalt()}`, Buffer.from(salt, "hex"), SCRYPT_KEYLEN, SCRYPT_OPTS)
-    .toString("hex");
+  const derived = (
+    await scryptAsync(`${scope}:${pin}:${getSalt()}`, Buffer.from(salt, "hex"), SCRYPT_KEYLEN)
+  ).toString("hex");
   return `${SCRYPT_PREFIX}${salt}$${derived}`;
 }
 
@@ -81,12 +94,20 @@ function timingSafeHexEqual(aHex: string, bHex: string): boolean {
 }
 
 /** Check a raw PIN against a stored hash of either format. */
-export function checkPinHash(pin: string, scope: PinScope, stored: string): boolean {
+export async function checkPinHash(
+  pin: string,
+  scope: PinScope,
+  stored: string,
+): Promise<boolean> {
   if (stored.startsWith(SCRYPT_PREFIX)) {
     const [, salt, digest] = stored.split("$");
     if (!salt || !digest) return false;
-    const candidate = hashPinScrypt(pin, scope, salt).split("$")[2]!;
-    return timingSafeHexEqual(candidate, digest);
+    try {
+      const candidate = (await hashPinScrypt(pin, scope, salt)).split("$")[2]!;
+      return timingSafeHexEqual(candidate, digest);
+    } catch {
+      return false;
+    }
   }
   return timingSafeHexEqual(hashPinLegacy(pin, scope), stored);
 }
@@ -110,7 +131,7 @@ export async function ensureDefaultPins(): Promise<void> {
     if (haveScopes.has(scope)) continue;
     await db.insert(pinCodes).values({
       scope,
-      pinHash: hashPinScrypt(DEFAULT_PINS[scope], scope),
+      pinHash: await hashPinScrypt(DEFAULT_PINS[scope], scope),
     });
   }
   console.log("[PinAuth] Default PINs ensured");
@@ -128,14 +149,14 @@ export async function verifyPin(pin: string): Promise<PinScope | null> {
   const rows = await db.select().from(pinCodes);
   for (const row of rows) {
     const scope = row.scope as PinScope;
-    if (!checkPinHash(clean, scope, row.pinHash)) continue;
+    if (!(await checkPinHash(clean, scope, row.pinHash))) continue;
     if (!row.pinHash.startsWith(SCRYPT_PREFIX)) {
       // Upgrade the stored hash without touching updatedAt-based revocation:
       // this is the same PIN, so existing sessions must stay valid.
       try {
         await db
           .update(pinCodes)
-          .set({ pinHash: hashPinScrypt(clean, scope), updatedAt: row.updatedAt })
+          .set({ pinHash: await hashPinScrypt(clean, scope), updatedAt: row.updatedAt })
           .where(eq(pinCodes.scope, scope));
       } catch (error) {
         console.warn("[PinAuth] Hash upgrade failed (non-fatal):", error);
@@ -152,7 +173,7 @@ export async function setPin(scope: PinScope, newPin: string): Promise<void> {
   if (!isValidPin(clean)) throw new Error("PIN must be 4-8 digits");
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const hash = hashPinScrypt(clean, scope);
+  const hash = await hashPinScrypt(clean, scope);
   const existing = await db.select().from(pinCodes).where(eq(pinCodes.scope, scope)).limit(1);
   if (existing[0]) {
     await db.update(pinCodes).set({ pinHash: hash }).where(eq(pinCodes.scope, scope));

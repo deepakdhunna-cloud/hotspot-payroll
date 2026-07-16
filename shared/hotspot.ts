@@ -151,3 +151,35 @@ export function formatScheduleDay(day: Date): string {
  * Keeps a few minutes of clock drift from flagging every shift.
  */
 export const OVERCLOCK_THRESHOLD_HOURS = 0.25;
+
+/**
+ * Single source of truth for over-clock math, used by the manager dashboard,
+ * the CEO view and the kiosk so all three surfaces always agree.
+ * `scheduled` of 0 means "no schedule known" — never flags.
+ */
+export function overclockStatus(workedHours: number, scheduledHours: number) {
+  const overClockedBy =
+    scheduledHours > 0 ? Math.max(0, workedHours - scheduledHours) : 0;
+  return {
+    overClocked: overClockedBy > OVERCLOCK_THRESHOLD_HOURS,
+    overClockedBy,
+  };
+}
+
+/**
+ * The stores' local timezone. Weeks and days are STORED as UTC dates, but
+ * "what day is it right now?" (kiosk summaries, e.g. an 11pm punch) must be
+ * answered in store-local time or evening punches land on the next day.
+ * Change this once if the business ever moves timezones.
+ */
+export const BUSINESS_TIME_ZONE = "America/Chicago";
+
+/**
+ * The calendar day (00:00 UTC marker) that `now` falls on in store-local
+ * time. Example: Wed 21:30 in Chicago = Thu 02:30 UTC → returns Wednesday.
+ */
+export function businessDayStart(now: Date = new Date()): Date {
+  // en-CA formats as YYYY-MM-DD, which parses cleanly as a UTC date.
+  const ymd = now.toLocaleDateString("en-CA", { timeZone: BUSINESS_TIME_ZONE });
+  return new Date(`${ymd}T00:00:00Z`);
+}
