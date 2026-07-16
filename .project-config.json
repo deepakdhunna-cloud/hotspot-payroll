@@ -1,8 +1,8 @@
 {
   "build_command": "pnpm run build",
   "capabilities": [
-    "server",
     "db",
+    "server",
     "user"
   ],
   "dev_command": "pnpm run dev",
@@ -14,10 +14,11 @@
   ],
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663443119124/2nzzcMYqbvbBAVqaxrnEg8",
-    "access_key_id": "ASIAZV3A2ECZCIVGCG55",
-    "secret_access_key": "9yWKtX31tBA2ZFcpcc344p/rJG4MOHRVdsK8Dj7I",
-    "session_token": "IQoJb3JpZ2luX2VjEJX//////////wEaCXVzLWVhc3QtMSJHMEUCIGrH+z4icuzXdkAxlxN6+/rymvTtzBaQwhqYFYkbXAt2AiEAuMqf9JE8nMYYQhyx6+LlTCZ7xkXlDSLua2+inQ1ddPYq9gMIXhAEGgw2NjUzODYwOTg4NjYiDJd4mFbWBiJJTavJkirTA99+xPUoA6ZcmauajQj8u+PxwJCHdl4vLwMmwygoUcHvvaqZcfhXd3XeA2diY9v66WDuCOSEO3Gs3QPZqCVXTMFdMgw9ZHHhkr79uDrmcfudFP724WoSt7bbaP7sSAdhg8fSIkcHch+Mqu5pMhWOUMtL5B1t2dmZkNIlCG5qkuOMLj/ynKWSA8VLdCwIOqPqvfuc6tA1losMnRY1lqzjSQAMS3ULMC6cpBd8f53nDvjvVU6uLFLUIf428FB0NNMHgynkKSZQAPnxwj8dYwyF/aQ/qDB4YTCxDxzYtnbvL0B9grDDUqUYqT00lglr/neoozWftphnzC1e5+IWn61ng61TMILCH36wpfpIekKmf9UH2vH+93jsNgFKcxBm3kq7vKPlW/NMbQ0BFSNRFgMZyJXNJwURYZAHerOoQ7p/XcbkBaSFx3CKFZVUVyO0zB3nz5vO48xyG2nM0bWos0nf+lTpLbjEUFDtXU8AHjomw9teVSc4/kd+KlqkpjgzV/7WyUOWqvmshfXEHUFc9b41qJ3G2wcKKMiLeQ+d0D/2RJGWRrPa0l3P2EeHdiRs78meQPedimFS5lo1jUTGuvE/SMBsEUilroZ7EoN8eJwKIsQQCIaEMOyBl9AGOp0BeQuqhN9xwfkCTH5QO9DE2CvHcwiDNWFslNEoh2LUURGObE5NV52lJLYBoywKJiBFHaOr47SyMb1Js2OoMesQ0odrBABkQUA1xIlTWVDOTb+q5bzXvnOvHgy4secmrPCZWClFndLa8E7vTNJd1hjdn2H+v9dSU/dn+V0mk9z5bkCaOFzHxVwkHvi9sjeFEPc+M1t6uqAERDzOqhROuw==",
-    "expiration": "2026-05-15T00:32:44.000Z"
+    "access_key_id": "ASIAZV3A2ECZN4RY5RCS",
+    "secret_access_key": "nj8uA/cLbew9GHBTpuOP416EY25TT6OQ3hGTJRKS",
+    "session_token": "IQoJb3JpZ2luX2VjEIH//////////wEaCXVzLWVhc3QtMSJIMEYCIQDO8KUmhzo+8bS/RmBtQ+PPrud+V2UsvqaflAFl2JEIdwIhAPmiI2/AwdP2LzVBBSoPniMvoZiK2l6cNdo/6Vavgym9KvYDCEoQBBoMNjY1Mzg2MDk4ODY2IgyQG6m5doYd0CqSoWcq0wMwIO8n/DjOZw+LJxVfYkbEETjkUh+e/zDnGUuA21gIv3qIbpyjrwfOPPZnmHmjQY5hZInvC8zlscE5XaMrTzRPuyY3+MxgPotYxfLKyv3ty20TDqgZE3351NT0USMONqknSn7JebY7ROkgfYzrtUIryX4se+a0o3iCehVqk2X9cdBSsfKByQJd7GhnHReCHPmXDqBA9iuKiEAkBHle1RQAM3POotoJiK0OD0zhjxfeXAmgkuJTlo9JhzcDn9bBEJVU9k8kv6ar/mY5njLUm9NovzlE7TA3mlWmOGznrncW6nF0m44gOofvRAuPgcac5QjmXZ3mBiSgDydpRSsafaDLahXM+PySKQvyF+7VeNjevZusWo5g6K0dFAmoeOubBYi7K5FC691YStzoldmoA6VrCazdwIkp4wSJJTVPo5DZnMqAgjSSk8lNgOPJdSmCEXYuygzWDDdCb9iiEhKw4eeqJn1xFeDN0lHGs9bIYNe86U1bJK55gyz1Uucecdj3ccUXy5qxrD2R5xxpV46+Ozocld1aYL9+I/NQ2jb4RtstGhXB/xg082HvYeAxr8gGg2BFi/qle60SF2Byw/pynnOXRD/mJ4iPadv1ZXZpHgt2Bw3yRjD9mOTSBjqcAbm5u9Yg7NwlhbftfDtsLyybn8SKVpvQIUDMhNTPSg5fbaVJ9KjwwbDd3ESwWxMIQlsWY6QEb85oIYWRj8sUBSJRBq3x/HUClYqpl5m4Cqk08sOmCBNkEMIMNC81vsTAQ4Kt5X2bDXO4+DgdrMKsXi67zXiwOyuSqMCxi6zmuXGvs/DP/f+q/lG4Pg1g1LEZlii45ONLBkMKBosTwQ==",
+    "expiration": "2026-07-17T04:53:17.000Z",
+    "backend": "GIT_BACKEND_S3"
   },
   "name": "hotspot_payroll",
   "path": "/home/ubuntu/hotspot_payroll",
