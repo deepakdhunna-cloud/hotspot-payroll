@@ -167,7 +167,7 @@ function DashboardLayoutContent({
                   <BrandMark size="sm" tone="ink" />
                 </div>
               ) : (
-                <BrandMark size="sm" withPill={false} tone="ink" />
+                <BrandMark size="sm" tone="ink" />
               )}
             </div>
           </SidebarHeader>
@@ -263,7 +263,7 @@ function DashboardLayoutContent({
             <div className="flex items-center gap-2">
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
               <div className="flex items-center gap-3">
-                <BrandMark size="sm" withPill={false} />
+                <BrandMark size="sm" />
                 <span className="text-sm font-medium tracking-tight text-foreground">
                   {activeMenuItem?.label ?? "Menu"}
                 </span>

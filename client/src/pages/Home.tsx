@@ -61,6 +61,8 @@ export default function Home() {
     totalHours: 0,
     totalScheduled: 0,
     totalGross: 0,
+    totalEntered: 0,
+    totalSavedGross: 0,
     variance: 0,
   };
   const employees = data?.employees ?? [];
@@ -218,9 +220,9 @@ export default function Home() {
             }
           />
           <StatCard
-            label="Gross pay"
+            label="Labor cost (live)"
             value={fmtMoney(totals.totalGross)}
-            sub="entered hours × pay rate"
+            sub={`${fmtMoney(totals.totalSavedGross ?? 0)} saved to payroll`}
             icon={<CircleDollarSign />}
             style={{ animationDelay: "80ms" }}
           />

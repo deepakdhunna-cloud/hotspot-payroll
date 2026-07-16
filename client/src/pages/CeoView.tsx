@@ -57,6 +57,7 @@ export default function CeoView() {
   const data = ceoQ.data;
   const grand = data?.grand ?? {
     totalHours: 0,
+    totalClockHours: 0,
     totalGross: 0,
     totalFederal: 0,
     totalState: 0,
@@ -130,7 +131,7 @@ export default function CeoView() {
               <StatCard
                 label="Gross pay (week)"
                 value={fmtMoney(grand.totalGross)}
-                sub={`${grand.totalHours.toFixed(1)} hours worked`}
+                sub={`${grand.totalClockHours.toFixed(1)} hours clocked`}
                 icon={<Wallet />}
                 style={{ animationDelay: "0ms" }}
               />
@@ -183,7 +184,7 @@ export default function CeoView() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
-                      <Stat label="Hours" value={s.totalHours.toFixed(1)} />
+                      <Stat label="Clocked" value={s.totalClockHours.toFixed(1)} />
                       <Stat label="Scheduled" value={s.totalScheduled.toFixed(1)} />
                       <Stat label="Gross" value={fmtMoney(s.totalGross)} bold />
                       <Stat label="Net (est.)" value={fmtMoney(s.totalNet)} bold />

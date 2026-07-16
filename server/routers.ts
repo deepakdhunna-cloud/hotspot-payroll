@@ -735,11 +735,20 @@ export const appRouter = router({
           if (byStore[e.storeLocation])
             byStore[e.storeLocation].employeeCount++;
         }
+        // The dashboard's headline numbers are LIVE: hours come straight from
+        // clock punches and labor cost from clocked hours × pay rate, so the
+        // page moves in real time. Saved payroll entries are reported
+        // alongside (totalEntered / totalSavedGross) — money that has
+        // actually been committed to payroll.
+        for (const emp of employees) {
+          if (!byStore[emp.storeLocation]) continue;
+          const clocked = clockHours.get(emp.id) ?? 0;
+          byStore[emp.storeLocation].totalHours += clocked;
+          byStore[emp.storeLocation].totalGross += clocked * Number(emp.payRate);
+        }
         for (const e of entries) {
           if (!byStore[e.storeLocation]) continue;
-          byStore[e.storeLocation].totalHours += Number(e.hoursWorked);
           byStore[e.storeLocation].totalScheduled += Number(e.scheduledHours);
-          byStore[e.storeLocation].totalGross += Number(e.grossPay);
         }
 
         const totalHours = Object.values(byStore).reduce(
@@ -752,6 +761,14 @@ export const appRouter = router({
         );
         const totalGross = Object.values(byStore).reduce(
           (a, b) => a + b.totalGross,
+          0
+        );
+        const totalEntered = entries.reduce(
+          (a, e) => a + Number(e.hoursWorked),
+          0
+        );
+        const totalSavedGross = entries.reduce(
+          (a, e) => a + Number(e.grossPay),
           0
         );
 
@@ -842,6 +859,8 @@ export const appRouter = router({
             totalHours,
             totalScheduled,
             totalGross,
+            totalEntered,
+            totalSavedGross,
             variance: totalHours - totalScheduled,
           },
           employees: empBreakdown,
@@ -888,6 +907,7 @@ export const appRouter = router({
           string,
           {
             totalHours: number;
+            totalClockHours: number;
             totalGross: number;
             totalFederal: number;
             totalState: number;
@@ -901,6 +921,7 @@ export const appRouter = router({
         for (const s of stores) {
           byStore[s] = {
             totalHours: 0,
+            totalClockHours: 0,
             totalGross: 0,
             totalFederal: 0,
             totalState: 0,
@@ -931,6 +952,7 @@ export const appRouter = router({
           if (byStore[emp.storeLocation]) {
             byStore[emp.storeLocation].employeeCount++;
             byStore[emp.storeLocation].totalHours += hoursWorked;
+            byStore[emp.storeLocation].totalClockHours += clocked;
             byStore[emp.storeLocation].totalScheduled += scheduled;
             byStore[emp.storeLocation].totalGross += grossPay;
             byStore[emp.storeLocation].totalFederal += federal;
@@ -960,6 +982,7 @@ export const appRouter = router({
         const grand = Object.values(byStore).reduce(
           (acc, s) => ({
             totalHours: acc.totalHours + s.totalHours,
+            totalClockHours: acc.totalClockHours + s.totalClockHours,
             totalGross: acc.totalGross + s.totalGross,
             totalFederal: acc.totalFederal + s.totalFederal,
             totalState: acc.totalState + s.totalState,
@@ -968,6 +991,7 @@ export const appRouter = router({
           }),
           {
             totalHours: 0,
+            totalClockHours: 0,
             totalGross: 0,
             totalFederal: 0,
             totalState: 0,
