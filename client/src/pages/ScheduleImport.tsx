@@ -26,19 +26,39 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { STORE_ABBR, fmtWeekRange } from "@/lib/format";
-import { fmtDateTime, inProgressPayWeekStart, shortDayLabel } from "@/lib/payweek";
+import {
+  fmtDateTime,
+  fromDateInput,
+  inProgressPayWeekStart,
+  payWeekDays,
+  shortDayLabel,
+  toDateInput,
+} from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import {
   AlertCircle,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
+  ExternalLink,
   FileImage,
   FileText,
   History,
   Link2,
+  Pencil,
+  Plus,
   ScanSearch,
   Sparkles,
+  Trash2,
   Upload,
   UserPlus,
   X,
@@ -155,6 +175,10 @@ export default function ScheduleImport() {
   const employeesList = employeesQ.data ?? [];
 
   const importsQ = trpc.schedule.imports.useQuery({ limit: 8 });
+  const scheduleWeekQ = trpc.schedule.week.useQuery({
+    weekStart,
+    store: effectiveStore ? (effectiveStore as any) : undefined,
+  });
   const utils = trpc.useUtils();
 
   const parseM = trpc.schedule.parseUpload.useMutation({
@@ -739,6 +763,15 @@ export default function ScheduleImport() {
         </div>
       )}
 
+      {/* The committed schedule — always visible, editable, original file a click away */}
+      <WeekScheduleBoard
+        weekStart={weekStart}
+        shifts={(scheduleWeekQ.data?.shifts ?? []) as BoardShift[]}
+        loading={scheduleWeekQ.isLoading}
+        imports={importsQ.data ?? []}
+        employees={employeesList}
+      />
+
       {/* How it works + import history */}
       {!rows && !parseM.isPending && (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -795,6 +828,19 @@ export default function ScheduleImport() {
                         <span className="text-xs tabular-nums text-muted-foreground">
                           {Number(imp.totalHours).toFixed(0)}h
                         </span>
+                        {imp.fileUrl ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() =>
+                              window.open(imp.fileUrl, "_blank", "noopener,noreferrer")
+                            }
+                            title="Open the original uploaded file"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 mr-1" /> File
+                          </Button>
+                        ) : null}
                         {imp.status === "committed" ? (
                           <span className="chip-good">
                             <CheckCircle2 className="h-3 w-3" /> committed
@@ -812,5 +858,449 @@ export default function ScheduleImport() {
         </div>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* The committed schedule board: always on screen for the selected     */
+/* week — who works which day, per-day coverage totals, one click to   */
+/* the original uploaded file, and inline editing per employee.        */
+/* ------------------------------------------------------------------ */
+
+type BoardShift = {
+  id: number;
+  employeeId: number;
+  employeeName: string;
+  storeLocation: string;
+  shiftDate: Date | string;
+  startLabel: string | null;
+  endLabel: string | null;
+  hours: number;
+  importId: number | null;
+};
+
+type ImportRow = {
+  id: number;
+  filename: string;
+  fileUrl: string | null;
+  status: string;
+};
+
+type EditableShift = {
+  date: string; // yyyy-mm-dd within the week
+  startLabel: string;
+  endLabel: string;
+  hours: string;
+};
+
+function WeekScheduleBoard({
+  weekStart,
+  shifts,
+  loading,
+  imports,
+  employees,
+}: {
+  weekStart: Date;
+  shifts: BoardShift[];
+  loading: boolean;
+  imports: ImportRow[];
+  employees: { id: number; fullName: string }[];
+}) {
+  const utils = trpc.useUtils();
+  const [editFor, setEditFor] = useState<{ id: number; name: string } | null>(null);
+  const [addPick, setAddPick] = useState<string>("");
+
+  const days = payWeekDays(weekStart);
+  const byEmployee = useMemo(() => {
+    const m = new Map<number, { name: string; total: number; byDay: Map<string, BoardShift[]> }>();
+    for (const s of shifts) {
+      const rec = m.get(s.employeeId) ?? {
+        name: s.employeeName,
+        total: 0,
+        byDay: new Map<string, BoardShift[]>(),
+      };
+      rec.total += s.hours;
+      const key = toDateInput(new Date(s.shiftDate));
+      rec.byDay.set(key, [...(rec.byDay.get(key) ?? []), s]);
+      m.set(s.employeeId, rec);
+    }
+    return m;
+  }, [shifts]);
+
+  const dayTotals = days.map((d) => {
+    const key = toDateInput(d);
+    let total = 0;
+    byEmployee.forEach((rec) => {
+      for (const s of rec.byDay.get(key) ?? []) total += s.hours;
+    });
+    return total;
+  });
+  const weekTotal = dayTotals.reduce((a, b) => a + b, 0);
+
+  // The uploaded file behind this week's schedule (most shifts carry the
+  // committing import's id).
+  const sourceImport = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const s of shifts) {
+      if (s.importId) counts.set(s.importId, (counts.get(s.importId) ?? 0) + 1);
+    }
+    let best: number | null = null;
+    let bestCount = 0;
+    counts.forEach((count, id) => {
+      if (count > bestCount) {
+        best = id;
+        bestCount = count;
+      }
+    });
+    return best ? (imports.find((i) => i.id === best) ?? null) : null;
+  }, [shifts, imports]);
+
+  const scheduledIds = new Set(Array.from(byEmployee.keys()));
+  const addable = employees.filter((e) => !scheduledIds.has(e.id));
+
+  return (
+    <Card className="surface-card border-0 rise-in">
+      <CardHeader className="pb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <CardTitle className="section-title flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            Schedule on file · {fmtWeekRange(weekStart)}
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            {shifts.length > 0
+              ? `${byEmployee.size} people · ${weekTotal.toFixed(1)} hours committed. Click a row's pencil to edit — changes flow to payroll and the dashboards.`
+              : "What's committed for this week will show here — who works which day, with per-day coverage."}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {sourceImport?.fileUrl ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                window.open(sourceImport.fileUrl!, "_blank", "noopener,noreferrer")
+              }
+              title={`Open the original upload (${sourceImport.filename})`}
+            >
+              <ExternalLink className="h-4 w-4 mr-1.5" /> View uploaded schedule
+            </Button>
+          ) : null}
+          {addable.length > 0 && shifts.length > 0 ? (
+            <Select
+              value={addPick || undefined}
+              onValueChange={(v) => {
+                setAddPick("");
+                const emp = addable.find((e) => String(e.id) === v);
+                if (emp) setEditFor({ id: emp.id, name: emp.fullName });
+              }}
+            >
+              <SelectTrigger className="h-8 w-44 text-xs bg-card">
+                <SelectValue placeholder="+ Add person to week" />
+              </SelectTrigger>
+              <SelectContent>
+                {addable.map((e) => (
+                  <SelectItem key={e.id} value={String(e.id)}>
+                    {e.fullName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="px-0">
+        {loading ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Loading schedule…</p>
+        ) : shifts.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No schedule committed for this week yet — upload one above, or use{" "}
+            <span className="font-medium text-foreground">+ Add person</span> after the first
+            commit.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[160px]">Employee</TableHead>
+                  {days.map((d) => (
+                    <TableHead key={d.toISOString()} className="text-center min-w-[92px]">
+                      {shortDayLabel(d)}
+                    </TableHead>
+                  ))}
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="w-[52px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from(byEmployee.entries())
+                  .sort((a, b) => a[1].name.localeCompare(b[1].name))
+                  .map(([empId, rec]) => (
+                    <TableRow key={empId}>
+                      <TableCell className="font-medium">{rec.name}</TableCell>
+                      {days.map((d) => {
+                        const cell = rec.byDay.get(toDateInput(d)) ?? [];
+                        return (
+                          <TableCell key={d.toISOString()} className="text-center">
+                            {cell.length === 0 ? (
+                              <span className="text-muted-foreground/40">—</span>
+                            ) : (
+                              cell.map((s) => (
+                                <div key={s.id} className="leading-tight py-0.5">
+                                  {s.startLabel && s.endLabel ? (
+                                    <div className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                      {s.startLabel}–{s.endLabel}
+                                    </div>
+                                  ) : null}
+                                  <div className="text-xs font-semibold tabular-nums">
+                                    {s.hours.toFixed(1)}h
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-right tabular-nums font-bold">
+                        {rec.total.toFixed(1)}h
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={() => setEditFor({ id: empId, name: rec.name })}
+                          aria-label={`Edit ${rec.name}'s week`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableCell className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Coverage
+                  </TableCell>
+                  {dayTotals.map((t, i) => (
+                    <TableCell key={i} className="text-center tabular-nums text-xs font-semibold">
+                      {t > 0 ? `${t.toFixed(1)}h` : "—"}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right tabular-nums font-bold">
+                    {weekTotal.toFixed(1)}h
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+
+      {editFor ? (
+        <EditWeekDialog
+          weekStart={weekStart}
+          employeeId={editFor.id}
+          employeeName={editFor.name}
+          existing={shifts.filter((s) => s.employeeId === editFor.id)}
+          onClose={() => setEditFor(null)}
+          onSaved={() => {
+            setEditFor(null);
+            utils.schedule.week.invalidate();
+            utils.payroll.week.invalidate();
+            utils.dashboard.summary.invalidate();
+            utils.attention.list.invalidate();
+          }}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+/** Per-employee week editor — every shift is a row; saving replaces the
+ *  employee's week via the same single-writer commit path as imports. */
+function EditWeekDialog({
+  weekStart,
+  employeeId,
+  employeeName,
+  existing,
+  onClose,
+  onSaved,
+}: {
+  weekStart: Date;
+  employeeId: number;
+  employeeName: string;
+  existing: BoardShift[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const days = payWeekDays(weekStart);
+  const [rows, setRows] = useState<EditableShift[]>(() =>
+    existing
+      .slice()
+      .sort(
+        (a, b) => new Date(a.shiftDate).getTime() - new Date(b.shiftDate).getTime(),
+      )
+      .map((s) => ({
+        date: toDateInput(new Date(s.shiftDate)),
+        startLabel: s.startLabel ?? "",
+        endLabel: s.endLabel ?? "",
+        hours: String(s.hours),
+      })),
+  );
+
+  const commitM = trpc.schedule.commit.useMutation({
+    onSuccess: () => {
+      toast.success(`${employeeName}'s week updated.`);
+      onSaved();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const total = rows.reduce((sum, r) => {
+    const h = Number(r.hours);
+    return sum + (isNaN(h) ? 0 : h);
+  }, 0);
+
+  const save = () => {
+    for (const r of rows) {
+      const h = Number(r.hours);
+      if (isNaN(h) || h < 0 || h > 24) {
+        toast.error("Every shift needs valid hours (0–24).");
+        return;
+      }
+    }
+    commitM.mutate({
+      weekStart,
+      importId: null,
+      entries: [
+        {
+          employeeId,
+          scheduledHours: Math.round(total * 100) / 100,
+          shifts: rows.map((r) => ({
+            date: fromDateInput(r.date),
+            startLabel: r.startLabel.trim() || null,
+            endLabel: r.endLabel.trim() || null,
+            hours: Number(r.hours),
+          })),
+        },
+      ],
+    });
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => (!open ? onClose() : null)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {employeeName} · week of {fmtWeekRange(weekStart)}
+          </DialogTitle>
+          <DialogDescription>
+            Edit, add or remove shifts. Saving updates the schedule, scheduled hours in
+            payroll, and every dashboard.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 max-h-[46vh] overflow-y-auto pr-1">
+          {rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No shifts this week — add one below.
+            </p>
+          ) : (
+            rows.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Select
+                  value={r.date}
+                  onValueChange={(v) =>
+                    setRows((rs) => rs.map((x, j) => (j === i ? { ...x, date: v } : x)))
+                  }
+                >
+                  <SelectTrigger className="h-9 w-[7.5rem] text-xs shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {days.map((d) => (
+                      <SelectItem key={d.toISOString()} value={toDateInput(d)}>
+                        {shortDayLabel(d)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  placeholder="9:00am"
+                  value={r.startLabel}
+                  onChange={(e) =>
+                    setRows((rs) =>
+                      rs.map((x, j) => (j === i ? { ...x, startLabel: e.target.value } : x)),
+                    )
+                  }
+                  className="h-9 text-xs"
+                />
+                <Input
+                  placeholder="5:00pm"
+                  value={r.endLabel}
+                  onChange={(e) =>
+                    setRows((rs) =>
+                      rs.map((x, j) => (j === i ? { ...x, endLabel: e.target.value } : x)),
+                    )
+                  }
+                  className="h-9 text-xs"
+                />
+                <Input
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  max="24"
+                  placeholder="h"
+                  value={r.hours}
+                  onChange={(e) =>
+                    setRows((rs) =>
+                      rs.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)),
+                    )
+                  }
+                  className="h-9 w-20 text-xs text-right tabular-nums shrink-0"
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                  aria-label="Remove shift"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="flex items-center justify-between">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setRows((rs) => [
+                ...rs,
+                { date: toDateInput(days[0]), startLabel: "", endLabel: "", hours: "" },
+              ])
+            }
+          >
+            <Plus className="h-4 w-4 mr-1.5" /> Add shift
+          </Button>
+          <span className="text-sm tabular-nums text-muted-foreground">
+            week total: <span className="font-bold text-foreground">{total.toFixed(1)}h</span>
+          </span>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={commitM.isPending}>
+            {commitM.isPending ? "Saving…" : "Save week"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
