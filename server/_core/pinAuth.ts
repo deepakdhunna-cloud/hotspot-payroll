@@ -9,11 +9,17 @@ import { STORES, type Store } from "../../shared/hotspot";
 import { getDb } from "../db";
 import { ENV } from "./env";
 
-export type PinScope = "ceo" | Store;
+export type PinScope = "ceo" | "cfo" | Store;
 export type PinSession = {
   scope: PinScope;
-  role: "admin" | "manager";
-  store: Store | null; // null = all stores (CEO)
+  /**
+   * admin = CEO (everything) · manager = one store's operations ·
+   * cfo = READ-ONLY company-wide financials (the CFO portal). The cfo
+   * role owns no stores, so every store-scoped mutation check fails for
+   * it by construction.
+   */
+  role: "admin" | "manager" | "cfo";
+  store: Store | null; // null = all stores (CEO / CFO)
   issuedAt: number;
 };
 
@@ -24,13 +30,14 @@ export type PinSession = {
  */
 const DEFAULT_PINS: Record<PinScope, string> = {
   ceo: "9999",
+  cfo: "8888",
   "Hotspot Market 11": "1111",
   "Hotspot Market 13": "1313",
   "Hotspot Market 14": "1414",
   "Hotspot Travel Center": "7777",
 };
 
-export const ALL_SCOPES: PinScope[] = ["ceo", ...STORES];
+export const ALL_SCOPES: PinScope[] = ["ceo", "cfo", ...STORES];
 
 // Fail fast in production if the signing secret is missing: falling back to a
 // public string would let anyone forge an admin session cookie.
@@ -188,12 +195,11 @@ function getSecret() {
 }
 
 export async function signPinSession(scope: PinScope): Promise<string> {
-  const isCeo = scope === "ceo";
   const exp = Math.floor((Date.now() + PIN_SESSION_TTL_MS) / 1000);
   return new SignJWT({
     scope,
-    role: isCeo ? "admin" : "manager",
-    store: isCeo ? null : scope,
+    role: scope === "ceo" ? "admin" : scope === "cfo" ? "cfo" : "manager",
+    store: scope === "ceo" || scope === "cfo" ? null : scope,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setExpirationTime(exp)
@@ -237,7 +243,7 @@ export async function verifyPinSession(req: Request): Promise<PinSession | null>
   try {
     const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
     const scope = payload.scope as PinScope | undefined;
-    const role = payload.role as "admin" | "manager" | undefined;
+    const role = payload.role as PinSession["role"] | undefined;
     const store = (payload.store as Store | null | undefined) ?? null;
     if (!scope || !role) return null;
     const issuedAt = Number(payload.iat ?? 0) * 1000;

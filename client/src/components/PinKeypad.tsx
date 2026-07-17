@@ -22,7 +22,11 @@ export default function PinKeypad() {
   const verify = trpc.auth.verifyPin.useMutation({
     onSuccess: async (data) => {
       toast.success(
-        data.role === "admin" ? "Welcome, CEO" : `Signed in to ${data.store}`,
+        data.role === "admin"
+          ? "Welcome, CEO"
+          : data.role === "cfo"
+            ? "Welcome, CFO"
+            : `Signed in to ${data.store}`,
       );
       await utils.auth.me.invalidate();
     },

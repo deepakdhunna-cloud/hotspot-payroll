@@ -130,11 +130,20 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
+  const isCfo = user?.role === "cfo";
   const greetingQ = trpc.meta.greetingName.useQuery(undefined, {
-    enabled: !!user,
+    enabled: !!user && !isCfo,
   });
-  const displayName = isAdmin ? "CEO" : (greetingQ.data?.name ?? "Manager");
-  const menuItems = baseMenuItems.filter(item => !item.adminOnly || isAdmin);
+  const displayName = isAdmin
+    ? "CEO"
+    : isCfo
+      ? "CFO"
+      : (greetingQ.data?.name ?? "Manager");
+  // The CFO login is a finance portal, not an operations account — its nav
+  // is exactly the portal, nothing else.
+  const menuItems = isCfo
+    ? baseMenuItems.filter(item => item.path === "/cfo")
+    : baseMenuItems.filter(item => !item.adminOnly || isAdmin);
   // Highlight nested routes too (/employees/12 keeps Employees active).
   const isPathActive = (path: string) =>
     path === "/"
@@ -167,25 +176,27 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           />
 
           <div className="ml-auto flex items-center gap-2">
-            <AttentionBell onNavigate={() => setLocation("/")} />
-            <button
-              onClick={() =>
-                window.open("/clock", "_blank", "noopener,noreferrer")
-              }
-              className="hidden sm:flex items-center gap-1.5 h-9 rounded-lg border border-white/15 px-3 text-xs font-medium text-white/80 hover:text-white hover:border-white/30 transition-colors"
-              title="Open the punch-in kiosk in a new tab"
-            >
-              <Clock className="h-3.5 w-3.5" />
-              Kiosk
-              <ExternalLink className="h-3 w-3 opacity-60" />
-            </button>
+            {!isCfo && <AttentionBell onNavigate={() => setLocation("/")} />}
+            {!isCfo && (
+              <button
+                onClick={() =>
+                  window.open("/clock", "_blank", "noopener,noreferrer")
+                }
+                className="hidden sm:flex items-center gap-1.5 h-9 rounded-lg border border-white/15 px-3 text-xs font-medium text-white/80 hover:text-white hover:border-white/30 transition-colors"
+                title="Open the punch-in kiosk in a new tab"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Kiosk
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </button>
+            )}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-8 w-8 border border-white/20 shrink-0">
                     <AvatarFallback className="text-xs font-semibold bg-primary text-primary-foreground">
-                      {isAdmin ? "C" : (displayName[0]?.toUpperCase() ?? "M")}
+                      {isAdmin ? "C" : isCfo ? "F" : (displayName[0]?.toUpperCase() ?? "M")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="hidden lg:block min-w-0 max-w-40">
@@ -193,7 +204,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                       {displayName}
                     </p>
                     <p className="text-[10px] text-white/55 truncate leading-tight mt-0.5">
-                      {isAdmin ? "All stores" : (user?.store ?? "—")}
+                      {isAdmin || isCfo ? "All stores" : (user?.store ?? "—")}
                     </p>
                   </div>
                   <ChevronDown className="hidden lg:block h-3.5 w-3.5 text-white/50" />
@@ -203,9 +214,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 <DropdownMenuLabel>
                   <p className="text-sm font-semibold leading-tight">{displayName}</p>
                   <p className="text-xs text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
-                    {isAdmin ? (
+                    {isAdmin || isCfo ? (
                       <>
                         <ShieldCheck className="h-3 w-3 text-primary" /> All stores
+                        {isCfo ? " · read-only" : ""}
                       </>
                     ) : (
                       <>

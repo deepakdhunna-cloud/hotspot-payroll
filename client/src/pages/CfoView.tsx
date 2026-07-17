@@ -249,14 +249,14 @@ function WeeklyPayrollChart({
 
 export default function CfoView() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const canView = user?.role === "admin" || user?.role === "cfo";
 
   const cfoQ = trpc.cfo.summary.useQuery(
     { weeks: 5 },
-    { enabled: !!isAdmin, refetchInterval: 5 * 60_000 },
+    { enabled: !!canView, refetchInterval: 5 * 60_000 },
   );
   const liveQ = trpc.dashboard.summary.useQuery(undefined, {
-    enabled: !!isAdmin,
+    enabled: !!canView,
     refetchInterval: 5 * 60_000,
   });
 
@@ -290,14 +290,14 @@ export default function CfoView() {
     };
   }, [weeks]);
 
-  if (user && !isAdmin) {
+  if (user && !canView) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <ShieldCheck className="h-10 w-10 text-muted-foreground mb-3" />
-        <h2 className="text-xl font-semibold">CEO access only</h2>
+        <h2 className="text-xl font-semibold">CEO / CFO access only</h2>
         <p className="text-sm text-muted-foreground mt-2 max-w-sm">
           The CFO portal carries company-wide payroll financials and is
-          restricted to the CEO login.
+          restricted to the CEO and CFO logins.
         </p>
       </div>
     );

@@ -181,8 +181,13 @@ export const appRouter = router({
           maxAge: PIN_SESSION_TTL_MS,
         });
         return {
-          role: scope === "ceo" ? ("admin" as const) : ("manager" as const),
-          store: scope === "ceo" ? null : (scope as Store),
+          role:
+            scope === "ceo"
+              ? ("admin" as const)
+              : scope === "cfo"
+                ? ("cfo" as const)
+                : ("manager" as const),
+          store: scope === "ceo" || scope === "cfo" ? null : (scope as Store),
           scope,
         };
       }),
@@ -940,7 +945,13 @@ export const appRouter = router({
           .optional()
       )
       .query(async ({ ctx, input }) => {
-        const scope = getScope(ctx.session);
+        // The CFO login reads this company-wide (it powers the portal's
+        // live projection) — a pure read, so widening its scope here can
+        // never leak into any mutation path.
+        const scope =
+          ctx.session.role === "cfo"
+            ? ({ isAdmin: true, stores: [...STORES] } as Scope)
+            : getScope(ctx.session);
         const week = getWeekStart(input?.weekStart ?? new Date());
         const weekEnd = new Date(week);
         weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
@@ -1304,13 +1315,17 @@ export const appRouter = router({
    * clocked hours × current pay rate and is flagged `estimated`.
    */
   cfo: router({
-    summary: adminProcedure
+    summary: protectedProcedure
       .input(
         z
           .object({ weeks: z.number().int().min(3).max(12).optional() })
           .optional()
       )
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        // CEO (admin) and the read-only CFO login — nobody else.
+        if (ctx.session.role !== "admin" && ctx.session.role !== "cfo") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
         const n = input?.weeks ?? 5;
         // Most recent CLOSED Thu–Wed pay week; the in-progress week is a
         // projection and lives in dashboard.summary, not in this history.
@@ -1616,7 +1631,11 @@ export const appRouter = router({
         return {
           scope,
           label:
-            scope === "ceo" ? "CEO Master PIN" : `${scope} \u2014 Manager PIN`,
+            scope === "ceo"
+              ? "CEO Master PIN"
+              : scope === "cfo"
+                ? "CFO PIN \u2014 read-only finance portal"
+                : `${scope} \u2014 Manager PIN`,
           isSet: !!row,
           updatedAt: row?.updatedAt ?? null,
         };
@@ -1632,7 +1651,7 @@ export const appRouter = router({
     updatePin: adminProcedure
       .input(
         z.object({
-          scope: z.enum(["ceo", ...STORES] as [PinScope, ...PinScope[]]),
+          scope: z.enum(["ceo", "cfo", ...STORES] as [PinScope, ...PinScope[]]),
           pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits"),
         })
       )

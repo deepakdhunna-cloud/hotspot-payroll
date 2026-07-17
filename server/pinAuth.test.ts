@@ -22,13 +22,14 @@ describe("pinAuth helpers", () => {
     expect(normalizePin("a1b2c3d4")).toBe("1234");
   });
 
-  it("ALL_SCOPES contains CEO and the four stores", () => {
+  it("ALL_SCOPES contains CEO, CFO and the four stores", () => {
     expect(ALL_SCOPES).toContain("ceo");
+    expect(ALL_SCOPES).toContain("cfo");
     expect(ALL_SCOPES).toContain("Hotspot Market 11");
     expect(ALL_SCOPES).toContain("Hotspot Market 13");
     expect(ALL_SCOPES).toContain("Hotspot Market 14");
     expect(ALL_SCOPES).toContain("Hotspot Travel Center");
-    expect(ALL_SCOPES).toHaveLength(5);
+    expect(ALL_SCOPES).toHaveLength(6);
   });
 
   it("signPinSession + verifyPinSession round-trip a CEO session", async () => {

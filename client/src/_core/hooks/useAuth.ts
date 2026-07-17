@@ -42,7 +42,12 @@ export function useAuth() {
           role: session.role,
           store: session.store,
           scope: session.scope,
-          name: session.role === "admin" ? "CEO" : (session.store ?? "Manager"),
+          name:
+            session.role === "admin"
+              ? "CEO"
+              : session.role === "cfo"
+                ? "CFO"
+                : (session.store ?? "Manager"),
         }
       : null;
     return {

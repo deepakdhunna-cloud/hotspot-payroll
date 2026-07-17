@@ -47,12 +47,18 @@ import {
   Clock,
   LayoutDashboard,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "wouter";
 
 export default function Home() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  // The CFO login's home IS the finance portal.
+  const [, setLocation] = useLocation();
+  const isCfo = user?.role === "cfo";
+  useEffect(() => {
+    if (isCfo) setLocation("/cfo", { replace: true });
+  }, [isCfo, setLocation]);
   const [weekStart, setWeekStart] = useState(() => inProgressPayWeekStart());
   const [storeFilter, setStoreFilter] = useState("all");
   const [showAllClockedIn, setShowAllClockedIn] = useState(false);
