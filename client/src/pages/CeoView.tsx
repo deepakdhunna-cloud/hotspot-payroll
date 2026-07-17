@@ -1,13 +1,18 @@
 /**
- * Executive view — every store on one screen: hours, gross, withholding
- * estimates, live clock-ins and over-schedule flags, plus PIN management
- * and the audit trail.
+ * Executive view — the whole company on one screen.
+ *
+ * Top: mode-aware pulse (live week = who's working and what labor costs
+ * right now; closed week = what was saved and the withholding estimates).
+ * Middle: one card per store — click a card to focus every number on that
+ * store, click again to zoom back out. Eight-week filmstrip for history.
+ * Tabs below hold the payroll detail, PIN management and the audit trail.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
+import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { StatCard } from "@/components/StatCard";
 import { StoreSelect } from "@/components/StoreSelect";
-import { WeekNavigator } from "@/components/WeekNavigator";
+import { WeekTrend } from "@/components/WeekTrend";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,51 +26,108 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { STORE_ABBR, fmtMoney } from "@/lib/format";
-import { currentPayPeriodStart, fmtDateTime } from "@/lib/payweek";
+import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
+import { inProgressPayWeekStart, fmtDateTime } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   Building2,
+  CheckCircle2,
+  CircleDollarSign,
   Clock,
   History,
-  Landmark,
-  Receipt,
   ShieldCheck,
+  Timer,
   Users,
-  Wallet,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function CeoView() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  // Executive view pays the most recently CLOSED week by default.
-  const [weekStart, setWeekStart] = useState<Date>(() => currentPayPeriodStart());
+  const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
   const [storeFilter, setStoreFilter] = useState<string>("all");
 
   const optionsQ = trpc.meta.options.useQuery(undefined, { enabled: !!isAdmin });
+  // Always fetch every store — the store cards ARE the filter, so the
+  // all-stores picture must stay on screen while one store is focused.
   const ceoQ = trpc.ceo.weekly.useQuery(
-    {
-      weekStart,
-      store: storeFilter === "all" ? undefined : (storeFilter as any),
-    },
+    { weekStart },
     { enabled: !!isAdmin, refetchInterval: 60_000 },
   );
+  const trendQ = trpc.dashboard.trend.useQuery(
+    {
+      weeks: 8,
+      store: storeFilter === "all" ? undefined : (storeFilter as any),
+    },
+    { enabled: !!isAdmin, refetchInterval: 5 * 60_000 },
+  );
+
   const stores = optionsQ.data?.stores ?? [];
   const data = ceoQ.data;
-  const grand = data?.grand ?? {
-    totalHours: 0,
-    totalClockHours: 0,
-    totalGross: 0,
-    totalFederal: 0,
-    totalState: 0,
-    totalNet: 0,
-    totalScheduled: 0,
-  };
-  const rows = data?.rows ?? [];
-  const overClockedRows = rows.filter((r) => r.overClocked);
+  const byStore = data?.byStore ?? {};
+  const allRows = data?.rows ?? [];
+  const isLiveWeek = weekStart.getTime() === inProgressPayWeekStart().getTime();
+
+  /* ------------- filter-aware aggregates (client-side, instant) ------------- */
+
+  const rows = useMemo(
+    () =>
+      storeFilter === "all"
+        ? allRows
+        : allRows.filter((r) => r.storeLocation === storeFilter),
+    [allRows, storeFilter],
+  );
+
+  const liveLaborByStore = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of allRows) {
+      m.set(r.storeLocation, (m.get(r.storeLocation) ?? 0) + r.clockHours * r.payRate);
+    }
+    return m;
+  }, [allRows]);
+
+  const agg = useMemo(() => {
+    const keys =
+      storeFilter === "all"
+        ? Object.keys(byStore)
+        : Object.keys(byStore).filter((k) => k === storeFilter);
+    const zero = {
+      totalHours: 0,
+      totalClockHours: 0,
+      totalScheduled: 0,
+      totalGross: 0,
+      totalFederal: 0,
+      totalState: 0,
+      totalNet: 0,
+      employeeCount: 0,
+      clockedInCount: 0,
+      overClockedCount: 0,
+    };
+    return keys.reduce((acc, k) => {
+      const s = (byStore as any)[k];
+      return {
+        totalHours: acc.totalHours + s.totalHours,
+        totalClockHours: acc.totalClockHours + s.totalClockHours,
+        totalScheduled: acc.totalScheduled + s.totalScheduled,
+        totalGross: acc.totalGross + s.totalGross,
+        totalFederal: acc.totalFederal + s.totalFederal,
+        totalState: acc.totalState + s.totalState,
+        totalNet: acc.totalNet + s.totalNet,
+        employeeCount: acc.employeeCount + s.employeeCount,
+        clockedInCount: acc.clockedInCount + s.clockedInCount,
+        overClockedCount: acc.overClockedCount + s.overClockedCount,
+      };
+    }, zero);
+  }, [byStore, storeFilter]);
+
+  const liveLabor = rows.reduce((s, r) => s + r.clockHours * r.payRate, 0);
+  const savedCount = rows.filter((r) => r.hoursWorked > 0).length;
+  const unsavedCount = rows.filter(
+    (r) => r.clockHours > 0.25 && r.hoursWorked === 0,
+  ).length;
 
   // Role gate AFTER all hooks so the hook order never changes between renders.
   if (user && !isAdmin) {
@@ -74,23 +136,32 @@ export default function CeoView() {
         <ShieldCheck className="h-10 w-10 text-muted-foreground mb-3" />
         <h2 className="text-xl font-semibold">CEO access only</h2>
         <p className="text-sm text-muted-foreground mt-2 max-w-sm">
-          This view shows cross-store tax withholding estimates and is restricted to the CEO
-          role.
+          This view shows cross-store payroll and withholding estimates and is
+          restricted to the CEO role.
         </p>
       </div>
     );
   }
 
+  const focusLabel =
+    storeFilter === "all"
+      ? "all stores"
+      : (STORE_ABBR[storeFilter] ?? storeFilter);
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="CEO · cross-store overview"
+        eyebrow="CEO · all stores"
         icon={<ShieldCheck className="h-5 w-5" />}
         title="Executive view"
-        description="All four locations at a glance — payroll, withholding estimates, live clock-ins and over-schedule flags."
+        description={
+          isLiveWeek
+            ? "Live company pulse — click a store card to focus on one location."
+            : `Closed week · ${fmtWeekRange(weekStart)} — saved payroll and withholding estimates.`
+        }
         actions={
           <>
-            <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+            <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
             <StoreSelect
               stores={stores}
               isAdmin
@@ -101,117 +172,247 @@ export default function CeoView() {
         }
       />
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      {/* Signals worth a decision — quiet when everything is fine */}
+      {(agg.overClockedCount > 0 || (!isLiveWeek && unsavedCount > 0)) && (
+        <div className="flex flex-wrap items-center gap-2 rise-in">
+          {agg.overClockedCount > 0 && (
+            <span className="chip-warn">
+              <AlertTriangle className="h-3 w-3" />
+              {agg.overClockedCount} employee{agg.overClockedCount === 1 ? "" : "s"} over
+              schedule ({focusLabel})
+            </span>
+          )}
+          {!isLiveWeek && unsavedCount > 0 && (
+            <span className="chip-warn">
+              <AlertTriangle className="h-3 w-3" />
+              {unsavedCount} worked but not saved to payroll
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Company pulse — live and closed weeks emphasize different truths */}
+      {ceoQ.isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-[118px] rounded-2xl" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Hours clocked"
+            value={agg.totalClockHours.toFixed(1)}
+            sub={
+              agg.totalScheduled > 0
+                ? `of ${agg.totalScheduled.toFixed(1)} scheduled · ${focusLabel}`
+                : `no schedule this week · ${focusLabel}`
+            }
+            icon={<Timer />}
+            style={{ animationDelay: "0ms" }}
+            footer={
+              agg.overClockedCount > 0 ? (
+                <span className="chip-warn">
+                  <AlertTriangle className="h-3 w-3" />
+                  {agg.overClockedCount} over schedule
+                </span>
+              ) : agg.totalScheduled > 0 ? (
+                <span className="chip-good">
+                  <CheckCircle2 className="h-3 w-3" /> within schedule
+                </span>
+              ) : null
+            }
+          />
+          {isLiveWeek ? (
+            <StatCard
+              label="On the clock now"
+              value={agg.clockedInCount}
+              sub={
+                agg.clockedInCount > 0
+                  ? Object.entries(byStore)
+                      .filter(([, s]: [string, any]) => s.clockedInCount > 0)
+                      .map(
+                        ([k, s]: [string, any]) =>
+                          `${STORE_ABBR[k] ?? k} ${s.clockedInCount}`,
+                      )
+                      .join(" · ")
+                  : "nobody clocked in"
+              }
+              icon={<Clock />}
+              style={{ animationDelay: "40ms" }}
+            />
+          ) : (
+            <StatCard
+              label="Saved to payroll"
+              value={`${savedCount}/${rows.length}`}
+              sub={`${agg.totalHours.toFixed(1)} hours entered`}
+              icon={<CheckCircle2 />}
+              style={{ animationDelay: "40ms" }}
+              footer={
+                unsavedCount > 0 ? (
+                  <span className="chip-warn">
+                    <AlertTriangle className="h-3 w-3" />
+                    {unsavedCount} unsaved
+                  </span>
+                ) : savedCount > 0 ? (
+                  <span className="chip-good">
+                    <CheckCircle2 className="h-3 w-3" /> complete
+                  </span>
+                ) : null
+              }
+            />
+          )}
+          <StatCard
+            label={isLiveWeek ? "Labor cost (live)" : "Gross payroll"}
+            value={fmtMoney(isLiveWeek ? liveLabor : agg.totalGross)}
+            sub={isLiveWeek ? "clocked hours × pay rate" : "committed gross pay"}
+            icon={<CircleDollarSign />}
+            style={{ animationDelay: "80ms" }}
+          />
+          {isLiveWeek ? (
+            <StatCard
+              label="Payroll saved"
+              value={fmtMoney(agg.totalGross)}
+              sub="saved after the week closes"
+              icon={<CircleDollarSign />}
+              style={{ animationDelay: "120ms" }}
+            />
+          ) : (
+            <StatCard
+              label="Net pay (est.)"
+              value={fmtMoney(agg.totalNet)}
+              sub={`≈ ${fmtMoney(agg.totalFederal + agg.totalState)} withheld (est.)`}
+              icon={<CircleDollarSign />}
+              style={{ animationDelay: "120ms" }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Every store at one glance — the cards are the filter */}
+      <section className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
+        {ceoQ.isLoading
+          ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-44 rounded-xl" />)
+          : Object.entries(byStore).map(([store, s]: [string, any], i) => {
+              const focused = storeFilter === store;
+              return (
+                <Card
+                  key={store}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={focused}
+                  onClick={() => setStoreFilter(focused ? "all" : store)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setStoreFilter(focused ? "all" : store);
+                    }
+                  }}
+                  className={cn(
+                    "surface-card border-0 rise-in cursor-pointer transition-all select-none",
+                    focused
+                      ? "ring-2 ring-primary shadow-md"
+                      : storeFilter !== "all"
+                        ? "opacity-55 hover:opacity-90"
+                        : "hover:shadow-md hover:-translate-y-0.5",
+                  )}
+                  style={{ animationDelay: `${i * 40}ms` }}
+                  title={
+                    focused
+                      ? "Click to show all stores"
+                      : `Click to focus on ${store}`
+                  }
+                >
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 truncate">
+                        <Building2
+                          className={cn(
+                            "h-4 w-4 shrink-0",
+                            focused ? "text-primary" : "text-muted-foreground",
+                          )}
+                        />
+                        <span className="truncate">{store}</span>
+                      </span>
+                      {isLiveWeek && s.clockedInCount > 0 ? (
+                        <span className="chip-good shrink-0">
+                          <Clock className="h-3 w-3" />
+                          {s.clockedInCount} in
+                        </span>
+                      ) : null}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
+                    <Stat label="Clocked" value={`${s.totalClockHours.toFixed(1)}h`} />
+                    <Stat label="Scheduled" value={`${s.totalScheduled.toFixed(1)}h`} />
+                    <Stat
+                      label={isLiveWeek ? "Labor (live)" : "Gross saved"}
+                      value={fmtMoney(
+                        isLiveWeek
+                          ? (liveLaborByStore.get(store) ?? 0)
+                          : s.totalGross,
+                      )}
+                      bold
+                    />
+                    <div>
+                      <div className="kpi-label">Status</div>
+                      {s.overClockedCount > 0 ? (
+                        <span className="chip-warn mt-0.5">
+                          <AlertTriangle className="h-3 w-3" />
+                          {s.overClockedCount} over
+                        </span>
+                      ) : (
+                        <span className="chip-good mt-0.5">
+                          <CheckCircle2 className="h-3 w-3" /> on track
+                        </span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+      </section>
+
+      {/* Eight-week filmstrip — older payroll is one click away */}
+      <Card className="surface-card border-0 rise-in" style={{ animationDelay: "160ms" }}>
+        <CardHeader className="pb-1 flex flex-row items-center justify-between">
+          <CardTitle className="text-base">
+            Last 8 pay weeks{storeFilter !== "all" ? ` · ${focusLabel}` : ""}
+          </CardTitle>
+          <span className="text-xs text-muted-foreground">
+            bars = clocked hours · <span className="text-success">●</span> payroll saved ·
+            click to open
+          </span>
+        </CardHeader>
+        <CardContent>
+          {trendQ.isLoading ? (
+            <Skeleton className="h-24 rounded-md" />
+          ) : (
+            <WeekTrend
+              weeks={(trendQ.data?.weeks ?? []) as any}
+              selected={weekStart}
+              onSelect={(w) => setWeekStart(w)}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="payroll" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="employees">By employee</TabsTrigger>
-          <TabsTrigger value="managers">Managers &amp; access</TabsTrigger>
+          <TabsTrigger value="payroll">Payroll detail</TabsTrigger>
+          <TabsTrigger value="managers">Access &amp; PINs</TabsTrigger>
           <TabsTrigger value="activity">Activity log</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-6">
-          {overClockedRows.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 rise-in">
-              <span className="chip-warn">
-                <AlertTriangle className="h-3 w-3" />
-                {overClockedRows.length} employee{overClockedRows.length === 1 ? "" : "s"} clocked
-                over schedule this week
-              </span>
-            </div>
-          ) : null}
-
-          {ceoQ.isLoading ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-[110px] rounded-xl" />
-              ))}
-            </div>
-          ) : (
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <StatCard
-                label="Gross pay (week)"
-                value={fmtMoney(grand.totalGross)}
-                sub={`${grand.totalClockHours.toFixed(1)} hours clocked`}
-                icon={<Wallet />}
-                style={{ animationDelay: "0ms" }}
-              />
-              <StatCard
-                label="Federal withholding"
-                value={fmtMoney(grand.totalFederal)}
-                sub="est. FIT + FICA (~18%)"
-                icon={<Landmark />}
-                style={{ animationDelay: "40ms" }}
-              />
-              <StatCard
-                label="State withholding"
-                value={fmtMoney(grand.totalState)}
-                sub="est. state tax (~5%)"
-                icon={<Receipt />}
-                style={{ animationDelay: "80ms" }}
-              />
-              <StatCard
-                label="Net pay (est.)"
-                value={fmtMoney(grand.totalNet)}
-                sub={`${data?.employeeCount ?? 0} active employees company-wide`}
-                icon={<Users />}
-                style={{ animationDelay: "120ms" }}
-              />
-            </section>
-          )}
-
-          {/* Every store at one glance */}
-          <section className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
-            {ceoQ.isLoading
-              ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-52 rounded-xl" />)
-              : Object.entries(data?.byStore ?? {}).map(([store, s]: [string, any], i) => (
-                  <Card
-                    key={store}
-                    className="surface-card border-0 rise-in"
-                    style={{ animationDelay: `${i * 40}ms` }}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-semibold flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2 truncate">
-                          <Building2 className="h-4 w-4 text-primary shrink-0" />
-                          <span className="truncate">{store}</span>
-                        </span>
-                        {s.clockedInCount > 0 ? (
-                          <span className="chip-good shrink-0">
-                            <Clock className="h-3 w-3" />
-                            {s.clockedInCount} in
-                          </span>
-                        ) : null}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
-                      <Stat label="Clocked" value={s.totalClockHours.toFixed(1)} />
-                      <Stat label="Scheduled" value={s.totalScheduled.toFixed(1)} />
-                      <Stat label="Gross" value={fmtMoney(s.totalGross)} bold />
-                      <Stat label="Net (est.)" value={fmtMoney(s.totalNet)} bold />
-                      <Stat label="Staff" value={String(s.employeeCount)} />
-                      <div>
-                        <div className="kpi-label">Status</div>
-                        {s.overClockedCount > 0 ? (
-                          <span className="chip-warn mt-0.5">
-                            <AlertTriangle className="h-3 w-3" />
-                            {s.overClockedCount} over
-                          </span>
-                        ) : (
-                          <span className="chip-good mt-0.5">on track</span>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-          </section>
-        </TabsContent>
-
-        <TabsContent value="employees">
+        <TabsContent value="payroll">
           <Card className="surface-card border-0">
             <CardHeader>
-              <CardTitle>Per-employee gross &amp; withholding</CardTitle>
+              <CardTitle>
+                Per-employee payroll{storeFilter !== "all" ? ` — ${storeFilter}` : ""}
+              </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Estimates only. Federal estimate combines FIT + FICA at ~18%; state at ~5%.
+                Withholding is an estimate only — federal (FIT + FICA) at ~18%, state at
+                ~5%. Gross and net come from saved payroll hours.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -221,20 +422,19 @@ export default function CeoView() {
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead>Store</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Hours</TableHead>
+                      <TableHead className="text-right">Clocked</TableHead>
+                      <TableHead className="text-right">Saved hrs</TableHead>
                       <TableHead className="text-right">Status</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
-                      <TableHead className="text-right">Federal</TableHead>
-                      <TableHead className="text-right">State</TableHead>
-                      <TableHead className="text-right">Net</TableHead>
+                      <TableHead className="text-right">Est. tax</TableHead>
+                      <TableHead className="text-right">Est. net</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {ceoQ.isLoading ? (
                       <TableRow>
                         <TableCell
-                          colSpan={9}
+                          colSpan={8}
                           className="h-24 text-center text-sm text-muted-foreground"
                         >
                           Loading payroll…
@@ -243,51 +443,61 @@ export default function CeoView() {
                     ) : rows.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={9}
+                          colSpan={8}
                           className="text-center py-10 text-sm text-muted-foreground"
                         >
                           No payroll data for this week yet.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      rows.map((r) => (
-                        <TableRow key={r.id}>
-                          <TableCell className="font-medium">{r.fullName}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {STORE_ABBR[r.storeLocation] ?? r.storeLocation}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            <Badge variant="secondary" className="font-normal">
-                              {r.role}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {r.hoursWorked.toFixed(1)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {r.overClocked ? (
-                              <span className="chip-warn">
-                                <AlertTriangle className="h-3 w-3" />
-                                over
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums font-semibold">
-                            {fmtMoney(r.grossPay)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
-                            {fmtMoney(r.federal)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
-                            {fmtMoney(r.state)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {fmtMoney(r.netPay)}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      [...rows]
+                        .sort(
+                          (a, b) =>
+                            a.storeLocation.localeCompare(b.storeLocation) ||
+                            b.clockHours - a.clockHours,
+                        )
+                        .map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell>
+                              <span className="font-medium">{r.fullName}</span>
+                              <div className="text-xs text-muted-foreground">{r.role}</div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {STORE_ABBR[r.storeLocation] ?? r.storeLocation}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {r.clockHours > 0 ? r.clockHours.toFixed(1) : "—"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {r.hoursWorked > 0 ? r.hoursWorked.toFixed(1) : "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {r.overClocked ? (
+                                <span className="chip-warn">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  over
+                                </span>
+                              ) : r.hoursWorked > 0 ? (
+                                <span className="chip-good">
+                                  <CheckCircle2 className="h-3 w-3" /> saved
+                                </span>
+                              ) : r.clockHours > 0.25 ? (
+                                <span className="chip-neutral">not saved</span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums font-semibold">
+                              {r.grossPay > 0 ? fmtMoney(r.grossPay) : "—"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-muted-foreground">
+                              {r.grossPay > 0 ? fmtMoney(r.federal + r.state) : "—"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {r.grossPay > 0 ? fmtMoney(r.netPay) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))
                     )}
                   </TableBody>
                 </Table>

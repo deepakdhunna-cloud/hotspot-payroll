@@ -470,6 +470,24 @@ export async function listOpenPunches(stores?: string[]) {
     .orderBy(asc(timePunches.clockInAt));
 }
 
+/**
+ * All punches whose clock-in falls in [start, end) for the given stores —
+ * used to bucket clocked hours by pay week for the dashboard trend.
+ * No row limit: the trend window is bounded (≤ 12 weeks) by the caller.
+ */
+export async function listPunchesInRange(start: Date, end: Date, stores?: string[]) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [gte(timePunches.clockInAt, start), lt(timePunches.clockInAt, end)] as any[];
+  if (stores && stores.length > 0) {
+    conds.push(inArray(timePunches.storeLocation, stores));
+  }
+  return db
+    .select()
+    .from(timePunches)
+    .where(and(...conds));
+}
+
 export async function countEmployees() {
   const db = await getDb();
   if (!db) return 0;

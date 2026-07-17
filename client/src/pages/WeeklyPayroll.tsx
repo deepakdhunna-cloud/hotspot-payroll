@@ -11,8 +11,12 @@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { currentPayPeriodStart } from "@/lib/payweek";
-import { WeekNavigator } from "@/components/WeekNavigator";
+import {
+  currentPayPeriodStart,
+  fromDateInput,
+  startOfPayWeek,
+} from "@/lib/payweek";
+import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { StoreSelect } from "@/components/StoreSelect";
 import {
   ClipboardList,
@@ -36,6 +40,17 @@ function readTabFromQuery(): TabKey {
   return "hours";
 }
 
+/** Dashboard CTAs deep-link a week via ?week=YYYY-MM-DD; snap it to Thursday. */
+function readWeekFromQuery(): Date {
+  if (typeof window !== "undefined") {
+    const w = new URLSearchParams(window.location.search).get("week");
+    if (w && /^\d{4}-\d{2}-\d{2}$/.test(w)) {
+      return startOfPayWeek(fromDateInput(w));
+    }
+  }
+  return currentPayPeriodStart();
+}
+
 export default function WeeklyPayroll() {
   const [location] = useLocation();
   // Re-read tab from URL whenever the route string changes (covers in-app nav).
@@ -44,9 +59,7 @@ export default function WeeklyPayroll() {
     setTab(readTabFromQuery());
   }, [location]);
 
-  const [weekStart, setWeekStart] = useState<Date>(() =>
-    currentPayPeriodStart(),
-  );
+  const [weekStart, setWeekStart] = useState<Date>(readWeekFromQuery);
   // "all" is safe for single-store managers too: the server scopes queries to
   // their store, and StoreSelect renders a static badge instead of a picker.
   const [storeFilter, setStoreFilter] = useState<string>("all");
@@ -72,7 +85,7 @@ export default function WeeklyPayroll() {
         description="Thursday–Wednesday pay period. Hours auto-fill from the kiosk. Saved entries are kept permanently."
         actions={<>
           {tab !== "history" && (
-            <WeekNavigator weekStart={weekStart} onChange={setWeekStart} />
+            <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
           )}
           <StoreSelect
             stores={stores}

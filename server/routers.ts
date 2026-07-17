@@ -36,6 +36,7 @@ import {
   listEmployees,
   listOpenPunches,
   listPunches,
+  listPunchesInRange,
   listScheduleImports,
   logAudit,
   markImportCommitted,
@@ -874,6 +875,68 @@ export const appRouter = router({
           hasDaySchedule: shifts.length > 0,
           missingClockCodes: employees.filter(e => !e.clockCodeHash).length,
         };
+      }),
+
+    /**
+     * Week-by-week history for the dashboard trend strip: clocked hours,
+     * saved payroll hours/gross and scheduled hours for each of the last N
+     * Thursday-anchored pay weeks (newest last). Scope-aware.
+     */
+    trend: protectedProcedure
+      .input(
+        z.object({
+          weeks: z.number().int().min(2).max(12).optional(),
+          store: StoreEnum.optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const stores = resolveStores(scope, input.store);
+        const n = input.weeks ?? 8;
+
+        const currentWeek = getWeekStart(new Date());
+        const firstWeek = new Date(currentWeek);
+        firstWeek.setUTCDate(firstWeek.getUTCDate() - (n - 1) * 7);
+        const rangeEnd = new Date(currentWeek);
+        rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 7);
+
+        const [entries, punches] = await Promise.all([
+          getPayrollRange(firstWeek, currentWeek, stores),
+          listPunchesInRange(firstWeek, rangeEnd, stores),
+        ]);
+
+        const weeks = Array.from({ length: n }, (_, i) => {
+          const w = new Date(firstWeek);
+          w.setUTCDate(w.getUTCDate() + i * 7);
+          return {
+            weekStart: w,
+            savedHours: 0,
+            savedGross: 0,
+            scheduledHours: 0,
+            clockHours: 0,
+          };
+        });
+        const byIso = new Map(weeks.map(w => [w.weekStart.toISOString(), w]));
+
+        for (const e of entries) {
+          const bucket = byIso.get(new Date(e.weekStart).toISOString());
+          if (!bucket) continue;
+          bucket.savedHours += Number(e.hoursWorked);
+          bucket.savedGross += Number(e.grossPay);
+          bucket.scheduledHours += Number(e.scheduledHours);
+        }
+        const now = new Date();
+        for (const p of punches) {
+          const bucket = byIso.get(getWeekStart(new Date(p.clockInAt)).toISOString());
+          if (!bucket) continue;
+          const weekEnd = new Date(bucket.weekStart);
+          weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+          const openCap = Math.min(now.getTime(), weekEnd.getTime());
+          const inAt = new Date(p.clockInAt).getTime();
+          const outAt = p.clockOutAt ? new Date(p.clockOutAt).getTime() : openCap;
+          if (outAt > inAt) bucket.clockHours += (outAt - inAt) / 3_600_000;
+        }
+        return { weeks };
       }),
   }),
 
