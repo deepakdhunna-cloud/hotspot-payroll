@@ -1,0 +1,1 @@
+ALTER TABLE `employees` ADD `weeklyPay` decimal(10,2);

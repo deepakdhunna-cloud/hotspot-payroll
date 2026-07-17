@@ -97,6 +97,15 @@ export default function HoursAndPayTab({
       } else {
         initialHours[empId] = "";
       }
+      // A standing set-pay amount on the profile opens unsaved rows in
+      // set-pay mode automatically, prefilled with that amount.
+      if (
+        !row.entry &&
+        row.employee.weeklyPay != null &&
+        Number(row.employee.weeklyPay) > 0
+      ) {
+        initialFixed[empId] = String(Number(row.employee.weeklyPay));
+      }
       initialRates[empId] = String(
         Number(row.entry?.payRateSnapshot ?? row.employee.payRate ?? 0),
       );

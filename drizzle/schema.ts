@@ -61,6 +61,13 @@ export const employees = mysqlTable(
     fullName: varchar("fullName", { length: 200 }).notNull(),
     phone: varchar("phone", { length: 32 }).notNull(),
     payRate: decimal("payRate", { precision: 10, scale: 2 }).notNull(),
+    /**
+     * Optional standing SET PAY: a flat weekly amount. When present, this
+     * employee's payroll row opens in set-pay mode with this amount every
+     * week (hours are still recorded, they just don't drive the dollars).
+     * Null = ordinary hourly pay.
+     */
+    weeklyPay: decimal("weeklyPay", { precision: 10, scale: 2 }),
     role: varchar("role", { length: 64 }).notNull(),
     storeLocation: varchar("storeLocation", { length: 64 }).notNull(),
     active: int("active").default(1).notNull(),

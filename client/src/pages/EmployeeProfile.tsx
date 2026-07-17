@@ -159,7 +159,15 @@ export default function EmployeeProfile() {
               </div>
             </div>
             <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6">
-              <Field icon={<DollarSign className="h-4 w-4" />} label="Pay rate" value={`${fmtMoney(Number(emp.payRate))}/hr`} />
+              <Field
+                icon={<DollarSign className="h-4 w-4" />}
+                label={emp.weeklyPay != null ? "Set weekly pay" : "Pay rate"}
+                value={
+                  emp.weeklyPay != null
+                    ? `${fmtMoney(Number(emp.weeklyPay))}/wk`
+                    : `${fmtMoney(Number(emp.payRate))}/hr`
+                }
+              />
               <Field icon={<Phone className="h-4 w-4" />} label="Phone" value={emp.phone} />
               <Field icon={<Briefcase className="h-4 w-4" />} label="Role" value={emp.role} />
               <Field icon={<Building2 className="h-4 w-4" />} label="Store" value={emp.storeLocation} />
@@ -579,6 +587,9 @@ function EditEmployeeDialog({
   const [fullName, setFullName] = useState(emp.fullName);
   const [phone, setPhone] = useState(emp.phone);
   const [payRate, setPayRate] = useState(String(emp.payRate));
+  const [weeklyPay, setWeeklyPay] = useState(
+    emp.weeklyPay != null ? String(Number(emp.weeklyPay)) : "",
+  );
   const [role, setRole] = useState<string>(emp.role);
   const [storeLocation, setStoreLocation] = useState<string>(emp.storeLocation);
 
@@ -596,11 +607,17 @@ function EditEmployeeDialog({
       toast.error("Pay rate must be 0 or more.");
       return;
     }
+    const weekly = weeklyPay.trim() === "" ? null : Number(weeklyPay);
+    if (weekly !== null && (Number.isNaN(weekly) || weekly < 0)) {
+      toast.error("Set weekly pay must be 0 or more (or empty for hourly).");
+      return;
+    }
     update.mutate({
       id: emp.id,
       fullName: fullName.trim(),
       phone: phone.trim(),
       payRate: rate,
+      weeklyPay: weekly,
       role: role as any,
       storeLocation: storeLocation as any,
     });
@@ -645,6 +662,22 @@ function EditEmployeeDialog({
               </SelectContent>
             </Select>
           </div>
+        </div>
+        <div className="grid gap-2">
+          <Label>Set weekly pay ($/week, optional)</Label>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={weeklyPay}
+            onChange={(e) => setWeeklyPay(e.target.value)}
+            placeholder="Leave empty for hourly pay"
+          />
+          <p className="text-xs text-muted-foreground">
+            When set, their payroll row opens as this flat amount every week —
+            hours are still recorded, they just don't drive the pay. Clear the
+            field to return to hourly.
+          </p>
         </div>
         <div className="grid gap-2">
           <Label>Store</Label>

@@ -381,6 +381,8 @@ export const appRouter = router({
           fullName: z.string().min(1).max(200).optional(),
           phone: z.string().min(1).max(32).optional(),
           payRate: z.number().min(0).max(1000).optional(),
+          /** Standing set pay: flat $/week; null returns them to hourly. */
+          weeklyPay: z.number().min(0).max(100_000).nullable().optional(),
           role: RoleEnum.optional(),
           storeLocation: StoreEnum.optional(),
         })
@@ -399,6 +401,9 @@ export const appRouter = router({
         if (input.fullName !== undefined) update.fullName = input.fullName;
         if (input.phone !== undefined) update.phone = input.phone;
         if (input.payRate !== undefined) update.payRate = String(input.payRate);
+        if (input.weeklyPay !== undefined)
+          update.weeklyPay =
+            input.weeklyPay === null ? null : String(input.weeklyPay);
         if (input.role !== undefined) update.role = input.role;
         if (input.storeLocation !== undefined)
           update.storeLocation = input.storeLocation;
