@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { invokeLLM } from "./_core/llm";
-import { storagePut } from "./storage";
+import { storageGetSignedUrl, storagePut } from "./storage";
 import {
   adminProcedure,
   protectedProcedure,
@@ -21,6 +21,7 @@ import {
   deletePunch,
   findEmployeesWithClockCodes,
   findOpenPunch,
+  findOpenPunches,
   getEmployeeById,
   getEmployeePayrollHistory,
   getEmployeesByIds,
@@ -820,17 +821,28 @@ export const appRouter = router({
         }
 
         // Live "on the clock" list with names and shift start times.
+        // One row per PERSON: if duplicate open punches exist (manual entry
+        // or import glitches), show only the earliest so counts match reality.
         const empById = new Map(employees.map(e => [e.id, e]));
-        const clockedInNow = openPunches
-          .filter(p => empById.has(p.employeeId))
-          .map(p => ({
-            punchId: p.id,
-            employeeId: p.employeeId,
-            fullName: empById.get(p.employeeId)!.fullName,
-            role: empById.get(p.employeeId)!.role,
-            storeLocation: p.storeLocation,
-            clockInAt: p.clockInAt,
-          }));
+        const earliestOpenByEmp = new Map<number, (typeof openPunches)[number]>();
+        for (const p of openPunches) {
+          if (!empById.has(p.employeeId)) continue;
+          const seen = earliestOpenByEmp.get(p.employeeId);
+          if (
+            !seen ||
+            new Date(p.clockInAt).getTime() < new Date(seen.clockInAt).getTime()
+          ) {
+            earliestOpenByEmp.set(p.employeeId, p);
+          }
+        }
+        const clockedInNow = Array.from(earliestOpenByEmp.values()).map(p => ({
+          punchId: p.id,
+          employeeId: p.employeeId,
+          fullName: empById.get(p.employeeId)!.fullName,
+          role: empById.get(p.employeeId)!.role,
+          storeLocation: p.storeLocation,
+          clockInAt: p.clockInAt,
+        }));
         for (const p of clockedInNow) {
           if (byStore[p.storeLocation])
             byStore[p.storeLocation].clockedInCount++;
@@ -996,7 +1008,12 @@ export const appRouter = router({
             overClockedCount: 0,
           };
         }
+        // Count distinct PEOPLE, not open punch rows — duplicates must not
+        // inflate the executive headcount.
+        const clockedInEmp = new Set<number>();
         for (const p of openPunches) {
+          if (clockedInEmp.has(p.employeeId)) continue;
+          clockedInEmp.add(p.employeeId);
           if (byStore[p.storeLocation])
             byStore[p.storeLocation].clockedInCount++;
         }
@@ -1240,10 +1257,15 @@ export const appRouter = router({
           };
         };
 
-        const open = await findOpenPunch(matched.id);
+        // Sweep EVERY open punch — duplicates can sneak in via manual entry
+        // or imports, and leaving one open double-counts the employee forever.
+        const openAll = await findOpenPunches(matched.id);
+        const open = openAll[0];
         const weekSummary = await buildWeekSummary();
         if (open) {
-          await closePunch(open.id, now);
+          for (const p of openAll) {
+            await closePunch(p.id, now);
+          }
           const durationMs = now.getTime() - new Date(open.clockInAt).getTime();
           const durationHours = Math.max(0, durationMs / 3_600_000);
           return {
@@ -1414,6 +1436,17 @@ export const appRouter = router({
           !scope.stores.includes(emp.storeLocation as Store)
         ) {
           throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        // A person can only be "on the clock" once. Adding a second open
+        // punch would double them on every dashboard.
+        if (!input.clockOutAt) {
+          const alreadyOpen = await findOpenPunch(emp.id);
+          if (alreadyOpen) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `${emp.fullName} is already clocked in (since ${new Date(alreadyOpen.clockInAt).toLocaleString("en-US", { timeZone: "America/Chicago" })}). Close or edit that punch instead of adding another open one.`,
+            });
+          }
         }
         const id = await createManualPunch({
           employeeId: emp.id,
@@ -1588,12 +1621,24 @@ export const appRouter = router({
         const safeName = input.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
         const ext = safeName.includes(".") ? safeName.split(".").pop() : "bin";
         const key = `schedules/${ctx.session.scope}-${Date.now()}.${ext}`;
-        const { url } = await storagePut(key, buf, input.mimeType);
+        const { url, key: storedKey } = await storagePut(
+          key,
+          buf,
+          input.mimeType
+        );
 
         const week = getWeekStart(input.weekStart);
         const isPdf = input.mimeType === "application/pdf";
-        const origin = `${ctx.req.protocol}://${ctx.req.get("host")}`;
-        const absoluteUrl = `${origin}${url}`;
+        // Hand the model a direct signed link to the stored file. Routing it
+        // back through our own domain adds a redirect hop and can downgrade
+        // to http behind the proxy — both silent ways to feed the model
+        // nothing and get garbage back.
+        let fileFetchUrl: string;
+        try {
+          fileFetchUrl = await storageGetSignedUrl(storedKey);
+        } catch {
+          fileFetchUrl = `https://${ctx.req.get("host")}${url}`;
+        }
 
         const instructions =
           "Extract EVERY employee and EVERY shift from this weekly schedule. " +
@@ -1608,7 +1653,7 @@ export const appRouter = router({
               {
                 type: "file_url" as const,
                 file_url: {
-                  url: absoluteUrl,
+                  url: fileFetchUrl,
                   mime_type: "application/pdf" as const,
                 },
               },
@@ -1617,24 +1662,24 @@ export const appRouter = router({
               { type: "text" as const, text: instructions },
               {
                 type: "image_url" as const,
-                image_url: { url: absoluteUrl, detail: "high" as const },
+                image_url: { url: fileFetchUrl, detail: "high" as const },
               },
             ];
 
-        const response = await invokeLLM({
+        const llmRequest = {
           messages: [
             {
-              role: "system",
+              role: "system" as const,
               content:
                 "You are a precise data-extraction assistant reading a Homebase weekly work schedule (PDF or image). " +
                 "Output every employee with their individual shifts per day. Names must be copied exactly as printed. " +
                 "Never invent employees, days, or hours. If a shift's hours are not printed, compute them from the start/end times. " +
                 "Only output JSON matching the provided schema.",
             },
-            { role: "user", content: userContent },
+            { role: "user" as const, content: userContent },
           ],
           response_format: {
-            type: "json_schema",
+            type: "json_schema" as const,
             json_schema: {
               name: "homebase_schedule",
               strict: true,
@@ -1694,7 +1739,7 @@ export const appRouter = router({
               },
             },
           },
-        });
+        };
 
         type ExtractedDay = {
           day: string;
@@ -1707,17 +1752,46 @@ export const appRouter = router({
           days: ExtractedDay[];
           totalHours: number;
         };
-        let parsed: { employees: ExtractedEmployee[] } = { employees: [] };
-        try {
-          const raw = response.choices[0]?.message?.content;
-          const text = typeof raw === "string" ? raw : JSON.stringify(raw);
-          parsed = JSON.parse(text);
-          if (!Array.isArray(parsed.employees)) throw new Error("bad shape");
-        } catch {
+
+        // Models occasionally wrap the JSON in prose or code fences, or get
+        // cut off mid-answer. Extract tolerantly, and retry the whole call
+        // once before telling the manager it failed — one flaky response
+        // shouldn't cost them a re-upload.
+        const extractJson = (text: string): { employees: ExtractedEmployee[] } => {
+          let t = text.trim();
+          const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+          if (fence) t = fence[1].trim();
+          const start = t.indexOf("{");
+          const end = t.lastIndexOf("}");
+          if (start >= 0 && end > start) t = t.slice(start, end + 1);
+          const obj = JSON.parse(t);
+          if (!Array.isArray(obj.employees)) throw new Error("bad shape");
+          return obj;
+        };
+
+        let parsed: { employees: ExtractedEmployee[] } | null = null;
+        for (let attempt = 1; attempt <= 2 && !parsed; attempt++) {
+          let text = "";
+          try {
+            const response = await invokeLLM(llmRequest);
+            const raw = response.choices[0]?.message?.content;
+            text = typeof raw === "string" ? raw : JSON.stringify(raw ?? "");
+            parsed = extractJson(text);
+          } catch (err) {
+            console.error(
+              `[Schedule] extraction attempt ${attempt}/2 failed for ${safeName}:`,
+              err instanceof Error ? err.message : err,
+              text
+                ? `— response head: ${text.slice(0, 400)}`
+                : "— no response text"
+            );
+          }
+        }
+        if (!parsed) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message:
-              "Could not parse the schedule. Try a clearer photo or PDF.",
+              "Couldn't read that schedule after two tries. If it's a photo, retake it flat-on in good light — or export the PDF straight from Homebase and upload that.",
           });
         }
 

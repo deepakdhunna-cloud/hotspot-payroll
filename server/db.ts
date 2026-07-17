@@ -313,6 +313,18 @@ export async function findOpenPunch(employeeId: number) {
   return rows[0];
 }
 
+/** Every open punch for one employee — normally 0 or 1, but duplicates can
+ *  arrive via manual entry or imports, and clock-out must sweep them all. */
+export async function findOpenPunches(employeeId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(timePunches)
+    .where(and(eq(timePunches.employeeId, employeeId), isNull(timePunches.clockOutAt)))
+    .orderBy(desc(timePunches.clockInAt));
+}
+
 export async function openPunch(data: InsertTimePunch) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
