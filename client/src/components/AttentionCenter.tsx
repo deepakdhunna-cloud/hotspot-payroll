@@ -56,7 +56,12 @@ function fixHref(item: Item): { href: string; label: string } | null {
     case "long_punch":
       return { href: "/payroll?tab=punches", label: "Open punches" };
     case "auto_clockout":
-      return { href: "/payroll?tab=punches", label: "Fix punch time" };
+      return {
+        href: item.weekStart
+          ? `/payroll?tab=punches&week=${toDateInput(new Date(item.weekStart))}`
+          : "/payroll?tab=punches",
+        label: "Open punches",
+      };
     case "hours_mismatch":
       return {
         href: item.weekStart
@@ -91,8 +96,12 @@ export function AttentionCenter({ className }: { className?: string }) {
   const [clockOutValue, setClockOutValue] = useState("");
 
   const resolveM = trpc.attention.resolve.useMutation({
-    onSuccess: () => {
-      toast.success("Signed off — item cleared from the stack.");
+    onSuccess: (data) => {
+      if ((data as { alreadyResolved?: boolean }).alreadyResolved) {
+        toast.info("Already handled elsewhere — refreshing the stack.");
+      } else {
+        toast.success("Signed off — item cleared from the stack.");
+      }
       utils.attention.list.invalidate();
       utils.dashboard.summary.invalidate();
       setClockOutFormFor(null);
@@ -143,6 +152,10 @@ export function AttentionCenter({ className }: { className?: string }) {
             const isManual = MANUAL_KINDS.has(item.kind);
             const isOpenLongPunch =
               item.kind === "long_punch" && item.title.includes("and counting");
+            // Items where typing the real clock-out is the fix: an open
+            // 12h+ punch, or a punch the system closed at the limit.
+            const showsClockOutForm =
+              isOpenLongPunch || item.kind === "auto_clockout";
             return (
               <li key={item.id} className="px-5 py-3.5">
                 <div className="flex items-start gap-3">
@@ -214,36 +227,47 @@ export function AttentionCenter({ className }: { className?: string }) {
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
-                    {isManual ? (
-                      isOpenLongPunch ? (
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => {
-                            setClockOutFormFor(item.id);
-                            setClockOutValue("");
-                          }}
-                          disabled={resolveM.isPending}
-                        >
-                          <BadgeCheck className="h-3.5 w-3.5 mr-1" /> Fix & approve
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() =>
-                            resolveM.mutate({
-                              id: item.id,
-                              resolution:
-                                item.kind === "long_punch" ? "approved" : "reviewed",
-                            })
-                          }
-                          disabled={resolveM.isPending}
-                        >
-                          <BadgeCheck className="h-3.5 w-3.5 mr-1" />
-                          {item.kind === "long_punch" ? "Approve hours" : "Mark reviewed"}
-                        </Button>
-                      )
+                    {isManual && showsClockOutForm ? (
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setClockOutFormFor(item.id);
+                          setClockOutValue("");
+                        }}
+                        disabled={resolveM.isPending}
+                      >
+                        <BadgeCheck className="h-3.5 w-3.5 mr-1" />
+                        {item.kind === "auto_clockout" ? "Fix time" : "Fix & approve"}
+                      </Button>
+                    ) : null}
+                    {isManual && !isOpenLongPunch ? (
+                      <Button
+                        size="sm"
+                        variant={
+                          item.kind === "auto_clockout" ? "outline" : "default"
+                        }
+                        className={
+                          item.kind === "auto_clockout"
+                            ? "h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                            : "h-7 text-xs"
+                        }
+                        onClick={() =>
+                          resolveM.mutate({
+                            id: item.id,
+                            resolution:
+                              item.kind === "long_punch" ? "approved" : "reviewed",
+                          })
+                        }
+                        disabled={resolveM.isPending}
+                      >
+                        <BadgeCheck className="h-3.5 w-3.5 mr-1" />
+                        {item.kind === "long_punch"
+                          ? "Approve hours"
+                          : item.kind === "auto_clockout"
+                            ? "Times are right"
+                            : "Mark reviewed"}
+                      </Button>
                     ) : null}
                     {fix ? (
                       <Link href={fix.href}>

@@ -35,7 +35,11 @@ import {
   getCurrentPayPeriodStart,
   getWeekStart,
 } from "@shared/hotspot";
-import { isAutoClosedNote, sweepAutoClockOut } from "./autoClockOut";
+import {
+  buildAutoClockOutItem,
+  isAutoClosedNote,
+  sweepAutoClockOut,
+} from "./autoClockOut";
 
 export const LONG_PUNCH_HOURS = 12;
 export const MISMATCH_TOLERANCE_HOURS = 1;
@@ -141,28 +145,21 @@ export async function computeAttentionCandidates(
     });
   };
   // Punches the auto clock-out sweep closed get their own review task —
-  // the system picked the end time, so a human should confirm it.
+  // the system picked the end time, so a human should confirm it. The item
+  // is INSERTED by the sweep at close time; emitting the candidate here
+  // keeps its title/detail current (e.g. after the punch's times are
+  // edited) while the punch is inside the scan window.
   const autoClosedOf = (p: {
     id: number;
     employeeId: number;
     storeLocation: string;
     clockInAt: Date | string;
     clockOutAt: Date | string;
+    note?: string | null;
   }) => {
     const emp = empById.get(p.employeeId);
     if (!emp) return;
-    const inAt = new Date(p.clockInAt);
-    const outAt = new Date(p.clockOutAt);
-    const hours = (outAt.getTime() - inAt.getTime()) / 3_600_000;
-    out.push({
-      refKey: `auto_clockout:${p.id}`,
-      kind: "auto_clockout",
-      storeLocation: p.storeLocation,
-      employeeId: p.employeeId,
-      punchId: p.id,
-      title: `${emp.fullName} was clocked out automatically after ${hours.toFixed(1)}h`,
-      detail: `Clocked in ${fmtClock(inAt)} and never out — the auto clock-out limit recorded the clock-out at ${fmtClock(outAt)}. If they actually left at a different time, fix the punch first, then mark this reviewed.`,
-    });
+    out.push(buildAutoClockOutItem(p, emp.fullName));
   };
 
   for (const p of openPunches) longOf(p);
@@ -324,6 +321,12 @@ export function diffAttention(
   for (const row of existing) {
     if (row.status !== "open") continue;
     if (candidateRefs.has(row.refKey)) continue;
+    // auto_clockout items are inserted at close time and their punch drops
+    // out of the time-windowed candidate scan after two weeks — absence is
+    // NOT evidence anyone reviewed the system-chosen hours. They resolve
+    // only through a human sign-off (or explicitly when the punch is
+    // corrected at the kiosk or deleted).
+    if (row.refKey.startsWith("auto_clockout:")) continue;
     // Condition no longer holds. Auto kinds clear silently; manual kinds
     // clear too — if the punch was fixed or the hours now match, the task
     // is genuinely done.

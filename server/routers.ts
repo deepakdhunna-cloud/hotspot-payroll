@@ -12,6 +12,8 @@ import {
 } from "./_core/trpc";
 import {
   closePunch,
+  closePunchIfOpen,
+  getAttentionByRefKeys,
   getAttentionItemById,
   resolveAttentionItems,
   countEmployees,
@@ -57,6 +59,8 @@ import {
   AUTO_CLOCKOUT_MIN_HOURS,
   AUTO_CLOCKOUT_SETTING_KEY,
   getAutoClockOutHours,
+  isAutoClosedNote,
+  stripAutoClockOutNote,
   sweepAutoClockOut,
 } from "./autoClockOut";
 import { hashClockCode, verifyClockCode } from "./_core/clockAuth";
@@ -810,20 +814,38 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         if (item.status !== "open") {
+          if (input.clockOutAt) {
+            // The item was resolved in the background (e.g. the auto
+            // clock-out sweep closed the punch) between render and submit.
+            // Faking success here would silently discard the typed time.
+            throw new TRPCError({
+              code: "CONFLICT",
+              message:
+                "This item was just resolved elsewhere — your clock-out was NOT saved. Check the punch in Payroll → Punches (or the newer review task) and fix the time there.",
+            });
+          }
           return { success: true, alreadyResolved: true };
         }
 
-        // Approving a long punch may include registering the true clock-out.
+        // Approving a long punch (or an auto clock-out) may include
+        // registering the true clock-out.
         if (input.clockOutAt) {
-          if (item.kind !== "long_punch" || !item.punchId) {
+          if (
+            (item.kind !== "long_punch" && item.kind !== "auto_clockout") ||
+            !item.punchId
+          ) {
             throw new TRPCError({
               code: "BAD_REQUEST",
-              message: "A clock-out can only be registered on a long-shift item.",
+              message:
+                "A clock-out can only be registered on a long-shift or auto clock-out item.",
             });
           }
           const punch = await getPunchById(item.punchId);
           if (!punch) throw new TRPCError({ code: "NOT_FOUND" });
-          if (punch.clockOutAt) {
+          // A punch the SWEEP closed is still fixable — the manager's time
+          // overrides the system-chosen cutoff. A punch a human closed is
+          // not: edit those from the Punches tab.
+          if (punch.clockOutAt && !isAutoClosedNote(punch.note)) {
             throw new TRPCError({
               code: "CONFLICT",
               message: "That punch already has a clock-out — edit it from the Punches tab.",
@@ -1580,10 +1602,23 @@ export const appRouter = router({
         // or imports, and leaving one open double-counts the employee forever.
         const openAll = await findOpenPunches(matched.id);
         const open = openAll[0];
-        const weekSummary = await buildWeekSummary();
         if (open) {
+          const weekSummary = await buildWeekSummary();
           for (const p of openAll) {
-            await closePunch(p.id, now);
+            const won = await closePunchIfOpen(p.id, now);
+            if (!won) {
+              // The auto clock-out sweep closed this punch inside our
+              // read-to-write window. The employee's tap is the REAL end
+              // time — restore their pre-sweep note and record it.
+              const cur = await getPunchById(p.id);
+              if (
+                cur?.clockOutAt &&
+                isAutoClosedNote(cur.note) &&
+                now.getTime() > new Date(cur.clockInAt).getTime()
+              ) {
+                await updatePunch(p.id, { clockOutAt: now, note: p.note ?? null });
+              }
+            }
           }
           const durationMs = now.getTime() - new Date(open.clockInAt).getTime();
           const durationHours = Math.max(0, durationMs / 3_600_000);
@@ -1597,12 +1632,71 @@ export const appRouter = router({
             week: weekSummary,
           };
         }
+
+        // No open punch. If this person's LAST punch was just closed by the
+        // auto clock-out sweep, this tap is almost certainly their real
+        // clock-out — not a new shift. Recording it as a fresh clock-in
+        // would create a phantom punch that silently inflates payroll, so
+        // within a grace window the tap corrects the auto-closed punch.
+        const AUTO_CLOCKOUT_KIOSK_GRACE_MS = 2 * 3_600_000;
+        const [latest] = await listPunches({
+          employeeId: matched.id,
+          limit: 1,
+        });
+        if (
+          latest?.clockOutAt &&
+          isAutoClosedNote(latest.note) &&
+          now.getTime() - new Date(latest.clockOutAt).getTime() <=
+            AUTO_CLOCKOUT_KIOSK_GRACE_MS &&
+          now.getTime() > new Date(latest.clockInAt).getTime()
+        ) {
+          const base = stripAutoClockOutNote(latest.note);
+          await updatePunch(latest.id, {
+            clockOutAt: now,
+            note: `${base ? `${base} · ` : ""}auto clock-out corrected at kiosk`,
+          });
+          // The employee recorded the real end time themselves — the punch
+          // is an ordinary punch again, and its review task is done.
+          const related = await getAttentionByRefKeys([
+            `auto_clockout:${latest.id}`,
+          ]);
+          await resolveAttentionItems(
+            related.filter(r => r.status === "open").map(r => r.id),
+            "auto",
+            "kiosk"
+          );
+          void logAudit({
+            actorScope: "kiosk",
+            action: "clock.autoClockOutCorrected",
+            entityType: "punch",
+            entityId: latest.id,
+            detail: JSON.stringify({
+              employeeId: matched.id,
+              clockOutAt: now.toISOString(),
+            }),
+            ip: requestIp(ctx.req),
+          });
+          const weekSummary = await buildWeekSummary();
+          const durationHours = Math.max(
+            0,
+            (now.getTime() - new Date(latest.clockInAt).getTime()) / 3_600_000
+          );
+          return {
+            action: "out" as const,
+            employee: { id: matched.id, fullName: matched.fullName },
+            at: now,
+            durationHours,
+            week: weekSummary,
+          };
+        }
+
         await openPunch({
           employeeId: matched.id,
           storeLocation: matched.storeLocation,
           clockInAt: now,
           source: "kiosk",
         });
+        const weekSummary = await buildWeekSummary();
         return {
           action: "in" as const,
           employee: { id: matched.id, fullName: matched.fullName },
@@ -1855,6 +1949,17 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         await deletePunch(input.id);
+        // A deleted punch can't be reviewed — close any attention tasks
+        // that point at it so they don't sit in the stack forever.
+        const relatedItems = await getAttentionByRefKeys([
+          `auto_clockout:${input.id}`,
+          `long_punch:${input.id}`,
+        ]);
+        await resolveAttentionItems(
+          relatedItems.filter(r => r.status === "open").map(r => r.id),
+          "auto",
+          "system"
+        );
         void logAudit({
           actorScope: ctx.session.scope,
           action: "clock.deletePunch",

@@ -398,10 +398,12 @@ export async function deletePunch(id: number) {
 }
 
 /**
- * Close a punch ONLY if it is still open. The `clockOutAt IS NULL` guard
- * makes concurrent closers (auto clock-out sweep vs a kiosk punch vs a
- * second sweep) race-safe: exactly one wins. Returns whether THIS call
- * closed it.
+ * Close a punch ONLY if it is still open AND the stored clock-in precedes
+ * the proposed clock-out. Both checks live in the WHERE clause so they are
+ * atomic with the write: concurrent closers (auto clock-out sweep vs a
+ * kiosk punch vs a second sweep) race safely — exactly one wins — and a
+ * concurrent clock-in edit can never yield a negative-duration punch.
+ * Returns whether THIS call closed it.
  */
 export async function closePunchIfOpen(
   id: number,
@@ -413,7 +415,13 @@ export async function closePunchIfOpen(
   const result = await db
     .update(timePunches)
     .set(note === undefined ? { clockOutAt } : { clockOutAt, note })
-    .where(and(eq(timePunches.id, id), isNull(timePunches.clockOutAt)));
+    .where(
+      and(
+        eq(timePunches.id, id),
+        isNull(timePunches.clockOutAt),
+        lt(timePunches.clockInAt, clockOutAt),
+      ),
+    );
   const affected = Number(
     (result as any)[0]?.affectedRows ?? (result as any).affectedRows ?? 0,
   );

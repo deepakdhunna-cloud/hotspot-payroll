@@ -249,11 +249,9 @@ export default function HistoryTab({
       </section>
 
       <PositionBreakdown
-        items={employees.map((e) => ({
-          role: e.role,
-          hours: e.hours,
-          gross: e.gross,
-        }))}
+        items={employees
+          .map((e) => ({ role: e.role, hours: e.hours, gross: e.gross }))
+          .filter((it) => it.hours > 0 || it.gross > 0)}
         sub={`saved payroll split by role · ${fmtWeekRange(startWeek)} → ${fmtWeekRange(endWeek)}`}
       />
 

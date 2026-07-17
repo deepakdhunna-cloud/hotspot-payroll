@@ -22,6 +22,7 @@ vi.mock("./db", () => ({
   updateAttentionText: vi.fn(async () => {}),
   closePunchIfOpen: vi.fn(async () => false),
   getAppSetting: vi.fn(async () => undefined),
+  getEmployeeById: vi.fn(async () => undefined),
   logAudit: vi.fn(async () => {}),
 }));
 
@@ -76,6 +77,13 @@ describe("diffAttention — the stack's lifecycle rules", () => {
     );
     expect(d.toInsert).toEqual([]);
     expect(d.toReopenIds).toEqual([]);
+    expect(d.toAutoResolveIds).toEqual([]);
+  });
+
+  it("open auto_clockout items are NEVER auto-resolved by candidate absence", () => {
+    // The punch has aged out of the 14-day scan window — its candidate is
+    // gone, but nobody reviewed the system-chosen hours yet.
+    const d = diffAttention([], [row("auto_clockout:77", "open")]);
     expect(d.toAutoResolveIds).toEqual([]);
   });
 

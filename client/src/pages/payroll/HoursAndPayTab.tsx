@@ -178,24 +178,31 @@ export default function HoursAndPayTab({
     return { hoursTotal, grossTotal };
   }, [weekQ.data, hours, rates]);
 
-  // Same live numbers as the table, regrouped by position.
+  // Same live numbers as the table rows, regrouped by position. Rate
+  // mirrors the row's own expression (cleared field = $0, like the row's
+  // rendered gross), and people with no hours are left out so "N people"
+  // means people actually being paid this week.
   const positionItems = useMemo(
     () =>
-      (weekQ.data?.employees ?? []).map((r) => {
-        const rawH = hours[r.employee.id];
-        const rawR = rates[r.employee.id];
-        const h = rawH === undefined || rawH === "" ? 0 : Number(rawH);
-        const rate =
-          rawR === undefined || rawR === ""
-            ? Number(r.employee.payRate)
-            : Number(rawR);
-        return {
-          role: r.employee.role,
-          hours: isNaN(h) ? 0 : h,
-          gross:
-            !isNaN(h) && !isNaN(rate) ? computeGross(h, rate).grossPay : 0,
-        };
-      }),
+      (weekQ.data?.employees ?? [])
+        .map((r) => {
+          const rawH = hours[r.employee.id];
+          const rawR = rates[r.employee.id];
+          const h = rawH === undefined || rawH === "" ? 0 : Number(rawH);
+          const rate =
+            rawR === undefined
+              ? Number(r.employee.payRate)
+              : rawR === ""
+                ? 0
+                : Number(rawR);
+          return {
+            role: r.employee.role,
+            hours: isNaN(h) ? 0 : h,
+            gross:
+              !isNaN(h) && !isNaN(rate) ? computeGross(h, rate).grossPay : 0,
+          };
+        })
+        .filter((it) => it.hours > 0 || it.gross > 0),
     [weekQ.data, hours, rates],
   );
 
