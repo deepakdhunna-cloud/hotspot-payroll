@@ -52,6 +52,7 @@ export default function Home() {
   const isAdmin = user?.role === "admin";
   const [weekStart, setWeekStart] = useState(() => inProgressPayWeekStart());
   const [storeFilter, setStoreFilter] = useState("all");
+  const [showAllClockedIn, setShowAllClockedIn] = useState(false);
 
   const scopeQ = trpc.meta.myScope.useQuery();
   const greetingQ = trpc.meta.greetingName.useQuery();
@@ -74,6 +75,8 @@ export default function Home() {
     totalGross: 0,
     totalEntered: 0,
     totalSavedGross: 0,
+    totalScheduledCost: 0,
+    totalProjectedGross: 0,
     variance: 0,
   };
   const employees = data?.employees ?? [];
@@ -181,32 +184,38 @@ export default function Home() {
             }
           />
           <KpiCell
-            label="On the clock now"
-            value={clockedIn.length}
-            sub={
-              clockedIn.length > 0
-                ? clockedIn.slice(0, 3).map((c) => c.fullName.split(" ")[0]).join(", ") +
-                  (clockedIn.length > 3 ? "…" : "")
-                : "nobody clocked in"
-            }
+            label="Projected payroll"
+            value={fmtMoney(totals.totalProjectedGross)}
+            sub="worked days at cost + days ahead at schedule"
             footer={
-              forgotten.length > 0 ? (
-                <span className="chip-warn">
-                  <AlertTriangle className="h-3 w-3" />
-                  {forgotten.length} shift{forgotten.length === 1 ? "" : "s"} over 12h
-                </span>
+              totals.totalScheduledCost > 0 ? (
+                totals.totalProjectedGross - totals.totalScheduledCost > 25 ? (
+                  <span className="chip-warn">
+                    <AlertTriangle className="h-3 w-3" />+
+                    {fmtMoney(totals.totalProjectedGross - totals.totalScheduledCost)} over
+                    plan
+                  </span>
+                ) : (
+                  <span className="chip-good">
+                    <CheckCircle2 className="h-3 w-3" /> on plan
+                  </span>
+                )
               ) : null
+            }
+          />
+          <KpiCell
+            label="Scheduled payroll"
+            value={fmtMoney(totals.totalScheduledCost)}
+            sub={
+              totals.totalScheduledCost > 0
+                ? "this week's schedule × pay rates"
+                : "set when the schedule is imported"
             }
           />
           <KpiCell
             label="Labor cost (live)"
             value={fmtMoney(totals.totalGross)}
-            sub="clocked hours × pay rate"
-          />
-          <KpiCell
-            label="Payroll saved"
-            value={fmtMoney(totals.totalSavedGross)}
-            sub="saved after the week closes"
+            sub="spent so far · clocked × pay rate"
           />
         </KpiBand>
       ) : (
@@ -317,42 +326,56 @@ export default function Home() {
                   Nobody is clocked in right now.
                 </p>
               ) : (
-                <ul className="divide-y divide-border">
-                  {clockedIn.map((c) => {
-                    const hrs = (Date.now() - new Date(c.clockInAt).getTime()) / 3_600_000;
-                    const long = hrs > 12;
-                    return (
-                      <li key={c.punchId} className="flex items-center justify-between py-2.5">
-                        <div className="min-w-0">
-                          <Link
-                            href={`/employees/${c.employeeId}`}
-                            className="text-sm font-medium hover:text-primary transition-colors"
+                <>
+                  <ul className="divide-y divide-border">
+                    {(showAllClockedIn ? clockedIn : clockedIn.slice(0, 6)).map((c) => {
+                      const hrs = (Date.now() - new Date(c.clockInAt).getTime()) / 3_600_000;
+                      const long = hrs > 12;
+                      return (
+                        <li key={c.punchId} className="flex items-center justify-between py-2.5">
+                          <div className="min-w-0">
+                            <Link
+                              href={`/employees/${c.employeeId}`}
+                              className="text-sm font-medium hover:text-primary transition-colors"
+                            >
+                              {c.fullName}
+                            </Link>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {c.role}
+                              {stores.length > 1
+                                ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
+                                : ""}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-xs tabular-nums shrink-0 ${
+                              long ? "chip-warn" : "text-muted-foreground"
+                            }`}
                           >
-                            {c.fullName}
-                          </Link>
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            {c.role}
-                            {stores.length > 1
-                              ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
-                              : ""}
+                            {long ? <AlertTriangle className="h-3 w-3" /> : null}
+                            {fmtDuration(hrs)} · since{" "}
+                            {new Date(c.clockInAt).toLocaleTimeString("en-US", {
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })}
                           </span>
-                        </div>
-                        <span
-                          className={`text-xs tabular-nums shrink-0 ${
-                            long ? "chip-warn" : "text-muted-foreground"
-                          }`}
-                        >
-                          {long ? <AlertTriangle className="h-3 w-3" /> : null}
-                          {fmtDuration(hrs)} · since{" "}
-                          {new Date(c.clockInAt).toLocaleTimeString("en-US", {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {clockedIn.length > 6 ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full mt-3 h-8 text-xs bg-card"
+                      onClick={() => setShowAllClockedIn((v) => !v)}
+                    >
+                      {showAllClockedIn
+                        ? "Show fewer"
+                        : `See all ${clockedIn.length} on the clock`}
+                    </Button>
+                  ) : null}
+                </>
               )}
             </CardContent>
           </Card>

@@ -110,7 +110,7 @@ export function AttentionCenter({ className }: { className?: string }) {
       className={cn("ink-panel rounded-xl border border-white/10 rise-in overflow-hidden", className)}
     >
       <header className="flex flex-wrap items-center gap-3 px-5 pt-4 pb-3 border-b border-white/10">
-        <ShieldAlert className={cn("h-5 w-5", items.length > 0 ? "text-[oklch(0.72_0.19_35)]" : "text-white/40")} />
+        <ShieldAlert className={cn("h-5 w-5", items.length > 0 ? "text-[oklch(0.68_0.21_27)]" : "text-white/40")} />
         <h2 className="section-title text-white">Attention center</h2>
         {items.length > 0 ? (
           <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-2 text-xs font-bold tabular-nums text-white">
@@ -148,8 +148,8 @@ export function AttentionCenter({ className }: { className?: string }) {
                     className={cn(
                       "mt-0.5 h-[18px] w-[18px] shrink-0 rounded-[5px] border-2",
                       p.days >= 3
-                        ? "border-[oklch(0.68_0.21_27)] bg-[oklch(0.68_0.21_27_/_0.15)]"
-                        : "border-[oklch(0.75_0.15_70)] bg-[oklch(0.75_0.15_70_/_0.1)]",
+                        ? "border-[oklch(0.68_0.21_27)] bg-[oklch(0.68_0.21_27_/_0.25)]"
+                        : "border-white/35 bg-white/5",
                     )}
                     aria-hidden="true"
                   />
@@ -163,8 +163,8 @@ export function AttentionCenter({ className }: { className?: string }) {
                         className={cn(
                           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide",
                           p.days >= 3
-                            ? "bg-[oklch(0.68_0.21_27_/_0.2)] text-[oklch(0.85_0.13_27)]"
-                            : "bg-[oklch(0.75_0.15_70_/_0.15)] text-[oklch(0.87_0.12_75)]",
+                            ? "bg-[oklch(0.68_0.21_27)] text-white"
+                            : "bg-white/10 text-white/75",
                         )}
                       >
                         {p.days >= 3 ? <AlertTriangle className="h-3 w-3" /> : null}

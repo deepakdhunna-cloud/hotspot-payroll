@@ -55,6 +55,7 @@ import {
   ROLES,
   STORES,
   type Store,
+  businessDayBoundaryUtc,
   businessDayStart,
   computeGrossPay,
   estimateWithholding,
@@ -908,6 +909,43 @@ export const appRouter = router({
           }
         }
 
+        /* Money planning figures.
+           - totalScheduledCost: the week's schedule priced at each person's
+             pay rate — set the moment a schedule lands.
+           - totalProjectedGross: re-computed as each business day closes —
+             the ACTUAL labor cost of finished days plus the SCHEDULED cost
+             of the days still to come. Before any day closes it equals the
+             scheduled figure; after the last day it equals actual cost. */
+        const rateByEmp = new Map(employees.map(e => [e.id, Number(e.payRate)]));
+        const totalScheduledCost = empBreakdown.reduce(
+          (a, e) => a + e.scheduledHours * e.payRate,
+          0
+        );
+        const todayMarker = businessDayStart(new Date());
+        const dayBoundary = businessDayBoundaryUtc(new Date());
+        let totalProjectedGross = totalScheduledCost;
+        if (dayBoundary.getTime() > week.getTime()) {
+          const actualEnd = new Date(
+            Math.min(dayBoundary.getTime(), weekEnd.getTime())
+          );
+          const closedClock = await hoursWorkedForWeekBulk(
+            week,
+            actualEnd,
+            storesFilter
+          );
+          let actual = 0;
+          closedClock.forEach((hrs, empId) => {
+            actual += hrs * (rateByEmp.get(empId) ?? 0);
+          });
+          let remaining = 0;
+          for (const s of shifts) {
+            if (new Date(s.shiftDate).getTime() >= todayMarker.getTime()) {
+              remaining += Number(s.hours) * (rateByEmp.get(s.employeeId) ?? 0);
+            }
+          }
+          totalProjectedGross = actual + remaining;
+        }
+
         // Live "on the clock" list with names and shift start times.
         // One row per PERSON: if duplicate open punches exist (manual entry
         // or import glitches), show only the earliest so counts match reality.
@@ -963,6 +1001,8 @@ export const appRouter = router({
             totalGross,
             totalEntered,
             totalSavedGross,
+            totalScheduledCost,
+            totalProjectedGross,
             variance: totalHours - totalScheduled,
           },
           employees: empBreakdown,

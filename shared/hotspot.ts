@@ -183,3 +183,25 @@ export function businessDayStart(now: Date = new Date()): Date {
   const ymd = now.toLocaleDateString("en-CA", { timeZone: BUSINESS_TIME_ZONE });
   return new Date(`${ymd}T00:00:00Z`);
 }
+
+/**
+ * The actual UTC instant when the current business day began (midnight in
+ * the store timezone). Used to split a live week into "closed days"
+ * (worked, priced from real punches) and "days still to come" (priced from
+ * the schedule) for payroll projection.
+ */
+export function businessDayBoundaryUtc(now: Date = new Date()): Date {
+  const marker = businessDayStart(now);
+  const offsetName = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(now)
+    .find(p => p.type === "timeZoneName")?.value;
+  const m = offsetName?.match(/GMT([+-]\d+)(?::(\d+))?/);
+  const offsetHours = m ? Number(m[1]) : -5;
+  const offsetMinutes = m?.[2] ? Math.sign(offsetHours) * Number(m[2]) : 0;
+  return new Date(
+    marker.getTime() - (offsetHours * 60 + offsetMinutes) * 60_000
+  );
+}

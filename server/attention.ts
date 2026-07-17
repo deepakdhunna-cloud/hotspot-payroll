@@ -61,8 +61,14 @@ const fmtDay = (d: Date) =>
   new Date(d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    timeZone: "America/Chicago",
+    timeZone: "UTC",
   });
+/** Thu → Wed pay-week range, e.g. "Jul 9 – Jul 15". */
+const fmtRange = (weekStart: Date) => {
+  const end = new Date(weekStart);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return `${fmtDay(weekStart)} – ${fmtDay(end)}`;
+};
 const fmtClock = (d: Date) =>
   new Date(d).toLocaleString("en-US", {
     month: "short",
@@ -155,8 +161,8 @@ export async function computeAttentionCandidates(
       storeLocation: emp.storeLocation,
       employeeId: empId,
       weekStart: closedWeek,
-      title: `${emp.fullName} clocked ${clocked.toFixed(1)}h vs ${scheduled.toFixed(1)}h scheduled last week`,
-      detail: `${diff > 0 ? `${diff.toFixed(1)}h OVER` : `${Math.abs(diff).toFixed(1)}h UNDER`} schedule for the week of ${fmtDay(closedWeek)}. Review before payroll is finalized.`,
+      title: `${emp.fullName}: ${clocked.toFixed(1)}h worked vs ${scheduled.toFixed(1)}h scheduled · ${fmtRange(closedWeek)}`,
+      detail: `${diff > 0 ? `${diff.toFixed(1)}h OVER` : `${Math.abs(diff).toFixed(1)}h UNDER`} schedule for that week. Review before payroll is finalized.`,
     });
   });
 
@@ -169,25 +175,33 @@ export async function computeAttentionCandidates(
       kind: "missing_schedule",
       storeLocation: store,
       weekStart: liveWeek,
-      title: `No schedule imported for ${store} this week`,
+      title: `No schedule imported for ${store} · ${fmtRange(liveWeek)}`,
       detail:
-        "Without it, over-schedule alerts and daily coverage can't be checked.",
+        "Without it, over-schedule alerts and daily coverage can't be checked for this week.",
     });
   }
 
-  /* ---- 4. Employees who can't use the kiosk ---- */
-  const noCodeByStore = new Map<string, number>();
+  /* ---- 4. Employees who can't use the kiosk — named, not counted ---- */
+  const noCodeByStore = new Map<string, string[]>();
   for (const e of emps) {
     if (e.clockCodeHash) continue;
-    noCodeByStore.set(e.storeLocation, (noCodeByStore.get(e.storeLocation) ?? 0) + 1);
+    noCodeByStore.set(e.storeLocation, [
+      ...(noCodeByStore.get(e.storeLocation) ?? []),
+      e.fullName,
+    ]);
   }
-  noCodeByStore.forEach((count, store) => {
+  noCodeByStore.forEach((names, store) => {
+    const shown = names.slice(0, 15);
+    const more = names.length - shown.length;
     out.push({
       refKey: `missing_codes:${store}`,
       kind: "missing_codes",
       storeLocation: store,
-      title: `${count} employee${count === 1 ? "" : "s"} at ${store} can't clock in (no code)`,
-      detail: "Set 4-digit codes from each employee profile.",
+      title:
+        names.length <= 2
+          ? `${names.join(" and ")} need${names.length === 1 ? "s" : ""} a clock code · ${store}`
+          : `${names.length} people need clock codes · ${store}`,
+      detail: `${shown.join(", ")}${more > 0 ? ` +${more} more` : ""} — set 4-digit codes from each profile.`,
     });
   });
 
@@ -196,24 +210,29 @@ export async function computeAttentionCandidates(
   for (const entry of closedWeekPayroll) {
     savedByEmp.set(entry.employeeId, Number(entry.hoursWorked ?? 0));
   }
-  const unsavedByStore = new Map<string, number>();
+  const unsavedByStore = new Map<string, string[]>();
   closedWeekClock.forEach((clocked, empId) => {
     const emp = empById.get(empId);
     if (!emp || clocked <= 0.25) return;
     if ((savedByEmp.get(empId) ?? 0) > 0) return;
-    unsavedByStore.set(
-      emp.storeLocation,
-      (unsavedByStore.get(emp.storeLocation) ?? 0) + 1
-    );
+    unsavedByStore.set(emp.storeLocation, [
+      ...(unsavedByStore.get(emp.storeLocation) ?? []),
+      emp.fullName,
+    ]);
   });
-  unsavedByStore.forEach((count, store) => {
+  unsavedByStore.forEach((names, store) => {
+    const shown = names.slice(0, 15);
+    const more = names.length - shown.length;
     out.push({
       refKey: `unsaved_payroll:${store}:${closedWeek.toISOString().slice(0, 10)}`,
       kind: "unsaved_payroll",
       storeLocation: store,
       weekStart: closedWeek,
-      title: `${count} employee${count === 1 ? "" : "s"} at ${store} worked last week but aren't saved to payroll`,
-      detail: `Week of ${fmtDay(closedWeek)} still needs to be finalized.`,
+      title:
+        names.length <= 2
+          ? `${names.join(" and ")} worked ${fmtRange(closedWeek)} but ${names.length === 1 ? "isn't" : "aren't"} saved to payroll · ${store}`
+          : `${names.length} people worked ${fmtRange(closedWeek)} but aren't saved to payroll · ${store}`,
+      detail: `${shown.join(", ")}${more > 0 ? ` +${more} more` : ""} — finalize that week in Payroll.`,
     });
   });
 
