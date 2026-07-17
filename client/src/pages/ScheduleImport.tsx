@@ -161,6 +161,13 @@ export default function ScheduleImport() {
   // moved — otherwise scheduled hours and shift dates would land in
   // different weeks.
   const [parsedWeek, setParsedWeek] = useState<Date | null>(null);
+  // Set when the uploaded file's printed dates belong to a different pay
+  // week than the selected one — committing anyway would land every shift
+  // on the wrong dates.
+  const [weekWarning, setWeekWarning] = useState<{
+    printedWeekStart: Date | null;
+    unresolvedDatedDays: number;
+  } | null>(null);
   const [overrides, setOverrides] = useState<Record<number, number | null>>({});
   const [hourOverrides, setHourOverrides] = useState<Record<number, string>>({});
   const [qaRole, setQaRole] = useState<Record<number, string>>({});
@@ -192,6 +199,16 @@ export default function ScheduleImport() {
       setRows(data.rows as ParsedRow[]);
       setImportId(data.importId);
       setParsedWeek(new Date(data.weekStart));
+      setWeekWarning(
+        data.weekMismatch || data.unresolvedDatedDays > 0
+          ? {
+              printedWeekStart: data.printedWeekStart
+                ? new Date(data.printedWeekStart)
+                : null,
+              unresolvedDatedDays: data.unresolvedDatedDays,
+            }
+          : null,
+      );
       const initialOverrides: Record<number, number | null> = {};
       const initialHours: Record<number, string> = {};
       data.rows.forEach((r, i) => {
@@ -258,7 +275,7 @@ export default function ScheduleImport() {
     if (f) setFile(f);
   };
 
-  const startParse = async () => {
+  const parseWithWeek = async (week: Date) => {
     if (!file) return;
     const allowed = [
       "image/png",
@@ -293,10 +310,11 @@ export default function ScheduleImport() {
       fileBase64: btoa(binary),
       mimeType: file.type,
       filename: file.name,
-      weekStart,
+      weekStart: week,
       store: effectiveStore ? (effectiveStore as any) : undefined,
     });
   };
+  const startParse = () => parseWithWeek(weekStart);
 
   const commit = () => {
     if (!rows) return;
@@ -515,6 +533,49 @@ export default function ScheduleImport() {
       {/* Results */}
       {rows && (
         <div ref={resultsRef} className="space-y-6 scroll-mt-20">
+          {/* Wrong-week guard: the file's printed dates vs the selected week */}
+          {weekWarning && (
+            <Card className="surface-card border-0 border-l-4 border-l-primary rise-in">
+              <CardContent className="p-4 flex flex-wrap items-center gap-3">
+                <AlertCircle className="h-5 w-5 text-primary shrink-0" />
+                <div className="flex-1 min-w-60">
+                  <p className="text-sm font-semibold">
+                    {weekWarning.printedWeekStart
+                      ? `This file is printed for the week of ${fmtWeekRange(
+                          weekWarning.printedWeekStart,
+                        )} — you're importing it into ${fmtWeekRange(
+                          parsedWeek ?? weekStart,
+                        )}.`
+                      : `${weekWarning.unresolvedDatedDays} dated shift${
+                          weekWarning.unresolvedDatedDays === 1 ? "" : "s"
+                        } on this file fall outside the selected week and would be skipped.`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Committing into the wrong week puts every shift on the wrong
+                    dates.{" "}
+                    {weekWarning.printedWeekStart
+                      ? "Switch to the printed week — or carry on only if you genuinely mean to reuse this schedule for a different week."
+                      : "Double-check the pay week selected above, then read the file again."}
+                  </p>
+                </div>
+                {weekWarning.printedWeekStart && (
+                  <Button
+                    size="sm"
+                    disabled={parseM.isPending}
+                    onClick={() => {
+                      const w = weekWarning.printedWeekStart!;
+                      setWeekStart(w);
+                      parseWithWeek(w);
+                    }}
+                  >
+                    <CalendarRange className="h-4 w-4 mr-1.5" />
+                    Use printed week
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Scan summary — the numbers a manager needs before committing */}
           <div className="kpi-band rise-in">
             <div className="kpi-cell">

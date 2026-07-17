@@ -109,6 +109,50 @@ const DAY_NAMES = [
 ] as const;
 
 /**
+ * Parse a loosely-printed date ("7/16", "07/16/26", "2026-07-16") to a UTC
+ * midnight Date. Month/day forms carry no year, so the year is chosen to
+ * put the date closest to `anchor` — a schedule printed "7/16" uploaded in
+ * July 2026 means 2026, and "1/1" uploaded in late December means next year.
+ */
+export function parseLooseDateNearAnchor(
+  ref: string | null | undefined,
+  anchor: Date,
+): Date | null {
+  if (!ref) return null;
+  const clean = ref.trim();
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(clean);
+  if (iso) {
+    const d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const us = /^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/.exec(clean);
+  if (!us) return null;
+  const month = +us[1];
+  const day = +us[2];
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (us[3]) {
+    const y = +us[3] < 100 ? 2000 + +us[3] : +us[3];
+    return new Date(Date.UTC(y, month - 1, day));
+  }
+  let best: Date | null = null;
+  for (const y of [
+    anchor.getUTCFullYear() - 1,
+    anchor.getUTCFullYear(),
+    anchor.getUTCFullYear() + 1,
+  ]) {
+    const cand = new Date(Date.UTC(y, month - 1, day));
+    if (
+      !best ||
+      Math.abs(cand.getTime() - anchor.getTime()) <
+        Math.abs(best.getTime() - anchor.getTime())
+    ) {
+      best = cand;
+    }
+  }
+  return best;
+}
+
+/**
  * Resolve a day reference from a parsed schedule ("Mon", "monday",
  * "2026-05-11", "5/11") to the matching calendar day within the pay week.
  * Returns null when the reference can't be resolved.

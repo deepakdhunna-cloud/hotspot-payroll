@@ -64,6 +64,7 @@ import {
   estimateWithholding,
   getWeekStart,
   overclockStatus,
+  parseLooseDateNearAnchor,
   resolveScheduleDay,
 } from "@shared/hotspot";
 import { TRPCError } from "@trpc/server";
@@ -1878,7 +1879,13 @@ export const appRouter = router({
         const buf = Buffer.from(input.fileBase64, "base64");
         const safeName = input.filename.replace(/[^a-zA-Z0-9_.-]/g, "_");
         const ext = safeName.includes(".") ? safeName.split(".").pop() : "bin";
-        const key = `schedules/${ctx.session.scope}-${Date.now()}.${ext}`;
+        // Storage keys must never contain spaces: the storage backend signs
+        // the raw key but serves the percent-encoded path, so a key like
+        // "Hotspot Market 13-…" uploads fine yet every download of it is
+        // rejected with AccessDenied — silently breaking both the "view
+        // uploaded schedule" link and the model's visual read of the file.
+        const scopeSlug = ctx.session.scope.replace(/[^a-zA-Z0-9._-]+/g, "_");
+        const key = `schedules/${scopeSlug}-${Date.now()}.${ext}`;
         const { url, key: storedKey } = await storagePut(
           key,
           buf,
@@ -1904,7 +1911,14 @@ export const appRouter = router({
           "For each employee output their full name exactly as written, and one entry per scheduled shift: " +
           'the day (as written, e.g. "Thursday" or a date like "5/7"), the written start and end times, ' +
           "and the shift length in hours (use the written hours if shown, otherwise compute from the times, subtracting any noted unpaid break). " +
-          "Also output each employee's total weekly hours. Return JSON.";
+          "Also output each employee's total weekly hours. " +
+          "Getting each shift on the RIGHT DAY is critical: " +
+          "extracted text may present the grid as rows of cells separated by ' | ', where a shift cell is prefixed " +
+          "with its day column like 'Fri 7/17: 5:00am-1:00pm' — that prefix is the authoritative day for the shift. " +
+          "When day headers include dates, output the day as the printed date (e.g. '7/17') rather than only the weekday name. " +
+          "Never guess a day: if you cannot tell which day a shift belongs to, omit that shift. " +
+          "Also report scheduleStart and scheduleEnd — the first and last date printed on the schedule (null if no dates are printed). " +
+          "Return JSON.";
 
         /**
          * The reader must handle anything: digital PDFs and spreadsheets
@@ -1925,6 +1939,10 @@ export const appRouter = router({
           },
         ];
         const isSheet = isSheetMime(input.mimeType, safeName);
+        // The raw bytes as a data URI: always reachable by the model even
+        // when the storage CDN is unavailable, so visual reads never depend
+        // on a fetchable link.
+        const dataUri = `data:${input.mimeType};base64,${input.fileBase64}`;
         const strategies: { label: string; content: UserContent[] }[] = [];
         if (isPdf) {
           const text = await extractPdfText(buf);
@@ -1939,6 +1957,16 @@ export const appRouter = router({
               },
             ],
           });
+          strategies.push({
+            label: "pdf-file-inline",
+            content: [
+              { type: "text", text: instructions },
+              {
+                type: "file_url",
+                file_url: { url: dataUri, mime_type: "application/pdf" },
+              },
+            ],
+          });
         } else if (isSheet) {
           const text = await extractSheetText(buf, input.mimeType, safeName);
           if (!text) {
@@ -1950,8 +1978,17 @@ export const appRouter = router({
           }
           strategies.push({ label: "sheet-text", content: withText("spreadsheet", text) });
         } else {
+          // Inline first: photos parse even if the storage CDN can't serve
+          // the file back. The signed URL stays as the second rung.
           strategies.push({
-            label: "image",
+            label: "image-inline",
+            content: [
+              { type: "text", text: instructions },
+              { type: "image_url", image_url: { url: dataUri, detail: "high" } },
+            ],
+          });
+          strategies.push({
+            label: "image-url",
             content: [
               { type: "text", text: instructions },
               { type: "image_url", image_url: { url: fileFetchUrl, detail: "high" } },
@@ -2032,8 +2069,18 @@ export const appRouter = router({
                       required: ["name", "days", "totalHours"],
                     },
                   },
+                  scheduleStart: {
+                    type: ["string", "null"],
+                    description:
+                      "First date printed on the schedule, e.g. '7/16' or '7/16/2026'. Null if no dates are printed.",
+                  },
+                  scheduleEnd: {
+                    type: ["string", "null"],
+                    description:
+                      "Last date printed on the schedule. Null if no dates are printed.",
+                  },
                 },
-                required: ["employees"],
+                required: ["employees", "scheduleStart", "scheduleEnd"],
               },
             },
           },
@@ -2051,10 +2098,15 @@ export const appRouter = router({
           totalHours: number;
         };
 
+        type ExtractedSchedule = {
+          employees: ExtractedEmployee[];
+          scheduleStart?: string | null;
+          scheduleEnd?: string | null;
+        };
         // Models occasionally wrap the JSON in prose or code fences, or get
         // cut off mid-answer. Extract tolerantly, and walk the strategy
         // ladder until one attempt parses.
-        const extractJson = (text: string): { employees: ExtractedEmployee[] } => {
+        const extractJson = (text: string): ExtractedSchedule => {
           let t = text.trim();
           const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
           if (fence) t = fence[1].trim();
@@ -2066,7 +2118,7 @@ export const appRouter = router({
           return obj;
         };
 
-        let parsed: { employees: ExtractedEmployee[] } | null = null;
+        let parsed: ExtractedSchedule | null = null;
         for (const strategy of strategies) {
           if (parsed) break;
           let text = "";
@@ -2153,6 +2205,28 @@ export const appRouter = router({
         ).length;
         const totalHours = rows.reduce((sum, r) => sum + r.scheduledHours, 0);
 
+        // Wrong-week guard: when the schedule prints its own dates and they
+        // belong to a different Thu–Wed pay week than the one selected,
+        // committing would silently shift every shift by whole weeks (day
+        // names still "resolve") or drop them (dates don't). Surface it so
+        // the manager can switch to the printed week in one click.
+        const printedStart = parseLooseDateNearAnchor(
+          parsed.scheduleStart ?? null,
+          week
+        );
+        const printedWeek = printedStart ? getWeekStart(printedStart) : null;
+        const weekMismatch =
+          printedWeek !== null && printedWeek.getTime() !== week.getTime();
+        // Secondary signal: printed per-day dates that found no home in the
+        // selected week (they resolve to null and would be dropped).
+        const unresolvedDatedDays = rows.reduce(
+          (sum, r) =>
+            sum +
+            r.days.filter(d => d.date === null && /^\d/.test(d.ref.trim()))
+              .length,
+          0
+        );
+
         let importId: number | null = null;
         try {
           importId = await createScheduleImport({
@@ -2180,6 +2254,9 @@ export const appRouter = router({
           rows,
           totalExtracted: rows.length,
           totalHours: Math.round(totalHours * 100) / 100,
+          weekMismatch,
+          printedWeekStart: weekMismatch ? printedWeek : null,
+          unresolvedDatedDays,
         };
       }),
 
