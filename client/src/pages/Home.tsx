@@ -164,8 +164,8 @@ export default function Home() {
             value={totals.totalHours.toFixed(1)}
             sub={
               totals.totalScheduled > 0
-                ? `of ${totals.totalScheduled.toFixed(1)} scheduled`
-                : "no schedule for this week"
+                ? `of ${totals.totalScheduled.toFixed(1)} hours scheduled`
+                : "no schedule loaded for this week"
             }
             footer={
               pace ? (
@@ -189,7 +189,7 @@ export default function Home() {
           <KpiCell
             label="Projected payroll"
             value={<Money value={totals.totalProjectedGross} />}
-            sub="worked so far + what\u2019s still scheduled ahead"
+            sub="hours already worked + shifts still to come"
             footer={
               totals.totalScheduledCost > 0 ? (
                 totals.totalProjectedGross - totals.totalScheduledCost > 25 ? (
@@ -211,14 +211,14 @@ export default function Home() {
             value={<Money value={totals.totalScheduledCost} />}
             sub={
               totals.totalScheduledCost > 0
-                ? "this week's schedule × pay rates"
-                : "set when the schedule is imported"
+                ? "what the week costs if it goes exactly to plan"
+                : "appears once a schedule is imported"
             }
           />
           <KpiCell
             label="Labor cost (live)"
             value={<Money value={totals.totalGross} />}
-            sub="spent so far · clocked × pay rate"
+            sub="what the team has earned so far this week"
           />
         </KpiBand>
       ) : (
@@ -227,7 +227,7 @@ export default function Home() {
             hero
             label="Payroll saved"
             value={<Money value={totals.totalSavedGross} />}
-            sub="committed gross pay for this week"
+            sub="the payroll that was saved for this week"
             footer={
               unsaved.length > 0 ? (
                 <span className="chip-warn">
@@ -246,8 +246,8 @@ export default function Home() {
             value={totals.totalHours.toFixed(1)}
             sub={
               totals.totalScheduled > 0
-                ? `of ${totals.totalScheduled.toFixed(1)} scheduled`
-                : "no schedule for this week"
+                ? `of ${totals.totalScheduled.toFixed(1)} hours scheduled`
+                : "no schedule was loaded that week"
             }
             footer={
               totals.totalScheduled > 0 ? (
@@ -267,12 +267,12 @@ export default function Home() {
           <KpiCell
             label="Saved to payroll"
             value={`${savedCount}/${employees.length}`}
-            sub={`${totals.totalEntered.toFixed(1)} hours entered`}
+            sub={`${totals.totalEntered.toFixed(1)} hours entered so far`}
           />
           <KpiCell
             label="Labor cost"
             value={<Money value={totals.totalGross} />}
-            sub="clocked hours × pay rate"
+            sub="what the team earned that week"
           />
         </KpiBand>
       )}

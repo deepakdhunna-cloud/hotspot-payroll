@@ -187,8 +187,8 @@ export default function CeoView() {
             value={<Money value={isLiveWeek ? liveLabor : agg.totalGross} />}
             sub={
               isLiveWeek
-                ? `clocked hours × pay rate · ${focusLabel}`
-                : `committed gross pay · ${focusLabel}`
+                ? `what the team has earned so far · ${focusLabel}`
+                : `payroll saved for that week · ${focusLabel}`
             }
             footer={
               !isLiveWeek && unsavedCount > 0 ? (
@@ -208,8 +208,8 @@ export default function CeoView() {
             value={agg.totalClockHours.toFixed(1)}
             sub={
               agg.totalScheduled > 0
-                ? `of ${agg.totalScheduled.toFixed(1)} scheduled`
-                : "no schedule this week"
+                ? `of ${agg.totalScheduled.toFixed(1)} hours scheduled`
+                : "no schedule loaded this week"
             }
             footer={
               agg.overClockedCount > 0 ? (
@@ -244,14 +244,14 @@ export default function CeoView() {
             <KpiCell
               label="Saved to payroll"
               value={`${savedCount}/${rows.length}`}
-              sub={`${agg.totalHours.toFixed(1)} hours entered`}
+              sub={`${agg.totalHours.toFixed(1)} hours entered so far`}
             />
           )}
           {isLiveWeek ? (
             <KpiCell
               label="Payroll saved"
               value={<Money value={agg.totalGross} />}
-              sub="saved after the week closes"
+              sub="fills in when payroll is saved after Wednesday"
             />
           ) : (
             <KpiCell

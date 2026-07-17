@@ -240,17 +240,17 @@ export default function HoursAndPayTab({
           hero
           label="Projected gross"
           value={<Money value={totals.grossTotal} />}
-          sub="live total for the entries below"
+          sub="adds up the rows below as you type"
         />
         <KpiCell
           label="Hours entered"
           value={`${totals.hoursTotal.toFixed(1)} h`}
-          sub={`week of ${fmtWeekRange(weekStart)}`}
+          sub={`for the week of ${fmtWeekRange(weekStart)}`}
         />
         <KpiCell
           label="Saved"
           value={`${(weekQ.data?.employees ?? []).filter((r) => r.entry).length}/${weekQ.data?.employees.length ?? 0}`}
-          sub="entries committed for this week"
+          sub="rows saved so far this week"
         />
       </KpiBand>
 

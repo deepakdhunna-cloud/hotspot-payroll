@@ -454,7 +454,9 @@
     @apply text-[3rem];
   }
   .kpi-label {
-    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+    @apply text-[12.5px] font-semibold uppercase tracking-[0.13em];
+    font-family: var(--font-display);
+    color: var(--brand-red);
   }
 
   /* ---------- Status chips: state is icon + label, never color alone ---------- */
