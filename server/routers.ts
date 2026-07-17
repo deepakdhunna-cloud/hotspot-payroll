@@ -1332,8 +1332,10 @@ export const appRouter = router({
         const lastClosed = getCurrentPayPeriodStart(new Date());
         const firstWeek = new Date(lastClosed);
         firstWeek.setUTCDate(firstWeek.getUTCDate() - (n - 1) * 7);
-        const punchEnd = new Date(lastClosed);
-        punchEnd.setUTCDate(punchEnd.getUTCDate() + 7);
+        // Punches are fetched through RIGHT NOW: the weekly buckets only
+        // consume the closed weeks, but the per-store feed freshness below
+        // must see today's punches or a live store would read as stale.
+        const punchEnd = new Date();
 
         const [entries, punches, employees] = await Promise.all([
           getPayrollRange(firstWeek, lastClosed, [...STORES]),
