@@ -1482,7 +1482,28 @@ export const appRouter = router({
           });
         }
 
-        return { weeks, latestWeekPeople, lastClosedWeekStart: lastClosed };
+        // Per-store feed freshness: the newest punch timestamp seen in the
+        // whole 5-week window. A silent store means its real-time numbers
+        // on this site read zero — the portal must SAY so, not hide it.
+        const lastPunchByStore = new Map<string, number>();
+        for (const p of punches) {
+          const t = Math.max(
+            new Date(p.clockInAt).getTime(),
+            p.clockOutAt ? new Date(p.clockOutAt).getTime() : 0
+          );
+          lastPunchByStore.set(
+            p.storeLocation,
+            Math.max(lastPunchByStore.get(p.storeLocation) ?? 0, t)
+          );
+        }
+        const feeds = STORES.map(s => ({
+          store: s as string,
+          lastPunchAt: lastPunchByStore.has(s)
+            ? new Date(lastPunchByStore.get(s)!)
+            : null,
+        }));
+
+        return { weeks, latestWeekPeople, feeds, lastClosedWeekStart: lastClosed };
       }),
   }),
 

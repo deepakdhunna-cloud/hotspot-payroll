@@ -545,7 +545,10 @@ export default function CfoView() {
               <CardTitle className="section-title">Store economics</CardTitle>
               <p className="text-xs text-muted-foreground">
                 Last closed week ({fmtWeekRange(new Date(m.last.weekStart))}),
-                with each store's 5-week average for context.
+                with each store's 5-week average for context. The feed column
+                shows whether the store's time clock is actually sending data
+                to this site — a silent store reads $0 here, not because it
+                spent nothing, but because it isn't feeding.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -554,6 +557,7 @@ export default function CfoView() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Store</TableHead>
+                      <TableHead>Data feed</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
                       <TableHead className="text-right">Share</TableHead>
                       <TableHead className="text-right">Cost / hr</TableHead>
@@ -570,6 +574,13 @@ export default function CfoView() {
                       const avg5 =
                         weeks.reduce((sum, w) => sum + (w.byStore[s]?.gross ?? 0), 0) /
                         weeks.length;
+                      const lastPunchAt = cfoQ.data?.feeds?.find(
+                        f => f.store === s,
+                      )?.lastPunchAt;
+                      const silentH = lastPunchAt
+                        ? (Date.now() - new Date(lastPunchAt).getTime()) /
+                          3_600_000
+                        : null;
                       return (
                         <TableRow key={s}>
                           <TableCell className="font-medium">
@@ -581,6 +592,28 @@ export default function CfoView() {
                                 }}
                               />
                               {STORE_ABBR[s] ?? s}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                              style={{
+                                color:
+                                  silentH !== null && silentH < 24 ? UP : DOWN,
+                              }}
+                            >
+                              <span
+                                className="h-2 w-2 rounded-full"
+                                style={{
+                                  background:
+                                    silentH !== null && silentH < 24 ? UP : DOWN,
+                                }}
+                              />
+                              {silentH === null
+                                ? "never fed"
+                                : silentH < 24
+                                  ? "live"
+                                  : `silent ${Math.floor(silentH / 24)}d`}
                             </span>
                           </TableCell>
                           <TableCell className="text-right tabular-nums font-semibold">

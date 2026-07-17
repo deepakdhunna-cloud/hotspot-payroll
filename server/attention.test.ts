@@ -130,6 +130,32 @@ describe("computeAttentionCandidates — auto clock-out integration", () => {
     expect(out.find((c) => c.refKey === "long_punch:44")).toBeUndefined();
   });
 
+  it("a store with no recent punches is flagged as not feeding the site", async () => {
+    vi.mocked(db.listPunchesInRange).mockResolvedValueOnce([
+      {
+        id: 50,
+        employeeId: 1,
+        storeLocation: STORE,
+        clockInAt: new Date("2026-07-17T10:00:00Z"),
+        clockOutAt: new Date("2026-07-17T16:00:00Z"),
+        note: null,
+      },
+    ] as any);
+    vi.mocked(db.getShiftsForWeek).mockResolvedValueOnce([
+      { storeLocation: STORE },
+      { storeLocation: "Hotspot Market 11" },
+    ] as any);
+
+    const out = await computeAttentionCandidates(
+      [STORE, "Hotspot Market 11"],
+      now,
+    );
+    // Market 11 has zero punches in the window → silent feed, flagged.
+    expect(out.find(c => c.refKey === "missing_feed:Hotspot Market 11")).toBeTruthy();
+    // Market 13 punched 2h ago → live, not flagged.
+    expect(out.find(c => c.refKey === `missing_feed:${STORE}`)).toBeUndefined();
+  });
+
   it("a manually-closed long punch still becomes a long_punch task", async () => {
     vi.mocked(db.listEmployees).mockResolvedValueOnce([
       { id: 2, fullName: "Ray Ortiz", storeLocation: STORE, clockCodeHash: "x" },

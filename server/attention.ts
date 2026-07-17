@@ -45,6 +45,8 @@ export const LONG_PUNCH_HOURS = 12;
 export const MISMATCH_TOLERANCE_HOURS = 1;
 /** How far back closed punches are scanned for 12h+ shifts. */
 const LONG_PUNCH_LOOKBACK_DAYS = 14;
+/** A store with no punch this long is flagged as not feeding the site. */
+export const FEED_SILENCE_HOURS = 24;
 
 export type AttentionCandidate = {
   refKey: string;
@@ -54,7 +56,8 @@ export type AttentionCandidate = {
     | "hours_mismatch"
     | "missing_schedule"
     | "missing_codes"
-    | "unsaved_payroll";
+    | "unsaved_payroll"
+    | "missing_feed";
   storeLocation: string;
   employeeId?: number | null;
   punchId?: number | null;
@@ -264,6 +267,39 @@ export async function computeAttentionCandidates(
       detail: `${shown.join(", ")}${more > 0 ? ` +${more} more` : ""} — finalize that week in Payroll.`,
     });
   });
+
+  /* ---- 6. Stores that have gone silent — the site is only real-time if
+          every store's kiosk actually feeds it, no exceptions ---- */
+  const lastPunchByStore = new Map<string, number>();
+  for (const p of [...openPunches, ...recentPunches]) {
+    const t = Math.max(
+      new Date(p.clockInAt).getTime(),
+      p.clockOutAt ? new Date(p.clockOutAt).getTime() : 0
+    );
+    lastPunchByStore.set(
+      p.storeLocation,
+      Math.max(lastPunchByStore.get(p.storeLocation) ?? 0, t)
+    );
+  }
+  for (const store of stores) {
+    const last = lastPunchByStore.get(store);
+    const silentMs = now.getTime() - (last ?? 0);
+    if (last && silentMs < FEED_SILENCE_HOURS * 3_600_000) continue;
+    const silentLabel =
+      silentMs >= 86_400_000
+        ? `${Math.floor(silentMs / 86_400_000)}d`
+        : `${Math.floor(silentMs / 3_600_000)}h`;
+    out.push({
+      refKey: `missing_feed:${store}`,
+      kind: "missing_feed",
+      storeLocation: store,
+      title: last
+        ? `${store} hasn't sent a punch in ${silentLabel} — its clock isn't feeding the site`
+        : `${store} has sent no punches at all in the last ${LONG_PUNCH_LOOKBACK_DAYS} days`,
+      detail:
+        "Hours, payroll and projections for this store read ZERO until its kiosk feeds this site. Put the store tablet on the kiosk page, give everyone a 4-digit clock code, and punches appear here the second they happen.",
+    });
+  }
 
   return out;
 }

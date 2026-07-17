@@ -71,6 +71,13 @@ function fixHref(item: Item): { href: string; label: string } | null {
       };
     case "missing_schedule":
       return { href: "/schedule-import", label: "Import schedule" };
+    case "missing_feed":
+      return {
+        href: item.storeLocation
+          ? `/clock/${encodeURIComponent(item.storeLocation)}`
+          : "/clock",
+        label: "Open kiosk",
+      };
     case "missing_codes":
       return { href: "/employees", label: "Set codes" };
     case "unsaved_payroll":
