@@ -228,9 +228,19 @@ export default function ScheduleImport() {
 
   const startParse = async () => {
     if (!file) return;
-    const allowed = ["image/png", "image/jpeg", "image/webp", "image/jpg", "application/pdf"];
-    if (!allowed.includes(file.type)) {
-      toast.error("Upload a PDF, PNG, JPG or WEBP image.");
+    const allowed = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/jpg",
+      "application/pdf",
+      "text/csv",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+    ];
+    const byExt = /\.(pdf|png|jpe?g|webp|csv|xlsx)$/i.test(file.name);
+    if (!allowed.includes(file.type) && !byExt) {
+      toast.error("Upload a PDF, a photo (PNG/JPG), or a spreadsheet (.xlsx/.csv).");
       return;
     }
     if (file.size > 8 * 1024 * 1024) {
@@ -350,7 +360,7 @@ export default function ScheduleImport() {
         eyebrow="Schedule"
         icon={<Upload className="h-5 w-5" />}
         title="Import the week's schedule"
-        description="Drop the Homebase PDF or a photo. Shifts are read day by day, hours totalled, and every name is checked against your roster."
+        description="Drop the Homebase PDF, a spreadsheet, or a photo — even a handwritten grid. Shifts are read day by day, hours totalled, and every name is checked against your roster."
         actions={
           <>
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
@@ -396,7 +406,7 @@ export default function ScheduleImport() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept="image/*,application/pdf,.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
@@ -408,7 +418,7 @@ export default function ScheduleImport() {
                     <div>
                       <p className="font-medium">Drop your Homebase schedule here</p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        PDF, PNG, JPG or WEBP &nbsp;·&nbsp; up to 8MB &nbsp;·&nbsp; week of{" "}
+                        PDF · photo (even handwritten) · spreadsheet (.xlsx/.csv) &nbsp;·&nbsp; up to 8MB &nbsp;·&nbsp; week of{" "}
                         {fmtWeekRange(weekStart)}
                       </p>
                     </div>
@@ -736,7 +746,7 @@ export default function ScheduleImport() {
             <CardContent className="p-6 text-sm text-muted-foreground">
               <p className="section-title text-foreground mb-3">How this works</p>
               <ol className="list-decimal list-inside space-y-1.5">
-                <li>Export the weekly schedule from Homebase as PDF, or take a clear photo.</li>
+                <li>Grab the schedule in any form — Homebase PDF export, a spreadsheet (.xlsx/.csv from Google Sheets or Excel), or a clear photo of a printed or handwritten grid.</li>
                 <li>
                   Drop the file above and click{" "}
                   <span className="text-foreground font-medium">Read schedule</span> — every

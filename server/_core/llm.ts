@@ -328,5 +328,13 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     );
   }
 
-  return (await response.json()) as InvokeResult;
+  const result = (await response.json()) as InvokeResult;
+  // Gateways sometimes return 200 with an error body instead of choices —
+  // surface WHAT they said instead of crashing on choices[0] downstream.
+  if (!Array.isArray(result.choices) || result.choices.length === 0) {
+    throw new Error(
+      `LLM returned no choices – body: ${JSON.stringify(result).slice(0, 400)}`
+    );
+  }
+  return result;
 }

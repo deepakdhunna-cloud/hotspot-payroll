@@ -76,6 +76,7 @@ import {
 } from "./_core/pinAuth";
 import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
 import { rankNameMatches } from "./nameMatch";
+import { extractPdfText, extractSheetText, isSheetMime } from "./scheduleText";
 import { syncAttention } from "./attention";
 
 const StoreEnum = z.enum(STORES);
@@ -1729,41 +1730,81 @@ export const appRouter = router({
 
         const instructions =
           "Extract EVERY employee and EVERY shift from this weekly schedule. " +
-          "For each employee output their full name exactly as printed, and one entry per scheduled shift: " +
-          'the day (as printed, e.g. "Thursday" or a date like "5/7"), the printed start and end times, ' +
-          "and the shift length in hours (use the printed hours if shown, otherwise compute from the times, subtracting any printed unpaid break). " +
+          "It may be a printed export, a spreadsheet, or a photo of a handwritten grid — read whatever is there. " +
+          "For each employee output their full name exactly as written, and one entry per scheduled shift: " +
+          'the day (as written, e.g. "Thursday" or a date like "5/7"), the written start and end times, ' +
+          "and the shift length in hours (use the written hours if shown, otherwise compute from the times, subtracting any noted unpaid break). " +
           "Also output each employee's total weekly hours. Return JSON.";
 
-        const userContent = isPdf
-          ? [
-              { type: "text" as const, text: instructions },
+        /**
+         * The reader must handle anything: digital PDFs and spreadsheets
+         * carry their own text, which is extracted server-side and fed
+         * directly (deterministic, immune to upstream file-size limits).
+         * Photos, scans and handwriting have no text layer — those go to
+         * the model as the file itself, read visually. Strategies run in
+         * reliability order until one parses.
+         */
+        type UserContent =
+          | { type: "text"; text: string }
+          | { type: "file_url"; file_url: { url: string; mime_type: "application/pdf" } }
+          | { type: "image_url"; image_url: { url: string; detail: "high" } };
+        const withText = (kind: string, text: string): UserContent[] => [
+          {
+            type: "text",
+            text: `${instructions}\n\nBelow is the schedule's extracted ${kind} content:\n\n${text}`,
+          },
+        ];
+        const isSheet = isSheetMime(input.mimeType, safeName);
+        const strategies: { label: string; content: UserContent[] }[] = [];
+        if (isPdf) {
+          const text = await extractPdfText(buf);
+          if (text) strategies.push({ label: "pdf-text", content: withText("text", text) });
+          strategies.push({
+            label: "pdf-file",
+            content: [
+              { type: "text", text: instructions },
               {
-                type: "file_url" as const,
-                file_url: {
-                  url: fileFetchUrl,
-                  mime_type: "application/pdf" as const,
-                },
+                type: "file_url",
+                file_url: { url: fileFetchUrl, mime_type: "application/pdf" },
               },
-            ]
-          : [
-              { type: "text" as const, text: instructions },
-              {
-                type: "image_url" as const,
-                image_url: { url: fileFetchUrl, detail: "high" as const },
-              },
-            ];
+            ],
+          });
+        } else if (isSheet) {
+          const text = await extractSheetText(buf, input.mimeType, safeName);
+          if (!text) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message:
+                "Couldn't read that spreadsheet. Export it as .xlsx or .csv (File → Download in Google Sheets) and try again.",
+            });
+          }
+          strategies.push({ label: "sheet-text", content: withText("spreadsheet", text) });
+        } else {
+          strategies.push({
+            label: "image",
+            content: [
+              { type: "text", text: instructions },
+              { type: "image_url", image_url: { url: fileFetchUrl, detail: "high" } },
+            ],
+          });
+        }
+        // Every path gets at least two shots — one flaky response must not
+        // cost the manager a re-upload.
+        while (strategies.length < 2) {
+          strategies.push({ ...strategies[0], label: `${strategies[0].label}-retry` });
+        }
 
-        const llmRequest = {
+        const llmRequestFor = (content: UserContent[]) => ({
           messages: [
             {
               role: "system" as const,
               content:
-                "You are a precise data-extraction assistant reading a Homebase weekly work schedule (PDF or image). " +
-                "Output every employee with their individual shifts per day. Names must be copied exactly as printed. " +
-                "Never invent employees, days, or hours. If a shift's hours are not printed, compute them from the start/end times. " +
+                "You are a precise data-extraction assistant reading a weekly work schedule (printed export, spreadsheet text, or a photo — possibly handwritten). " +
+                "Output every employee with their individual shifts per day. Names must be copied exactly as written. " +
+                "Never invent employees, days, or hours. If a shift's hours are not written, compute them from the start/end times. " +
                 "Only output JSON matching the provided schema.",
             },
-            { role: "user" as const, content: userContent },
+            { role: "user" as const, content },
           ],
           response_format: {
             type: "json_schema" as const,
@@ -1826,7 +1867,7 @@ export const appRouter = router({
               },
             },
           },
-        };
+        });
 
         type ExtractedDay = {
           day: string;
@@ -1841,9 +1882,8 @@ export const appRouter = router({
         };
 
         // Models occasionally wrap the JSON in prose or code fences, or get
-        // cut off mid-answer. Extract tolerantly, and retry the whole call
-        // once before telling the manager it failed — one flaky response
-        // shouldn't cost them a re-upload.
+        // cut off mid-answer. Extract tolerantly, and walk the strategy
+        // ladder until one attempt parses.
         const extractJson = (text: string): { employees: ExtractedEmployee[] } => {
           let t = text.trim();
           const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -1857,16 +1897,17 @@ export const appRouter = router({
         };
 
         let parsed: { employees: ExtractedEmployee[] } | null = null;
-        for (let attempt = 1; attempt <= 2 && !parsed; attempt++) {
+        for (const strategy of strategies) {
+          if (parsed) break;
           let text = "";
           try {
-            const response = await invokeLLM(llmRequest);
+            const response = await invokeLLM(llmRequestFor(strategy.content));
             const raw = response.choices[0]?.message?.content;
             text = typeof raw === "string" ? raw : JSON.stringify(raw ?? "");
             parsed = extractJson(text);
           } catch (err) {
             console.error(
-              `[Schedule] extraction attempt ${attempt}/2 failed for ${safeName}:`,
+              `[Schedule] extraction strategy "${strategy.label}" failed for ${safeName}:`,
               err instanceof Error ? err.message : err,
               text
                 ? `— response head: ${text.slice(0, 400)}`
@@ -1878,7 +1919,7 @@ export const appRouter = router({
           throw new TRPCError({
             code: "BAD_REQUEST",
             message:
-              "Couldn't read that schedule after two tries. If it's a photo, retake it flat-on in good light — or export the PDF straight from Homebase and upload that.",
+              "Couldn't read that schedule. It can be a PDF, a photo (even handwritten), or a spreadsheet (.xlsx/.csv) — if it's a photo, retake it flat-on in good light and try again.",
           });
         }
 
