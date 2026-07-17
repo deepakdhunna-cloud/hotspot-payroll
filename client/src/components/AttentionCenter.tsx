@@ -117,7 +117,7 @@ export function AttentionCenter({ className }: { className?: string }) {
             {items.length}
           </span>
         ) : null}
-        <span className="ml-auto text-[11px] uppercase tracking-[0.14em] text-white/45 font-semibold">
+        <span className="ml-auto text-[11px] uppercase tracking-[0.14em] text-white/60 font-semibold">
           {items.length === 0
             ? "live checks · all clear"
             : oldest >= 1
@@ -156,7 +156,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white leading-snug">{item.title}</p>
                     {item.detail ? (
-                      <p className="text-xs text-white/60 mt-0.5 leading-relaxed">{item.detail}</p>
+                      <p className="text-xs text-white/70 mt-0.5 leading-relaxed">{item.detail}</p>
                     ) : null}
                     <p className="text-[11px] mt-1.5 flex items-center gap-2">
                       <span
@@ -170,9 +170,9 @@ export function AttentionCenter({ className }: { className?: string }) {
                         {p.days >= 3 ? <AlertTriangle className="h-3 w-3" /> : null}
                         {p.label}
                       </span>
-                      <span className="text-white/40">first flagged {p.since}</span>
+                      <span className="text-white/55">first flagged {p.since}</span>
                       {item.storeLocation ? (
-                        <span className="text-white/40">· {item.storeLocation}</span>
+                        <span className="text-white/55">· {item.storeLocation}</span>
                       ) : null}
                     </p>
 

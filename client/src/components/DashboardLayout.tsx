@@ -141,6 +141,12 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-svh flex flex-col">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground"
+      >
+        Skip to content
+      </a>
       <header className="ink-panel sticky top-0 z-50 border-b border-white/10">
         <div className="flex h-14 items-center gap-2 px-4 lg:px-6">
           <button
@@ -237,7 +243,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         />
       </header>
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <div className="mx-auto w-full max-w-[1180px] px-4 md:px-6 py-6 md:py-8">
           {children}
         </div>

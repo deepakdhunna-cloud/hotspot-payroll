@@ -5,15 +5,28 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
-import Home from "./pages/Home";
-import Employees from "./pages/Employees";
-import EmployeeProfile from "./pages/EmployeeProfile";
-import WeeklyPayroll from "./pages/WeeklyPayroll";
-import ScheduleImport from "./pages/ScheduleImport";
-import CeoView from "./pages/CeoView";
-import ClockKiosk from "./pages/ClockKiosk";
-import { useEffect } from "react";
+// Route-level code splitting: each page ships as its own chunk so first
+// paint only pays for the page being opened. Behavior is identical — pages
+// just stream in on demand (Core Web Vitals: smaller LCP/INP budgets).
+import { Suspense, lazy, useEffect } from "react";
 import { useLocation } from "wouter";
+
+const Home = lazy(() => import("./pages/Home"));
+const Employees = lazy(() => import("./pages/Employees"));
+const EmployeeProfile = lazy(() => import("./pages/EmployeeProfile"));
+const WeeklyPayroll = lazy(() => import("./pages/WeeklyPayroll"));
+const ScheduleImport = lazy(() => import("./pages/ScheduleImport"));
+const CeoView = lazy(() => import("./pages/CeoView"));
+const ClockKiosk = lazy(() => import("./pages/ClockKiosk"));
+
+/** Quiet in-layout loading state while a page chunk streams in. */
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center py-24" role="status" aria-label="Loading page">
+      <div className="h-8 w-8 rounded-full border-2 border-border border-t-primary animate-spin" />
+    </div>
+  );
+}
 
 // Legacy /time-clock URL → redirect to the Punches tab of the merged page.
 function TimeClockRedirect() {
@@ -29,16 +42,19 @@ function Router() {
   // The /clock kiosk runs full-screen on store tablets — no sidebar, no PIN gate.
   if (location === "/clock" || location.startsWith("/clock/")) {
     return (
-      <Switch>
-        <Route path={"/clock"} component={ClockKiosk} />
-        <Route path={"/clock/:store"} component={ClockKiosk} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<PageFallback />}>
+        <Switch>
+          <Route path={"/clock"} component={ClockKiosk} />
+          <Route path={"/clock/:store"} component={ClockKiosk} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     );
   }
   return (
     <DashboardLayout>
-      <Switch>
+      <Suspense fallback={<PageFallback />}>
+        <Switch>
         <Route path={"/"} component={Home} />
         <Route path={"/employees"} component={Employees} />
         <Route path={"/employees/:id"} component={EmployeeProfile} />
@@ -46,9 +62,10 @@ function Router() {
         <Route path={"/time-clock"} component={TimeClockRedirect} />
         <Route path={"/schedule-import"} component={ScheduleImport} />
         <Route path={"/ceo"} component={CeoView} />
-        <Route path={"/404"} component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
+          <Route path={"/404"} component={NotFound} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </DashboardLayout>
   );
 }

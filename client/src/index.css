@@ -214,6 +214,45 @@
       transform: scale(0.97);
     }
   }
+
+  /* Brand text selection — a small signature every premium site gets right. */
+  ::selection {
+    background: oklch(0.54 0.21 27 / 0.18);
+  }
+
+  /* Quiet, consistent scrollbars for overflow containers. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.75 0.01 255) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: oklch(0.78 0.01 255);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Table headers read as labels, not body copy — one voice everywhere. */
+  thead th {
+    @apply text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground;
+  }
+
+  /* Keyboard focus is always visible — including the ink top bar. */
+  .topbar-link:focus-visible {
+    outline: 2px solid var(--brand-red-bright);
+    outline-offset: -4px;
+    border-radius: 8px;
+  }
+  a:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 @layer components {

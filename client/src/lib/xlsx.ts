@@ -4,7 +4,8 @@
 //
 // We intentionally avoid pulling in exceljs's Node-only streaming APIs —
 // `xlsx.write` to a Buffer works in the browser via the bundled UMD-ish entry.
-import ExcelJS from "exceljs";
+// exceljs is heavy (~1MB) and only needed at export time, so it loads on
+// demand — identical behavior, far smaller first paint.
 
 export type XlsxColumn<T> = {
   header: string;
@@ -56,6 +57,7 @@ export async function exportXlsx<T extends Record<string, any>>(
   filename: string,
   sheet: XlsxSheet<T>,
 ) {
+  const { default: ExcelJS } = await import("exceljs");
   const wb = new ExcelJS.Workbook();
   wb.creator = "Hotspot Market Payroll";
   wb.created = new Date();

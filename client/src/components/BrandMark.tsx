@@ -50,6 +50,8 @@ export function BrandMark({
 
   return (
     <img
+      width={1201}
+      height={289}
       src={LOGO_URL}
       alt="Hotspot Market"
       className={cn("w-auto object-contain", s.img, className)}
