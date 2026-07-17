@@ -88,7 +88,7 @@ export default function PinKeypad() {
           >
             Payroll, schedules &amp; the time clock.
             <br />
-            <span className="text-white/60">All four stores, one place.</span>
+            <span className="text-white/60">Your whole operation, one place.</span>
           </h2>
           <p className="mt-5 text-sm text-white/55 leading-relaxed">
             Live labor costs, imported schedules, and a kiosk your team taps in
@@ -96,7 +96,7 @@ export default function PinKeypad() {
           </p>
         </div>
         <p className="text-[11px] text-white/40 flex items-center gap-1.5">
-          <ShieldCheck className="h-3 w-3" /> Hotspot Market 11 · 13 · 14 · Travel Center
+          <ShieldCheck className="h-3 w-3" /> Hotspot Market · Payroll &amp; Time Clock
         </p>
       </div>
 
@@ -173,7 +173,7 @@ export default function PinKeypad() {
         </div>
 
         <p className="lg:hidden text-[11px] text-white/50 text-center flex items-center gap-1.5">
-          <ShieldCheck className="h-3 w-3" /> Hotspot Market 11 &middot; 13 &middot; 14 &middot; Travel Center
+          <ShieldCheck className="h-3 w-3" /> Hotspot Market &middot; Payroll &amp; Time Clock
         </p>
       </div>
       </div>
