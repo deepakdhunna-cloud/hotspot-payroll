@@ -100,6 +100,13 @@ import { syncAttention } from "./attention";
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
 
+/**
+ * Marker stored in a payroll entry's notes when the week was saved as a
+ * flat "set pay" amount rather than hours × rate. The client reads it to
+ * re-open the row in set-pay mode.
+ */
+const FIXED_PAY_NOTE = "fixed-pay";
+
 function getScope(session: PinSession) {
   if (session.role === "admin") {
     return { isAdmin: true as const, stores: [...STORES] as Store[] };
@@ -625,6 +632,14 @@ export const appRouter = router({
           hoursWorked: z.number().min(0).max(168),
           scheduledHours: z.number().min(0).max(168).optional(),
           payRateOverride: z.number().min(0).max(1000).optional(),
+          /**
+           * SET PAY: a flat dollar amount for this employee's week —
+           * salary weeks, agreed flat rates, bonuses. When present, gross
+           * pay IS this amount; hours are still recorded for the books
+           * but no longer drive the dollars. The entry is marked so the
+           * grid re-opens the row in set-pay mode.
+           */
+          fixedGross: z.number().min(0).max(100_000).optional(),
           notes: z.string().max(500).optional(),
         })
       )
@@ -649,10 +664,10 @@ export const appRouter = router({
         ) {
           await updateEmployee(emp.id, { payRate: String(payRate) });
         }
-        const { regularPay, grossPay } = computeGrossPay(
-          input.hoursWorked,
-          payRate
-        );
+        const isFixed = input.fixedGross !== undefined;
+        const { regularPay, grossPay } = isFixed
+          ? { regularPay: input.fixedGross!, grossPay: input.fixedGross! }
+          : computeGrossPay(input.hoursWorked, payRate);
         const week = getWeekStart(input.weekStart);
 
         const id = await upsertPayrollEntry({
@@ -665,7 +680,7 @@ export const appRouter = router({
           regularPay: String(regularPay.toFixed(2)),
           overtimePay: "0.00",
           grossPay: String(grossPay.toFixed(2)),
-          notes: input.notes ?? null,
+          notes: isFixed ? FIXED_PAY_NOTE : (input.notes ?? null),
         });
         void logAudit({
           actorScope: ctx.session.scope,
@@ -678,6 +693,7 @@ export const appRouter = router({
             hoursWorked: input.hoursWorked,
             payRate,
             grossPay: Number(grossPay.toFixed(2)),
+            fixedPay: isFixed,
           }),
           ip: requestIp(ctx.req),
         });

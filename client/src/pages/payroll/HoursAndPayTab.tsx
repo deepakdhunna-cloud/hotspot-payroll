@@ -25,6 +25,7 @@ import {
   AlertTriangle,
   Check,
   Clock,
+  DollarSign,
   Download,
   FileSpreadsheet,
   Loader2,
@@ -58,6 +59,10 @@ export default function HoursAndPayTab({
   const [manualOverride, setManualOverride] = useState<Record<number, boolean>>(
     {},
   );
+  // SET PAY: a row with a key here is paid a flat amount this week instead
+  // of hours × rate (salary weeks, agreed flat rates, bonuses). Hours are
+  // still recorded — they just stop driving the dollars.
+  const [fixedPay, setFixedPay] = useState<Record<number, string>>({});
 
   const clockHoursQ = trpc.clock.weekHoursBulk.useQuery({
     weekStart,
@@ -73,6 +78,7 @@ export default function HoursAndPayTab({
     const initialHours: Record<number, string> = {};
     const initialRates: Record<number, string> = {};
     const initialOverride: Record<number, boolean> = {};
+    const initialFixed: Record<number, string> = {};
     weekQ.data?.employees.forEach((row) => {
       const empId = row.employee.id;
       const clockH = clockHoursMap.get(empId);
@@ -81,6 +87,10 @@ export default function HoursAndPayTab({
         initialHours[empId] = String(saved);
         if (clockH !== undefined && Math.abs(saved - clockH) > 0.01) {
           initialOverride[empId] = true;
+        }
+        // A week saved as "set pay" re-opens in set-pay mode.
+        if (row.entry.notes === "fixed-pay") {
+          initialFixed[empId] = String(Number(row.entry.grossPay));
         }
       } else if (clockH !== undefined && clockH > 0) {
         initialHours[empId] = clockH.toFixed(2);
@@ -94,6 +104,7 @@ export default function HoursAndPayTab({
     setHours(initialHours);
     setRates(initialRates);
     setManualOverride(initialOverride);
+    setFixedPay(initialFixed);
   }, [weekQ.data, clockHoursMap]);
 
   const utils = trpc.useUtils();
@@ -112,6 +123,37 @@ export default function HoursAndPayTab({
     const rawRate = rates[employeeId];
     const numHours = Number(rawHours);
     const numRate = Number(rawRate);
+    const fixedRaw = fixedPay[employeeId];
+    const isFixed = fixedRaw !== undefined;
+    if (isFixed) {
+      const amount = Number(fixedRaw);
+      if (fixedRaw === "" || isNaN(amount) || amount < 0) {
+        toast.error("Enter a valid set-pay amount.");
+        return;
+      }
+      // Hours stay on the record but no longer drive the dollars — an
+      // empty hours field simply records zero.
+      const hoursVal =
+        rawHours === "" || isNaN(numHours) || numHours < 0 ? 0 : numHours;
+      setSaving((s) => ({ ...s, [employeeId]: true }));
+      try {
+        await saveHoursM.mutateAsync({
+          employeeId,
+          weekStart,
+          hoursWorked: hoursVal,
+          scheduledHours: scheduled,
+          payRateOverride:
+            rawRate !== "" && !isNaN(numRate) && numRate >= 0
+              ? numRate
+              : undefined,
+          fixedGross: amount,
+        });
+        toast.success("Saved as set pay");
+      } finally {
+        setSaving((s) => ({ ...s, [employeeId]: false }));
+      }
+      return;
+    }
     if (rawHours === "" || isNaN(numHours) || numHours < 0) {
       toast.error("Enter a valid number of hours.");
       return;
@@ -140,14 +182,33 @@ export default function HoursAndPayTab({
     let saved = 0;
     setSaving({});
     for (const row of rowsForSave) {
-      const rawHours = hours[row.employee.id];
+      const empId = row.employee.id;
+      const rawHours = hours[empId];
+      const fixedRaw = fixedPay[empId];
+      if (fixedRaw !== undefined) {
+        const amount = Number(fixedRaw);
+        if (fixedRaw === "" || isNaN(amount) || amount < 0) continue;
+        const numHours = Number(rawHours);
+        await saveHoursM.mutateAsync({
+          employeeId: empId,
+          weekStart,
+          hoursWorked:
+            rawHours === "" || rawHours === undefined || isNaN(numHours)
+              ? 0
+              : Math.max(0, numHours),
+          scheduledHours: Number(row.entry?.scheduledHours ?? 0),
+          fixedGross: amount,
+        });
+        saved++;
+        continue;
+      }
       if (rawHours === "" || rawHours === undefined) continue;
       const numHours = Number(rawHours);
-      const numRate = Number(rates[row.employee.id]);
+      const numRate = Number(rates[empId]);
       if (isNaN(numHours) || numHours < 0) continue;
       if (isNaN(numRate) || numRate < 0) continue;
       await saveHoursM.mutateAsync({
-        employeeId: row.employee.id,
+        employeeId: empId,
         weekStart,
         hoursWorked: numHours,
         scheduledHours: Number(row.entry?.scheduledHours ?? 0),
@@ -165,18 +226,24 @@ export default function HoursAndPayTab({
     for (const r of rowsForTotals) {
       const rawH = hours[r.employee.id];
       const rawR = rates[r.employee.id];
+      const fixedRaw = fixedPay[r.employee.id];
       const h = rawH === undefined || rawH === "" ? 0 : Number(rawH);
+      if (!isNaN(h)) hoursTotal += h;
+      if (fixedRaw !== undefined) {
+        const a = Number(fixedRaw);
+        if (fixedRaw !== "" && !isNaN(a)) grossTotal += a;
+        continue;
+      }
       const rate =
         rawR === undefined || rawR === ""
           ? Number(r.employee.payRate)
           : Number(rawR);
       if (!isNaN(h) && !isNaN(rate)) {
-        hoursTotal += h;
         grossTotal += computeGross(h, rate).grossPay;
       }
     }
     return { hoursTotal, grossTotal };
-  }, [weekQ.data, hours, rates]);
+  }, [weekQ.data, hours, rates, fixedPay]);
 
   // Same live numbers as the table rows, regrouped by position. Rate
   // mirrors the row's own expression (cleared field = $0, like the row's
@@ -188,7 +255,16 @@ export default function HoursAndPayTab({
         .map((r) => {
           const rawH = hours[r.employee.id];
           const rawR = rates[r.employee.id];
+          const fixedRaw = fixedPay[r.employee.id];
           const h = rawH === undefined || rawH === "" ? 0 : Number(rawH);
+          if (fixedRaw !== undefined) {
+            const a = Number(fixedRaw);
+            return {
+              role: r.employee.role,
+              hours: isNaN(h) ? 0 : h,
+              gross: fixedRaw !== "" && !isNaN(a) ? a : 0,
+            };
+          }
           const rate =
             rawR === undefined
               ? Number(r.employee.payRate)
@@ -203,13 +279,18 @@ export default function HoursAndPayTab({
           };
         })
         .filter((it) => it.hours > 0 || it.gross > 0),
-    [weekQ.data, hours, rates],
+    [weekQ.data, hours, rates, fixedPay],
   );
 
   const handleExport = async () => {
     const rows = (weekQ.data?.employees ?? []).map((r) => {
       const h = Number(hours[r.employee.id] ?? 0);
       const rate = Number(rates[r.employee.id] ?? r.employee.payRate);
+      const fixedRaw = fixedPay[r.employee.id];
+      const gross =
+        fixedRaw !== undefined && fixedRaw !== "" && !isNaN(Number(fixedRaw))
+          ? Number(fixedRaw)
+          : h * rate;
       return {
         employee: r.employee.fullName,
         store: r.employee.storeLocation,
@@ -217,7 +298,7 @@ export default function HoursAndPayTab({
         rate,
         scheduled: Number(r.entry?.scheduledHours ?? 0),
         hours: h,
-        gross: h * rate,
+        gross,
       };
     });
     const periodLabel = fmtWeekRange(weekStart);
@@ -354,7 +435,14 @@ export default function HoursAndPayTab({
                     rates[emp.id] ?? String(Number(emp.payRate));
                   const hrs = rawHours === "" ? 0 : Number(rawHours);
                   const rate = rawRate === "" ? 0 : Number(rawRate);
-                  const { grossPay } = computeGross(hrs, rate);
+                  const fixedRaw = fixedPay[emp.id];
+                  const isFixedRow = fixedRaw !== undefined;
+                  const { grossPay: hourlyGross } = computeGross(hrs, rate);
+                  const grossPay = isFixedRow
+                    ? fixedRaw === "" || isNaN(Number(fixedRaw))
+                      ? 0
+                      : Number(fixedRaw)
+                    : hourlyGross;
                   const clockHours = clockHoursMap.get(emp.id);
                   const hasClockHours =
                     clockHours !== undefined && clockHours > 0;
@@ -508,8 +596,79 @@ export default function HoursAndPayTab({
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums font-semibold">
-                        {fmtMoney(grossPay)}
+                      <TableCell className="text-right">
+                        {isFixedRow ? (
+                          <div className="flex flex-col items-end gap-1">
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              min="0"
+                              value={fixedRaw}
+                              onChange={(e) =>
+                                setFixedPay((s) => ({
+                                  ...s,
+                                  [emp.id]: e.target.value,
+                                }))
+                              }
+                              onBlur={() => {
+                                if (
+                                  fixedRaw !== "" &&
+                                  !isNaN(Number(fixedRaw))
+                                ) {
+                                  handleSaveOne(emp.id, scheduled);
+                                }
+                              }}
+                              placeholder="0.00"
+                              aria-label={`Set pay amount for ${emp.fullName}`}
+                              className="text-right tabular-nums h-9 w-28 ml-auto"
+                            />
+                            <div className="flex items-center gap-2 text-[10px]">
+                              <span
+                                className="chip-warn"
+                                title="This week is a flat amount — hours are recorded but don't drive the pay"
+                              >
+                                <DollarSign className="h-3 w-3" /> set pay
+                              </span>
+                              <button
+                                type="button"
+                                className="text-primary hover:underline inline-flex items-center gap-1"
+                                onClick={() =>
+                                  setFixedPay((s) => {
+                                    const next = { ...s };
+                                    delete next[emp.id];
+                                    return next;
+                                  })
+                                }
+                                title="Back to hours × rate (saves on the next change)"
+                              >
+                                <Undo2 className="h-3 w-3" /> Hourly
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="tabular-nums font-semibold">
+                              {fmtMoney(grossPay)}
+                            </span>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground"
+                              onClick={() =>
+                                setFixedPay((s) => ({
+                                  ...s,
+                                  [emp.id]:
+                                    grossPay > 0 ? grossPay.toFixed(2) : "",
+                                }))
+                              }
+                              aria-label={`Set a flat pay amount for ${emp.fullName}`}
+                              title="Set pay: a flat dollar amount for this week instead of hours × rate"
+                            >
+                              <DollarSign className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {saving[emp.id] ? (
