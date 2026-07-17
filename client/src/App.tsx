@@ -11,13 +11,34 @@ import DashboardLayout from "./components/DashboardLayout";
 import { Suspense, lazy, useEffect } from "react";
 import { useLocation } from "wouter";
 
-const Home = lazy(() => import("./pages/Home"));
-const Employees = lazy(() => import("./pages/Employees"));
-const EmployeeProfile = lazy(() => import("./pages/EmployeeProfile"));
-const WeeklyPayroll = lazy(() => import("./pages/WeeklyPayroll"));
-const ScheduleImport = lazy(() => import("./pages/ScheduleImport"));
-const CeoView = lazy(() => import("./pages/CeoView"));
-const ClockKiosk = lazy(() => import("./pages/ClockKiosk"));
+/**
+ * A tab left open across a deploy will request page chunks that no longer
+ * exist (old hashes are gone). Instead of a broken page, reload once to
+ * pick up the new build — a session flag prevents reload loops.
+ */
+function lazyWithReload(load: () => Promise<{ default: React.ComponentType<any> }>) {
+  return lazy(() =>
+    load().catch((err) => {
+      const KEY = "chunk-reload-at";
+      const last = Number(sessionStorage.getItem(KEY) ?? 0);
+      if (Date.now() - last > 30_000) {
+        sessionStorage.setItem(KEY, String(Date.now()));
+        window.location.reload();
+        // Keep the promise pending while the reload happens.
+        return new Promise<never>(() => {});
+      }
+      throw err;
+    }),
+  );
+}
+
+const Home = lazyWithReload(() => import("./pages/Home"));
+const Employees = lazyWithReload(() => import("./pages/Employees"));
+const EmployeeProfile = lazyWithReload(() => import("./pages/EmployeeProfile"));
+const WeeklyPayroll = lazyWithReload(() => import("./pages/WeeklyPayroll"));
+const ScheduleImport = lazyWithReload(() => import("./pages/ScheduleImport"));
+const CeoView = lazyWithReload(() => import("./pages/CeoView"));
+const ClockKiosk = lazyWithReload(() => import("./pages/ClockKiosk"));
 
 /** Quiet in-layout loading state while a page chunk streams in. */
 function PageFallback() {
