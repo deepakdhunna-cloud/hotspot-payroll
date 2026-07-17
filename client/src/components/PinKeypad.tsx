@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Delete, Lock, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 import { BrandMark } from "@/components/BrandMark";
@@ -18,6 +19,7 @@ export default function PinKeypad() {
   const utils = trpc.useUtils();
   const [pin, setPin] = useState("");
   const [shake, setShake] = useState(false);
+  const [location, setLocation] = useLocation();
 
   const verify = trpc.auth.verifyPin.useMutation({
     onSuccess: async (data) => {
@@ -28,6 +30,16 @@ export default function PinKeypad() {
             ? "Welcome, CFO"
             : `Signed in to ${data.store}`,
       );
+      // Land each role on its own ground BEFORE the session hydrates, so
+      // switching accounts never flashes a page the new role can't use.
+      if (data.role === "cfo" && location !== "/cfo") {
+        setLocation("/cfo", { replace: true });
+      } else if (
+        data.role === "manager" &&
+        (location === "/ceo" || location === "/cfo")
+      ) {
+        setLocation("/", { replace: true });
+      }
       await utils.auth.me.invalidate();
     },
     onError: (e) => {

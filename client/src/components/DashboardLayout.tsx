@@ -5,6 +5,7 @@
  * their full width. On small screens the nav becomes a second scrollable
  * row — every section stays one tap away.
  */
+import React from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import PinKeypad from "@/components/PinKeypad";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -131,6 +132,18 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
   const isCfo = user?.role === "cfo";
+  // Seamless account switching: a route the signed-in role can't use never
+  // shows an "access only" wall — it glides straight to that role's home.
+  // (Store logins have no business on /ceo or /cfo; the CFO login lives on
+  // its portal.)
+  const roleBlocked =
+    !!user &&
+    ((isCfo && location !== "/cfo") ||
+      (!isAdmin && !isCfo && (location === "/ceo" || location === "/cfo")));
+  const roleHome = isCfo ? "/cfo" : "/";
+  React.useEffect(() => {
+    if (roleBlocked) setLocation(roleHome, { replace: true });
+  }, [roleBlocked, roleHome, setLocation]);
   const greetingQ = trpc.meta.greetingName.useQuery(undefined, {
     enabled: !!user && !isCfo,
   });
@@ -268,7 +281,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className="flex-1">
         <div className="mx-auto w-full max-w-[1180px] px-4 md:px-6 py-6 md:py-8">
-          {children}
+          {roleBlocked ? (
+            <div
+              className="flex items-center justify-center py-24"
+              role="status"
+              aria-label="Taking you to your dashboard"
+            >
+              <div className="h-8 w-8 rounded-full border-2 border-border border-t-primary animate-spin" />
+            </div>
+          ) : (
+            children
+          )}
         </div>
       </main>
     </div>

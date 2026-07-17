@@ -18,6 +18,7 @@ import { StoreSelect } from "@/components/StoreSelect";
 import { WeekTrend } from "@/components/WeekTrend";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -140,6 +141,9 @@ export default function CeoView() {
           This view shows cross-store payroll and withholding estimates and is
           restricted to the CEO role.
         </p>
+        <Link href="/">
+          <Button className="mt-5">Go to my dashboard</Button>
+        </Link>
       </div>
     );
   }

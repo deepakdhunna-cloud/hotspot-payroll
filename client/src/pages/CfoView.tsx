@@ -24,11 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
 import { BarChart3, Landmark, ShieldCheck } from "lucide-react";
 import { useMemo } from "react";
+import { Link } from "wouter";
 
 const STORE_COLORS = [
   "oklch(0.30 0.035 255)",
@@ -299,6 +301,9 @@ export default function CfoView() {
           The CFO portal carries company-wide payroll financials and is
           restricted to the CEO and CFO logins.
         </p>
+        <Link href="/">
+          <Button className="mt-5">Go to my dashboard</Button>
+        </Link>
       </div>
     );
   }
