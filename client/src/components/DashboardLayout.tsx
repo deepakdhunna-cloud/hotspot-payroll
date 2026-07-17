@@ -241,6 +241,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           onNavigate={setLocation}
           className="flex md:hidden items-center overflow-x-auto border-t border-white/10 [&>.topbar-link]:h-11 [&>.topbar-link]:shrink-0"
         />
+        {/* The brand thread: a signal-red hairline closing the chrome */}
+        <div
+          aria-hidden="true"
+          className="h-[2.5px] w-full"
+          style={{
+            background:
+              "linear-gradient(90deg, var(--brand-red-bright), var(--brand-red) 45%, oklch(0.54 0.21 27 / 0.15) 100%)",
+          }}
+        />
       </header>
 
       <main id="main-content" className="flex-1">

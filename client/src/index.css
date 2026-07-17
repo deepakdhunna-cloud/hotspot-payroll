@@ -184,6 +184,13 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    /* Layered canvas: warm light from the top, a cool settle at the base,
+       and a whisper of brand red in the upper-right — depth without noise. */
+    background-image:
+      radial-gradient(70rem 34rem at 85% -6%, oklch(0.54 0.21 27 / 0.045), transparent 60%),
+      radial-gradient(56rem 30rem at -8% 0%, oklch(0.95 0.015 85 / 0.7), transparent 55%),
+      linear-gradient(180deg, oklch(0.975 0.003 250), oklch(0.958 0.004 250));
+    background-attachment: fixed;
   }
   h1, h2, h3, h4 {
     letter-spacing: -0.01em;
@@ -213,6 +220,15 @@
     [role="button"]:not([aria-disabled="true"]):active {
       transform: scale(0.97);
     }
+  }
+
+  /* Primary actions get a machined sheen — same color, more material. */
+  button.bg-primary,
+  [role="button"].bg-primary {
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0) 55%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      0 1px 2px rgb(16 24 40 / 0.25);
   }
 
   /* Brand text selection — a small signature every premium site gets right. */
@@ -281,9 +297,9 @@
     @apply text-[11px] uppercase tracking-[0.18em] text-primary font-semibold;
   }
   .page-title {
-    @apply text-[1.9rem] leading-none font-semibold;
+    @apply text-[2.35rem] leading-[0.95] font-bold;
     font-family: var(--font-display);
-    letter-spacing: 0.01em;
+    letter-spacing: 0.005em;
   }
   .page-subtitle {
     @apply text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed;
@@ -291,24 +307,42 @@
   .section-title {
     @apply text-[1.05rem] leading-none font-semibold uppercase tracking-[0.06em] text-foreground;
     font-family: var(--font-display);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .section-title::before {
+    content: "";
+    width: 4px;
+    height: 0.95em;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--brand-red-bright), var(--brand-red));
+    flex-shrink: 0;
   }
 
   /* Card surface: crisp single hairline + minimal lift. Depth comes from
      hierarchy, not shadow theater. */
   .surface-card {
     @apply rounded-xl border border-border bg-card;
-    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 1px 2px rgb(16 24 40 / 0.05),
+      0 12px 32px -18px rgb(16 24 40 / 0.14);
   }
   .dark .surface-card {
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 1px 2px rgb(0 0 0 / 0.35),
+      0 12px 32px -18px rgb(0 0 0 / 0.6);
   }
 
   /* Ink panel: the dark chrome surface (top bar, login, kiosk).
      Carries a soft signal-red aurora — the brand's thread. */
   .ink-panel {
     background:
-      radial-gradient(56rem 32rem at 85% -10%, oklch(0.54 0.21 27 / 0.28), transparent 60%),
-      radial-gradient(40rem 24rem at -10% 110%, oklch(0.45 0.12 27 / 0.14), transparent 55%),
+      radial-gradient(56rem 32rem at 85% -10%, oklch(0.54 0.21 27 / 0.36), transparent 62%),
+      radial-gradient(40rem 24rem at -10% 110%, oklch(0.45 0.12 27 / 0.18), transparent 55%),
+      linear-gradient(180deg, oklch(0.19 0.015 20), var(--ink) 40%),
       var(--ink);
     color: oklch(0.95 0.006 80);
   }
@@ -365,10 +399,16 @@
      The first cell is the page's headline number and reads ~25% larger.  */
   .kpi-band {
     @apply grid grid-cols-2 xl:grid-cols-4 overflow-hidden rounded-xl border border-border bg-card;
-    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.85),
+      0 1px 2px rgb(16 24 40 / 0.05),
+      0 12px 32px -18px rgb(16 24 40 / 0.14);
   }
   .dark .kpi-band {
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 1px 2px rgb(0 0 0 / 0.35),
+      0 12px 32px -18px rgb(0 0 0 / 0.6);
   }
   .kpi-cell {
     @apply flex flex-col gap-1.5 p-5 border-border;
@@ -385,10 +425,16 @@
     }
   }
   .kpi-value {
-    @apply text-[1.9rem] leading-none font-bold tracking-tight tabular-nums text-foreground;
+    @apply text-[2.15rem] leading-none font-bold tabular-nums text-foreground;
+    font-family: var(--font-display);
+    letter-spacing: 0.01em;
+  }
+  .kpi-cell-hero {
+    background: linear-gradient(180deg, oklch(0.54 0.21 27 / 0.07), transparent 72%);
+    box-shadow: inset 0 3px 0 var(--brand-red);
   }
   .kpi-cell-hero .kpi-value {
-    @apply text-[2.4rem];
+    @apply text-[3rem];
   }
   .kpi-label {
     @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;

@@ -463,7 +463,10 @@ export default function Home() {
                       className="w-full max-w-9 rounded-t-[4px] transition-all"
                       style={{
                         height: `${Math.max(d.totalHours > 0 ? 6 : 2, (d.totalHours / maxDayHours) * 80)}px`,
-                        background: d.totalHours > 0 ? "var(--chart-1)" : "var(--border)",
+                        background:
+                          d.totalHours > 0
+                            ? "linear-gradient(180deg, #5b9be0, var(--chart-1) 60%)"
+                            : "var(--border)",
                       }}
                     />
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground">

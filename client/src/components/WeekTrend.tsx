@@ -63,12 +63,15 @@ export function WeekTrend({
             </span>
             <div
               className={cn(
-                "w-full max-w-8 rounded-t-[4px] transition-all",
+                "w-full max-w-8 rounded-t-[5px] transition-all",
                 isSelected && "ring-2 ring-primary ring-offset-1 ring-offset-card",
               )}
               style={{
                 height: `${h}px`,
-                background: w.clockHours > 0 ? "var(--chart-1)" : "var(--border)",
+                background:
+                  w.clockHours > 0
+                    ? "linear-gradient(180deg, #5b9be0, var(--chart-1) 60%)"
+                    : "var(--border)",
                 opacity: isSelected || isLive ? 1 : 0.55,
               }}
             />
