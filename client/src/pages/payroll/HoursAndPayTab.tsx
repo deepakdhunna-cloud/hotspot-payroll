@@ -88,23 +88,19 @@ export default function HoursAndPayTab({
         if (clockH !== undefined && Math.abs(saved - clockH) > 0.01) {
           initialOverride[empId] = true;
         }
-        // A week saved as "set pay" re-opens in set-pay mode.
-        if (row.entry.notes === "fixed-pay") {
-          initialFixed[empId] = String(Number(row.entry.grossPay));
-        }
       } else if (clockH !== undefined && clockH > 0) {
         initialHours[empId] = clockH.toFixed(2);
       } else {
         initialHours[empId] = "";
       }
-      // A standing set-pay amount on the profile opens unsaved rows in
-      // set-pay mode automatically, prefilled with that amount.
-      if (
-        !row.entry &&
-        row.employee.weeklyPay != null &&
-        Number(row.employee.weeklyPay) > 0
-      ) {
-        initialFixed[empId] = String(Number(row.employee.weeklyPay));
+      // Set-pay mode: a week saved as set pay re-opens with its saved
+      // amount; a standing profile amount covers EVERY other week — past
+      // or future, saved hourly or not saved yet.
+      const standingWeekly = Number(row.employee.weeklyPay ?? 0);
+      if (row.entry?.notes === "fixed-pay") {
+        initialFixed[empId] = String(Number(row.entry.grossPay));
+      } else if (standingWeekly > 0) {
+        initialFixed[empId] = String(standingWeekly);
       }
       initialRates[empId] = String(
         Number(row.entry?.payRateSnapshot ?? row.employee.payRate ?? 0),

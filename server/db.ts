@@ -253,6 +253,32 @@ export async function getEmployeePayrollHistory(employeeId: number, limit = 52) 
     .limit(limit);
 }
 
+/**
+ * Standing set pay is retroactive: rewrite EVERY saved payroll entry for
+ * this employee to the flat weekly amount (hours/scheduled/rate snapshot
+ * stay untouched — only the dollars and the fixed-pay marker change).
+ * Callers audit-log a before-snapshot first. Returns rows updated.
+ */
+export async function applyFixedPayToEmployeeEntries(
+  employeeId: number,
+  amount: number,
+): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .update(payrollEntries)
+    .set({
+      grossPay: amount.toFixed(2),
+      regularPay: amount.toFixed(2),
+      overtimePay: "0.00",
+      notes: "fixed-pay",
+    })
+    .where(eq(payrollEntries.employeeId, employeeId));
+  return Number(
+    (result as any)[0]?.affectedRows ?? (result as any).affectedRows ?? 0,
+  );
+}
+
 export async function getPayrollRange(
   startDate: Date,
   endDate: Date,

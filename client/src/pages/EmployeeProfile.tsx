@@ -566,8 +566,17 @@ function EditEmployeeDialog({
 }) {
   const utils = trpc.useUtils();
   const update = trpc.employees.update.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success("Profile updated");
+      if ((data as { weeklyPayAppliedTo?: number }).weeklyPayAppliedTo) {
+        toast.success(
+          `Set pay applied to ${data.weeklyPayAppliedTo} saved week${
+            data.weeklyPayAppliedTo === 1 ? "" : "s"
+          } as well — history now shows the flat amount.`,
+        );
+        utils.payroll.week.invalidate();
+        utils.payroll.range.invalidate();
+      }
       utils.employees.get.invalidate({ id: emp.id });
       utils.employees.list.invalidate();
       utils.dashboard.summary.invalidate();
@@ -674,9 +683,11 @@ function EditEmployeeDialog({
             placeholder="Leave empty for hourly pay"
           />
           <p className="text-xs text-muted-foreground">
-            When set, their payroll row opens as this flat amount every week —
-            hours are still recorded, they just don't drive the pay. Clear the
-            field to return to hourly.
+            When set, this flat amount applies to EVERY week — already-saved
+            past weeks are updated to it, and every future week opens with it.
+            Hours are still recorded, they just don't drive the pay. Clearing
+            the field returns future weeks to hourly; past weeks keep what was
+            paid.
           </p>
         </div>
         <div className="grid gap-2">

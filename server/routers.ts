@@ -11,6 +11,7 @@ import {
   router,
 } from "./_core/trpc";
 import {
+  applyFixedPayToEmployeeEntries,
   closePunch,
   closePunchIfOpen,
   getAttentionByRefKeys,
@@ -408,6 +409,38 @@ export const appRouter = router({
         if (input.storeLocation !== undefined)
           update.storeLocation = input.storeLocation;
         await updateEmployee(input.id, update);
+
+        // Standing set pay applies to EVERY week, past and future. Setting
+        // an amount rewrites all saved weeks to it (a before-snapshot goes
+        // to the audit log first, so nothing is lost); clearing it changes
+        // future weeks only — history stays exactly as it was paid.
+        let weeklyPayAppliedTo = 0;
+        if (input.weeklyPay !== undefined && input.weeklyPay !== null) {
+          const before = await getEmployeePayrollHistory(input.id, 520);
+          weeklyPayAppliedTo = await applyFixedPayToEmployeeEntries(
+            input.id,
+            input.weeklyPay
+          );
+          void logAudit({
+            actorScope: ctx.session.scope,
+            action: "employees.setWeeklyPay",
+            entityType: "employee",
+            entityId: input.id,
+            detail: JSON.stringify({
+              weeklyPay: input.weeklyPay,
+              rewroteWeeks: weeklyPayAppliedTo,
+              entriesBefore: before.map(e => ({
+                weekStart: e.weekStart,
+                grossPay: e.grossPay,
+                regularPay: e.regularPay,
+                hoursWorked: e.hoursWorked,
+                notes: e.notes,
+              })),
+            }),
+            ip: requestIp(ctx.req),
+          });
+        }
+
         void logAudit({
           actorScope: ctx.session.scope,
           action: "employees.update",
@@ -425,7 +458,7 @@ export const appRouter = router({
           }),
           ip: requestIp(ctx.req),
         });
-        return { success: true };
+        return { success: true, weeklyPayAppliedTo };
       }),
 
     /**
