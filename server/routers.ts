@@ -1135,12 +1135,31 @@ export const appRouter = router({
            - totalProjectedGross: re-computed as each business day closes —
              the ACTUAL labor cost of finished days plus the SCHEDULED cost
              of the days still to come. Before any day closes it equals the
-             scheduled figure; after the last day it equals actual cost. */
-        const rateByEmp = new Map(employees.map(e => [e.id, Number(e.payRate)]));
-        const totalScheduledCost = empBreakdown.reduce(
-          (a, e) => a + e.scheduledHours * e.payRate,
+             scheduled figure; after the last day it equals actual cost.
+           Standing SET PAY outranks all of it: a salaried person costs
+           exactly their weekly amount — flat in both figures, excluded
+           from every hours × rate term. */
+        const salariedByEmp = new Map(
+          employees
+            .filter(e => e.weeklyPay != null && Number(e.weeklyPay) > 0)
+            .map(e => [e.id, Number(e.weeklyPay)])
+        );
+        const salariedTotal = Array.from(salariedByEmp.values()).reduce(
+          (a, v) => a + v,
           0
         );
+        const rateByEmp = new Map(employees.map(e => [e.id, Number(e.payRate)]));
+        // Salaried people rate as $0/hr in the hourly terms — their flat
+        // amount is added once at the end instead.
+        const hourlyRateOf = (empId: number) =>
+          salariedByEmp.has(empId) ? 0 : (rateByEmp.get(empId) ?? 0);
+        const totalScheduledCost =
+          empBreakdown.reduce(
+            (a, e) =>
+              a +
+              (salariedByEmp.has(e.id) ? 0 : e.scheduledHours * e.payRate),
+            0
+          ) + salariedTotal;
         const todayMarker = businessDayStart(new Date());
         const dayBoundary = businessDayBoundaryUtc(new Date());
         let totalProjectedGross = totalScheduledCost;
@@ -1155,7 +1174,7 @@ export const appRouter = router({
           );
           let closedActual = 0;
           closedClock.forEach((hrs, empId) => {
-            closedActual += hrs * (rateByEmp.get(empId) ?? 0);
+            closedActual += hrs * hourlyRateOf(empId);
           });
           // Today = facts plus what's still scheduled: each person counts at
           // their actual clocked cost so far PLUS the un-elapsed remainder of
@@ -1168,7 +1187,7 @@ export const appRouter = router({
           let futureScheduled = 0;
           for (const s of shifts) {
             const t = new Date(s.shiftDate).getTime();
-            const rate = rateByEmp.get(s.employeeId) ?? 0;
+            const rate = hourlyRateOf(s.employeeId);
             const hours = Number(s.hours);
             if (t > todayMarker.getTime()) {
               futureScheduled += hours * rate;
@@ -1207,7 +1226,7 @@ export const appRouter = router({
               ...Array.from(unparsedTodayByEmp.keys()),
             ]);
             empIds.forEach(empId => {
-              const rate = rateByEmp.get(empId) ?? 0;
+              const rate = hourlyRateOf(empId);
               const worked = todayClock.get(empId) ?? 0;
               // Shifts without readable times can't be pro-rated by clock —
               // count whatever of them hasn't been worked yet.
@@ -1222,7 +1241,8 @@ export const appRouter = router({
                 rate;
             });
           }
-          totalProjectedGross = closedActual + todayCost + futureScheduled;
+          totalProjectedGross =
+            closedActual + todayCost + futureScheduled + salariedTotal;
         }
 
         // Live "on the clock" list with names and shift start times.
@@ -1487,11 +1507,15 @@ export const appRouter = router({
             w.peoplePaid = paidByIso.get(iso)?.size ?? 0;
             continue;
           }
-          // Never finalized: estimate from the time clock at current rates.
+          // Never finalized: estimate from the time clock at current rates —
+          // except standing set pay, which is their flat weekly amount.
           perEmp.forEach((hrs, empId) => {
             const emp = empById.get(empId);
             if (!emp || hrs <= 0) return;
-            const gross = hrs * Number(emp.payRate);
+            const gross =
+              emp.weeklyPay != null && Number(emp.weeklyPay) > 0
+                ? Number(emp.weeklyPay)
+                : hrs * Number(emp.payRate);
             w.estimated = true;
             w.gross += gross;
             w.hours += hrs;
@@ -1533,7 +1557,10 @@ export const appRouter = router({
             latestWeekPeople.push({
               role: emp.role,
               hours: hrs,
-              gross: hrs * Number(emp.payRate),
+              gross:
+                emp.weeklyPay != null && Number(emp.weeklyPay) > 0
+                  ? Number(emp.weeklyPay)
+                  : hrs * Number(emp.payRate),
             });
           });
         }
