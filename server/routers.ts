@@ -74,6 +74,7 @@ import {
   computeGrossPay,
   parseTimeLabelToMinutes,
   estimateWithholding,
+  getCurrentPayPeriodStart,
   getWeekStart,
   overclockStatus,
   parseLooseDateNearAnchor,
@@ -1291,6 +1292,182 @@ export const appRouter = router({
           if (outAt > inAt) bucket.clockHours += (outAt - inAt) / 3_600_000;
         }
         return { weeks };
+      }),
+  }),
+
+  /**
+   * CFO portal analytics — strictly aggregated labor financials. By design
+   * this endpoint carries NO employee PII (no names, phones, or per-person
+   * rates), no punch-level detail and no operational state: a CFO reads
+   * cost, trend and ratios, not the shop floor. Numbers of record come
+   * from SAVED payroll; a week that was never finalized falls back to
+   * clocked hours × current pay rate and is flagged `estimated`.
+   */
+  cfo: router({
+    summary: adminProcedure
+      .input(
+        z
+          .object({ weeks: z.number().int().min(3).max(12).optional() })
+          .optional()
+      )
+      .query(async ({ input }) => {
+        const n = input?.weeks ?? 5;
+        // Most recent CLOSED Thu–Wed pay week; the in-progress week is a
+        // projection and lives in dashboard.summary, not in this history.
+        const lastClosed = getCurrentPayPeriodStart(new Date());
+        const firstWeek = new Date(lastClosed);
+        firstWeek.setUTCDate(firstWeek.getUTCDate() - (n - 1) * 7);
+        const punchEnd = new Date(lastClosed);
+        punchEnd.setUTCDate(punchEnd.getUTCDate() + 7);
+
+        const [entries, punches, employees] = await Promise.all([
+          getPayrollRange(firstWeek, lastClosed, [...STORES]),
+          listPunchesInRange(firstWeek, punchEnd, [...STORES]),
+          listEmployees({}),
+        ]);
+        const empById = new Map(employees.map(e => [e.id, e]));
+
+        type WeekRow = {
+          weekStart: Date;
+          gross: number;
+          hours: number;
+          scheduledHours: number;
+          clockHours: number;
+          peoplePaid: number;
+          estimated: boolean;
+          estFederal: number;
+          estState: number;
+          estNet: number;
+          byStore: Record<string, { gross: number; hours: number }>;
+        };
+        const weeks: WeekRow[] = Array.from({ length: n }, (_, i) => {
+          const w = new Date(firstWeek);
+          w.setUTCDate(w.getUTCDate() + i * 7);
+          return {
+            weekStart: w,
+            gross: 0,
+            hours: 0,
+            scheduledHours: 0,
+            clockHours: 0,
+            peoplePaid: 0,
+            estimated: false,
+            estFederal: 0,
+            estState: 0,
+            estNet: 0,
+            byStore: Object.fromEntries(
+              STORES.map(s => [s, { gross: 0, hours: 0 }])
+            ),
+          };
+        });
+        const byIso = new Map(weeks.map(w => [w.weekStart.toISOString(), w]));
+        const paidByIso = new Map<string, Set<number>>(
+          weeks.map(w => [w.weekStart.toISOString(), new Set()])
+        );
+
+        // Saved payroll — the numbers of record.
+        for (const e of entries) {
+          const iso = new Date(e.weekStart).toISOString();
+          const bucket = byIso.get(iso);
+          if (!bucket) continue;
+          const gross = Number(e.grossPay);
+          const hrs = Number(e.hoursWorked);
+          bucket.gross += gross;
+          bucket.hours += hrs;
+          bucket.scheduledHours += Number(e.scheduledHours);
+          const wh = estimateWithholding(gross);
+          bucket.estFederal += wh.federal;
+          bucket.estState += wh.state;
+          bucket.estNet += wh.netPay;
+          if (hrs > 0) paidByIso.get(iso)?.add(e.employeeId);
+          if (bucket.byStore[e.storeLocation]) {
+            bucket.byStore[e.storeLocation].gross += gross;
+            bucket.byStore[e.storeLocation].hours += hrs;
+          }
+        }
+
+        // Clocked hours per (week, employee) — cost/hour context for every
+        // week, and the estimate fallback for never-finalized weeks.
+        const now = new Date();
+        const clockAgg = new Map<string, Map<number, number>>(
+          weeks.map(w => [w.weekStart.toISOString(), new Map()])
+        );
+        for (const p of punches) {
+          const iso = getWeekStart(new Date(p.clockInAt)).toISOString();
+          const bucket = byIso.get(iso);
+          const perEmp = clockAgg.get(iso);
+          if (!bucket || !perEmp) continue;
+          const weekEnd = new Date(bucket.weekStart);
+          weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+          const openCap = Math.min(now.getTime(), weekEnd.getTime());
+          const inAt = new Date(p.clockInAt).getTime();
+          const outAt = p.clockOutAt ? new Date(p.clockOutAt).getTime() : openCap;
+          if (outAt <= inAt) continue;
+          const hrs = (outAt - inAt) / 3_600_000;
+          perEmp.set(p.employeeId, (perEmp.get(p.employeeId) ?? 0) + hrs);
+        }
+
+        for (const w of weeks) {
+          const iso = w.weekStart.toISOString();
+          const perEmp = clockAgg.get(iso)!;
+          perEmp.forEach(hrs => {
+            w.clockHours += hrs;
+          });
+          if (w.gross > 0.005) {
+            w.peoplePaid = paidByIso.get(iso)?.size ?? 0;
+            continue;
+          }
+          // Never finalized: estimate from the time clock at current rates.
+          perEmp.forEach((hrs, empId) => {
+            const emp = empById.get(empId);
+            if (!emp || hrs <= 0) return;
+            const gross = hrs * Number(emp.payRate);
+            w.estimated = true;
+            w.gross += gross;
+            w.hours += hrs;
+            w.peoplePaid += 1;
+            const wh = estimateWithholding(gross);
+            w.estFederal += wh.federal;
+            w.estState += wh.state;
+            w.estNet += wh.netPay;
+            if (w.byStore[emp.storeLocation]) {
+              w.byStore[emp.storeLocation].gross += gross;
+              w.byStore[emp.storeLocation].hours += hrs;
+            }
+          });
+        }
+
+        // Role mix for the latest closed week — role/hours/gross only,
+        // one row per person but deliberately unnamed.
+        const latestIso = lastClosed.toISOString();
+        const latestWeekPeople: { role: string; hours: number; gross: number }[] =
+          [];
+        const latestSaved = entries.filter(
+          e => new Date(e.weekStart).toISOString() === latestIso
+        );
+        if (latestSaved.some(e => Number(e.grossPay) > 0)) {
+          for (const e of latestSaved) {
+            const emp = empById.get(e.employeeId);
+            const hrs = Number(e.hoursWorked);
+            if (!emp || hrs <= 0) continue;
+            latestWeekPeople.push({
+              role: emp.role,
+              hours: hrs,
+              gross: Number(e.grossPay),
+            });
+          }
+        } else {
+          clockAgg.get(latestIso)?.forEach((hrs, empId) => {
+            const emp = empById.get(empId);
+            if (!emp || hrs <= 0) return;
+            latestWeekPeople.push({
+              role: emp.role,
+              hours: hrs,
+              gross: hrs * Number(emp.payRate),
+            });
+          });
+        }
+
+        return { weeks, latestWeekPeople, lastClosedWeekStart: lastClosed };
       }),
   }),
 

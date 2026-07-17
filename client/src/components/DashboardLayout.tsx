@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Clock,
   ExternalLink,
+  Landmark,
   LayoutDashboard,
   LogOut,
   ShieldCheck,
@@ -47,6 +48,7 @@ const baseMenuItems: MenuItem[] = [
   { icon: ClipboardList, label: "Payroll", path: "/payroll" },
   { icon: Upload, label: "Schedule", path: "/schedule-import" },
   { icon: ShieldCheck, label: "CEO", path: "/ceo", adminOnly: true },
+  { icon: Landmark, label: "CFO", path: "/cfo", adminOnly: true },
 ];
 
 export default function DashboardLayout({

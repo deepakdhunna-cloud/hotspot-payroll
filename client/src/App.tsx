@@ -51,6 +51,7 @@ const EmployeeProfile = lazyWithReload(() => import("./pages/EmployeeProfile"));
 const WeeklyPayroll = lazyWithReload(() => import("./pages/WeeklyPayroll"));
 const ScheduleImport = lazyWithReload(() => import("./pages/ScheduleImport"));
 const CeoView = lazyWithReload(() => import("./pages/CeoView"));
+const CfoView = lazyWithReload(() => import("./pages/CfoView"));
 const ClockKiosk = lazyWithReload(() => import("./pages/ClockKiosk"));
 
 /** Quiet in-layout loading state while a page chunk streams in. */
@@ -96,6 +97,7 @@ function Router() {
         <Route path={"/time-clock"} component={TimeClockRedirect} />
         <Route path={"/schedule-import"} component={ScheduleImport} />
         <Route path={"/ceo"} component={CeoView} />
+        <Route path={"/cfo"} component={CfoView} />
           <Route path={"/404"} component={NotFound} />
           <Route component={NotFound} />
         </Switch>
