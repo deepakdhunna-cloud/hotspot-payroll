@@ -242,7 +242,7 @@ export default function HistoryTab({
 
       <Card className="surface-card border-0">
         <CardHeader>
-          <CardTitle>Per employee</CardTitle>
+          <CardTitle className="section-title">Per employee</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">

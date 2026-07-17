@@ -198,7 +198,7 @@ export default function EmployeeProfile() {
 
           <Card className="surface-card border-0 rise-in">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="section-title flex items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" /> Payroll history
               </CardTitle>
             </CardHeader>
@@ -292,7 +292,7 @@ function ClockCodeCard({
   return (
     <Card className="surface-card border-0 rise-in">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="section-title flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-primary" /> Time clock code
         </CardTitle>
       </CardHeader>
@@ -401,7 +401,7 @@ function PunchHistoryCard({
   return (
     <Card className="surface-card border-0 rise-in">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="section-title flex items-center gap-2">
           <Clock className="h-5 w-5 text-primary" /> Recent punches
         </CardTitle>
         <Link

@@ -10,7 +10,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
-import { StatCard } from "@/components/StatCard";
+import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { StoreSelect } from "@/components/StoreSelect";
 import { WeekTrend } from "@/components/WeekTrend";
 import { Badge } from "@/components/ui/badge";
@@ -34,11 +34,9 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle2,
-  CircleDollarSign,
   Clock,
   History,
   ShieldCheck,
-  Timer,
   Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -191,25 +189,41 @@ export default function CeoView() {
         </div>
       )}
 
-      {/* Company pulse — live and closed weeks emphasize different truths */}
+      {/* Company pulse — one strip, the money leads */}
       {ceoQ.isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-[118px] rounded-2xl" />
-          ))}
-        </div>
+        <Skeleton className="h-[124px] rounded-xl" />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
+        <KpiBand>
+          <KpiCell
+            hero
+            label={isLiveWeek ? "Labor cost (live)" : "Gross payroll"}
+            value={fmtMoney(isLiveWeek ? liveLabor : agg.totalGross)}
+            sub={
+              isLiveWeek
+                ? `clocked hours × pay rate · ${focusLabel}`
+                : `committed gross pay · ${focusLabel}`
+            }
+            footer={
+              !isLiveWeek && unsavedCount > 0 ? (
+                <span className="chip-warn">
+                  <AlertTriangle className="h-3 w-3" />
+                  {unsavedCount} worked but unsaved
+                </span>
+              ) : !isLiveWeek && savedCount > 0 ? (
+                <span className="chip-good">
+                  <CheckCircle2 className="h-3 w-3" /> payroll complete
+                </span>
+              ) : null
+            }
+          />
+          <KpiCell
             label="Hours clocked"
             value={agg.totalClockHours.toFixed(1)}
             sub={
               agg.totalScheduled > 0
-                ? `of ${agg.totalScheduled.toFixed(1)} scheduled · ${focusLabel}`
-                : `no schedule this week · ${focusLabel}`
+                ? `of ${agg.totalScheduled.toFixed(1)} scheduled`
+                : "no schedule this week"
             }
-            icon={<Timer />}
-            style={{ animationDelay: "0ms" }}
             footer={
               agg.overClockedCount > 0 ? (
                 <span className="chip-warn">
@@ -224,7 +238,7 @@ export default function CeoView() {
             }
           />
           {isLiveWeek ? (
-            <StatCard
+            <KpiCell
               label="On the clock now"
               value={agg.clockedInCount}
               sub={
@@ -238,55 +252,28 @@ export default function CeoView() {
                       .join(" · ")
                   : "nobody clocked in"
               }
-              icon={<Clock />}
-              style={{ animationDelay: "40ms" }}
             />
           ) : (
-            <StatCard
+            <KpiCell
               label="Saved to payroll"
               value={`${savedCount}/${rows.length}`}
               sub={`${agg.totalHours.toFixed(1)} hours entered`}
-              icon={<CheckCircle2 />}
-              style={{ animationDelay: "40ms" }}
-              footer={
-                unsavedCount > 0 ? (
-                  <span className="chip-warn">
-                    <AlertTriangle className="h-3 w-3" />
-                    {unsavedCount} unsaved
-                  </span>
-                ) : savedCount > 0 ? (
-                  <span className="chip-good">
-                    <CheckCircle2 className="h-3 w-3" /> complete
-                  </span>
-                ) : null
-              }
             />
           )}
-          <StatCard
-            label={isLiveWeek ? "Labor cost (live)" : "Gross payroll"}
-            value={fmtMoney(isLiveWeek ? liveLabor : agg.totalGross)}
-            sub={isLiveWeek ? "clocked hours × pay rate" : "committed gross pay"}
-            icon={<CircleDollarSign />}
-            style={{ animationDelay: "80ms" }}
-          />
           {isLiveWeek ? (
-            <StatCard
+            <KpiCell
               label="Payroll saved"
               value={fmtMoney(agg.totalGross)}
               sub="saved after the week closes"
-              icon={<CircleDollarSign />}
-              style={{ animationDelay: "120ms" }}
             />
           ) : (
-            <StatCard
+            <KpiCell
               label="Net pay (est.)"
               value={fmtMoney(agg.totalNet)}
               sub={`≈ ${fmtMoney(agg.totalFederal + agg.totalState)} withheld (est.)`}
-              icon={<CircleDollarSign />}
-              style={{ animationDelay: "120ms" }}
             />
           )}
-        </div>
+        </KpiBand>
       )}
 
       {/* Every store at one glance — the cards are the filter */}
@@ -376,7 +363,7 @@ export default function CeoView() {
       {/* Eight-week filmstrip — older payroll is one click away */}
       <Card className="surface-card border-0 rise-in" style={{ animationDelay: "160ms" }}>
         <CardHeader className="pb-1 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">
+          <CardTitle className="section-title">
             Last 8 pay weeks{storeFilter !== "all" ? ` · ${focusLabel}` : ""}
           </CardTitle>
           <span className="text-xs text-muted-foreground">
@@ -407,7 +394,7 @@ export default function CeoView() {
         <TabsContent value="payroll">
           <Card className="surface-card border-0">
             <CardHeader>
-              <CardTitle>
+              <CardTitle className="section-title">
                 Per-employee payroll{storeFilter !== "all" ? ` — ${storeFilter}` : ""}
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
@@ -542,7 +529,7 @@ function ManagersPanel() {
   return (
     <Card className="surface-card border-0">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="section-title flex items-center gap-2">
           <Users className="h-5 w-5" /> Access PINs
         </CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
@@ -672,7 +659,7 @@ function ActivityPanel() {
     <Card className="surface-card border-0">
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="section-title flex items-center gap-2">
             <History className="h-5 w-5" /> Activity log
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">

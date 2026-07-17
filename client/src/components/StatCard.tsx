@@ -1,6 +1,7 @@
 /**
- * KPI stat tile. Hero number in ink (never brand color), muted uppercase
- * label, optional sub-line and footer slot for status chips.
+ * Standalone KPI tile (used where a full KpiBand is too heavy).
+ * Hero number in ink, muted uppercase label, optional icon kept small and
+ * quiet — the number is the point.
  */
 import { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -23,11 +24,14 @@ export function StatCard({
   style?: CSSProperties;
 }) {
   return (
-    <div className={cn("surface-card rise-in p-5 flex flex-col gap-2.5", className)} style={style}>
+    <div
+      className={cn("surface-card rise-in p-5 flex flex-col gap-2", className)}
+      style={style}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="kpi-label">{label}</span>
         {icon ? (
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary [&>svg]:h-4 [&>svg]:w-4">
+          <span className="text-muted-foreground/60 [&>svg]:h-4 [&>svg]:w-4">
             {icon}
           </span>
         ) : null}

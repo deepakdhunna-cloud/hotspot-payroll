@@ -12,7 +12,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
-import { StatCard } from "@/components/StatCard";
+import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { StoreSelect } from "@/components/StoreSelect";
 import { WeekTrend } from "@/components/WeekTrend";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,6 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock,
-  ExternalLink,
   KeyRound,
   LayoutDashboard,
   Timer,
@@ -183,13 +182,6 @@ export default function Home() {
               value={storeFilter}
               onChange={setStoreFilter}
             />
-            <Button
-              variant="outline"
-              className="h-9 bg-card shadow-sm"
-              onClick={() => window.open("/clock", "_blank", "noopener,noreferrer")}
-            >
-              <ExternalLink className="h-4 w-4 mr-1.5" /> Kiosk
-            </Button>
           </>
         }
       />
@@ -213,25 +205,20 @@ export default function Home() {
         </Card>
       ) : null}
 
-      {/* KPI band — live and closed weeks emphasize different truths */}
+      {/* KPI band — one strip, one dominant number per mode */}
       {summaryQ.isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-[118px] rounded-2xl" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label={isLiveWeek ? "Hours clocked" : "Hours worked"}
+        <Skeleton className="h-[124px] rounded-xl" />
+      ) : isLiveWeek ? (
+        <KpiBand>
+          <KpiCell
+            hero
+            label="Hours clocked"
             value={totals.totalHours.toFixed(1)}
             sub={
               totals.totalScheduled > 0
                 ? `of ${totals.totalScheduled.toFixed(1)} scheduled`
                 : "no schedule for this week"
             }
-            icon={<Timer />}
-            style={{ animationDelay: "0ms" }}
             footer={
               pace ? (
                 pace.kind === "over" ? (
@@ -240,13 +227,76 @@ export default function Home() {
                     over pace · proj {pace.projected.toFixed(0)}h
                   </span>
                 ) : pace.kind === "under" ? (
-                  <span className="chip-neutral">behind pace · proj {pace.projected.toFixed(0)}h</span>
+                  <span className="chip-neutral">
+                    behind pace · proj {pace.projected.toFixed(0)}h
+                  </span>
                 ) : (
                   <span className="chip-good">
                     <CheckCircle2 className="h-3 w-3" /> on pace
                   </span>
                 )
-              ) : !isLiveWeek && totals.totalScheduled > 0 ? (
+              ) : null
+            }
+          />
+          <KpiCell
+            label="On the clock now"
+            value={clockedIn.length}
+            sub={
+              clockedIn.length > 0
+                ? clockedIn.slice(0, 3).map((c) => c.fullName.split(" ")[0]).join(", ") +
+                  (clockedIn.length > 3 ? "…" : "")
+                : "nobody clocked in"
+            }
+            footer={
+              forgotten.length > 0 ? (
+                <span className="chip-warn">
+                  <AlertTriangle className="h-3 w-3" />
+                  {forgotten.length} shift{forgotten.length === 1 ? "" : "s"} over 12h
+                </span>
+              ) : null
+            }
+          />
+          <KpiCell
+            label="Labor cost (live)"
+            value={fmtMoney(totals.totalGross)}
+            sub="clocked hours × pay rate"
+          />
+          <KpiCell
+            label="Payroll saved"
+            value={fmtMoney(totals.totalSavedGross)}
+            sub="saved after the week closes"
+          />
+        </KpiBand>
+      ) : (
+        <KpiBand>
+          <KpiCell
+            hero
+            label="Payroll saved"
+            value={fmtMoney(totals.totalSavedGross)}
+            sub="committed gross pay for this week"
+            footer={
+              unsaved.length > 0 ? (
+                <span className="chip-warn">
+                  <AlertTriangle className="h-3 w-3" />
+                  {unsaved.length} unsaved
+                </span>
+              ) : savedCount > 0 ? (
+                <span className="chip-good">
+                  <CheckCircle2 className="h-3 w-3" /> complete
+                </span>
+              ) : null
+            }
+          />
+          <KpiCell
+            label="Hours worked"
+            value={totals.totalHours.toFixed(1)}
+            sub={
+              totals.totalScheduled > 0
+                ? `of ${totals.totalScheduled.toFixed(1)} scheduled`
+                : "no schedule for this week"
+            }
+            footer={
+              totals.totalScheduled > 0 ? (
                 totals.totalHours - totals.totalScheduled > 0.25 ? (
                   <span className="chip-warn">
                     <AlertTriangle className="h-3 w-3" />+
@@ -260,69 +310,23 @@ export default function Home() {
               ) : null
             }
           />
-          {isLiveWeek ? (
-            <StatCard
-              label="On the clock now"
-              value={clockedIn.length}
-              sub={
-                clockedIn.length > 0
-                  ? clockedIn.slice(0, 3).map((c) => c.fullName.split(" ")[0]).join(", ") +
-                    (clockedIn.length > 3 ? "…" : "")
-                  : "nobody clocked in"
-              }
-              icon={<Clock />}
-              style={{ animationDelay: "40ms" }}
-              footer={
-                forgotten.length > 0 ? (
-                  <span className="chip-warn">
-                    <AlertTriangle className="h-3 w-3" />
-                    {forgotten.length} shift{forgotten.length === 1 ? "" : "s"} over 12h
-                  </span>
-                ) : null
-              }
-            />
-          ) : (
-            <StatCard
-              label="Saved to payroll"
-              value={`${savedCount}/${employees.length}`}
-              sub={`${totals.totalEntered.toFixed(1)} hours entered`}
-              icon={<CheckCircle2 />}
-              style={{ animationDelay: "40ms" }}
-              footer={
-                unsaved.length > 0 ? (
-                  <span className="chip-warn">
-                    <AlertTriangle className="h-3 w-3" />
-                    {unsaved.length} unsaved
-                  </span>
-                ) : savedCount > 0 ? (
-                  <span className="chip-good">
-                    <CheckCircle2 className="h-3 w-3" /> complete
-                  </span>
-                ) : null
-              }
-            />
-          )}
-          <StatCard
-            label={isLiveWeek ? "Labor cost (live)" : "Labor cost"}
+          <KpiCell
+            label="Saved to payroll"
+            value={`${savedCount}/${employees.length}`}
+            sub={`${totals.totalEntered.toFixed(1)} hours entered`}
+          />
+          <KpiCell
+            label="Labor cost"
             value={fmtMoney(totals.totalGross)}
             sub="clocked hours × pay rate"
-            icon={<CircleDollarSign />}
-            style={{ animationDelay: "80ms" }}
           />
-          <StatCard
-            label="Payroll saved"
-            value={fmtMoney(totals.totalSavedGross)}
-            sub={isLiveWeek ? "saved after the week closes" : "committed gross pay"}
-            icon={<CircleDollarSign />}
-            style={{ animationDelay: "120ms" }}
-          />
-        </div>
+        </KpiBand>
       )}
 
       {/* Eight-week filmstrip — older payroll is one click away */}
       <Card className="surface-card border-0 rise-in" style={{ animationDelay: "140ms" }}>
         <CardHeader className="pb-1 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Last 8 pay weeks</CardTitle>
+          <CardTitle className="section-title">Last 8 pay weeks</CardTitle>
           <span className="text-xs text-muted-foreground">
             bars = clocked hours · <span className="text-success">●</span> payroll saved · click to open
           </span>
@@ -345,7 +349,7 @@ export default function Home() {
         {isLiveWeek ? (
           <Card className="surface-card border-0 rise-in" style={{ animationDelay: "160ms" }}>
             <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
+              <CardTitle className="section-title flex items-center gap-2">
                 <span className="relative flex h-2.5 w-2.5">
                   {clockedIn.length > 0 ? (
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-60" />
@@ -413,7 +417,7 @@ export default function Home() {
         ) : (
           <Card className="surface-card border-0 rise-in" style={{ animationDelay: "160ms" }}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Week recap</CardTitle>
+              <CardTitle className="section-title">Week recap</CardTitle>
             </CardHeader>
             <CardContent>
               {employees.filter((e) => e.clockHours > 0).length === 0 ? (
@@ -460,7 +464,7 @@ export default function Home() {
 
         <Card className="surface-card border-0 rise-in" style={{ animationDelay: "200ms" }}>
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="section-title flex items-center gap-2">
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
               Scheduled hours by day
             </CardTitle>
@@ -511,7 +515,7 @@ export default function Home() {
       {/* The week's ledger */}
       <Card className="surface-card border-0 rise-in" style={{ animationDelay: "240ms" }}>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <CardTitle className="text-base">
+          <CardTitle className="section-title">
             {isLiveWeek ? "This week by employee" : `Week of ${fmtWeekRange(weekStart)}`}
           </CardTitle>
           <Link href={`/payroll?week=${toDateInput(weekStart)}`}>

@@ -72,6 +72,7 @@ import {
   type PinSession,
 } from "./_core/pinAuth";
 import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
+import { rankNameMatches } from "./nameMatch";
 
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
@@ -1724,11 +1725,10 @@ export const appRouter = router({
         const stores = resolveStores(scope, input.store);
         const dbEmployees = await listEmployees({ stores });
 
-        const normalize = (s: string) =>
-          s
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, " ")
-            .trim();
+        // Confident matches auto-link; anything below the bar gets ranked
+        // suggestions so a manager can link the person in one click instead
+        // of accidentally creating a duplicate employee.
+        const AUTO_MATCH_SCORE = 0.87;
 
         const rows = parsed.employees.map(row => {
           // Resolve each printed day to a concrete date within the pay week.
@@ -1748,28 +1748,15 @@ export const appRouter = router({
               ? daySum
               : row.totalHours;
 
-          const target = normalize(row.name);
-          let emp = dbEmployees.find(e => normalize(e.fullName) === target);
-          if (!emp) {
-            const parts = target.split(" ").filter(Boolean);
-            const first = parts[0] ?? "";
-            const last = parts[parts.length - 1] ?? "";
-            emp = dbEmployees.find(e => {
-              const en = normalize(e.fullName).split(" ").filter(Boolean);
-              const ef = en[0] ?? "";
-              const el = en[en.length - 1] ?? "";
-              return (
-                (last &&
-                  el === last &&
-                  first &&
-                  (ef === first || ef.startsWith(first[0]))) ||
-                (last &&
-                  el === last &&
-                  first.length === 1 &&
-                  ef.startsWith(first))
-              );
-            });
-          }
+          const ranked = rankNameMatches(
+            row.name,
+            dbEmployees,
+            e => e.fullName,
+            { limit: 3, minScore: 0.55 }
+          );
+          const top = ranked[0];
+          const emp =
+            top && top.score >= AUTO_MATCH_SCORE ? top.record : undefined;
           return {
             extractedName: row.name,
             scheduledHours: Math.round(totalHours * 100) / 100,
@@ -1777,6 +1764,15 @@ export const appRouter = router({
             matchedEmployeeId: emp?.id ?? null,
             matchedFullName: emp?.fullName ?? null,
             matchedStore: emp?.storeLocation ?? null,
+            matchScore: emp && top ? Math.round(top.score * 100) : null,
+            suggestions: emp
+              ? []
+              : ranked.map(c => ({
+                  employeeId: c.record.id,
+                  fullName: c.record.fullName,
+                  storeLocation: c.record.storeLocation,
+                  score: Math.round(c.score * 100),
+                })),
           };
         });
 

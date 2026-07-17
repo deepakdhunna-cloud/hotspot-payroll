@@ -4,11 +4,10 @@
  *   2. Punches    — the time-clock log with manual add / edit / delete.
  *   3. History    — multi-week summary + xlsx export for any range.
  *
- * The header (week navigator, store filter, Open kiosk button) is shared by all
+ * The header (week navigator, store filter) is shared by all
  * three tabs. The tab is reflected in the URL (?tab=hours|punches|history) so
  * the dashboard CTA and the alias from /time-clock can land on the right tab.
  */
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import {
@@ -21,7 +20,6 @@ import { StoreSelect } from "@/components/StoreSelect";
 import {
   ClipboardList,
   Clock,
-  ExternalLink,
   History as HistoryIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -93,15 +91,6 @@ export default function WeeklyPayroll() {
             value={storeFilter}
             onChange={setStoreFilter}
           />
-          <Button
-            variant="outline"
-            onClick={() =>
-              window.open("/clock", "_blank", "noopener,noreferrer")
-            }
-            title="Open the public punch-in kiosk in a new tab"
-          >
-            <ExternalLink className="h-4 w-4 mr-2" /> Open kiosk
-          </Button>
         </>}
       />
 

@@ -269,7 +269,7 @@ export default function PunchesTab({
 
       <Card className="surface-card border-0">
         <CardHeader>
-          <CardTitle>Punches</CardTitle>
+          <CardTitle className="section-title">Punches</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">

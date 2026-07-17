@@ -1,6 +1,30 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Signage face for titles — self-hosted so kiosks with flaky internet
+   never fall back mid-shift. */
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/barlow-condensed-700.woff2") format("woff2");
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -45,18 +69,19 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
   /* ------------------------------------------------------------------ */
-  /* Hotspot Market design language                                      */
-  /*  - deep signal red as the single brand accent                       */
-  /*  - warm paper-white surfaces, ink-dark type                         */
-  /*  - status colors reserved for state (never decoration)              */
+  /* Hotspot Market · "Signal & Steel"                                   */
+  /*  - signal red (from the brandmark) drives every primary action      */
+  /*  - ink chrome frames a cool porcelain work surface                  */
+  /*  - condensed signage type for titles, Inter numerals for data       */
+  /*  - status colors reserved for state, never decoration               */
   /* ------------------------------------------------------------------ */
-  --brand-red: oklch(0.52 0.2 27);
-  --brand-red-bright: oklch(0.628 0.243 27.5);
+  --brand-red: oklch(0.54 0.21 27);
+  --brand-red-bright: oklch(0.63 0.24 27.5);
   --primary: var(--brand-red);
   --primary-foreground: oklch(0.99 0 0);
   --sidebar-primary: var(--brand-red);
@@ -69,36 +94,36 @@
   --chart-3: #e87ba4; /* magenta */
   --chart-4: #eda100; /* yellow  */
   --chart-5: #1baf7a; /* aqua    */
-  --radius: 0.65rem;
+  --radius: 0.55rem;
 
-  /* Light theme */
-  --background: oklch(0.978 0.003 85);
-  --foreground: oklch(0.21 0.012 260);
+  /* Light theme — porcelain canvas, white cards, crisp hairlines. */
+  --background: oklch(0.966 0.003 250);
+  --foreground: oklch(0.185 0.01 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.012 260);
+  --card-foreground: oklch(0.185 0.01 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.012 260);
-  --secondary: oklch(0.955 0.004 260);
+  --popover-foreground: oklch(0.185 0.01 265);
+  --secondary: oklch(0.945 0.004 255);
   --secondary-foreground: oklch(0.3 0.012 260);
-  --muted: oklch(0.955 0.004 260);
-  --muted-foreground: oklch(0.5 0.014 260);
-  --accent: oklch(0.945 0.006 260);
-  --accent-foreground: oklch(0.21 0.012 260);
-  --destructive: oklch(0.52 0.2 27);
+  --muted: oklch(0.945 0.004 255);
+  --muted-foreground: oklch(0.49 0.014 260);
+  --accent: oklch(0.935 0.006 255);
+  --accent-foreground: oklch(0.185 0.01 265);
+  --destructive: oklch(0.54 0.21 27);
   --destructive-foreground: oklch(0.99 0 0);
   --success: oklch(0.52 0.13 160);
   --success-foreground: oklch(0.99 0 0);
   --warning: oklch(0.62 0.15 65);
   --warning-foreground: oklch(0.2 0.02 65);
-  --border: oklch(0.905 0.006 260);
-  --input: oklch(0.885 0.006 260);
+  --border: oklch(0.895 0.006 255);
+  --input: oklch(0.875 0.006 255);
   --ring: var(--brand-red);
-  /* Ink frame: the sidebar is deep ink even in light mode — it frames the
-     paper work surface and gives the app its signature contrast. */
-  --ink: oklch(0.17 0.012 265);
-  --ink-soft: oklch(0.22 0.014 265);
+  /* Ink chrome: the top bar, login and kiosk grounds. A whisper of red
+     undertone ties the black to the brandmark. */
+  --ink: oklch(0.165 0.012 20);
+  --ink-soft: oklch(0.215 0.012 20);
   --sidebar: var(--ink);
-  --sidebar-foreground: oklch(0.88 0.008 80);
+  --sidebar-foreground: oklch(0.88 0.006 80);
   --sidebar-accent: oklch(0.62 0.21 27 / 0.16);
   --sidebar-accent-foreground: oklch(0.97 0.01 27);
   --sidebar-border: oklch(1 0 0 / 8%);
@@ -112,18 +137,18 @@
   --primary-foreground: oklch(0.99 0 0);
   --sidebar-primary: var(--brand-red);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --background: oklch(0.14 0.006 260);
-  --foreground: oklch(0.94 0.005 80);
-  --card: oklch(0.185 0.007 260);
-  --card-foreground: oklch(0.94 0.005 80);
-  --popover: oklch(0.185 0.007 260);
-  --popover-foreground: oklch(0.94 0.005 80);
-  --secondary: oklch(0.23 0.007 260);
-  --secondary-foreground: oklch(0.92 0.005 80);
-  --muted: oklch(0.22 0.007 260);
+  --background: oklch(0.145 0.006 265);
+  --foreground: oklch(0.94 0.004 80);
+  --card: oklch(0.19 0.007 265);
+  --card-foreground: oklch(0.94 0.004 80);
+  --popover: oklch(0.19 0.007 265);
+  --popover-foreground: oklch(0.94 0.004 80);
+  --secondary: oklch(0.235 0.007 265);
+  --secondary-foreground: oklch(0.92 0.004 80);
+  --muted: oklch(0.225 0.007 265);
   --muted-foreground: oklch(0.68 0.014 260);
-  --accent: oklch(0.25 0.009 260);
-  --accent-foreground: oklch(0.96 0.005 80);
+  --accent: oklch(0.255 0.009 265);
+  --accent-foreground: oklch(0.96 0.004 80);
   --destructive: oklch(0.66 0.2 27);
   --destructive-foreground: oklch(0.99 0 0);
   --success: oklch(0.68 0.13 160);
@@ -133,15 +158,15 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 13%);
   --ring: var(--brand-red);
-  --ink: oklch(0.115 0.006 260);
-  --ink-soft: oklch(0.17 0.008 260);
+  --ink: oklch(0.12 0.008 20);
+  --ink-soft: oklch(0.17 0.008 20);
   --chart-1: #3987e5; /* blue    */
   --chart-2: #008300; /* green   */
   --chart-3: #d55181; /* magenta */
   --chart-4: #c98500; /* yellow  */
   --chart-5: #199e70; /* aqua    */
-  --sidebar: oklch(0.115 0.006 260);
-  --sidebar-foreground: oklch(0.92 0.005 80);
+  --sidebar: oklch(0.12 0.008 20);
+  --sidebar-foreground: oklch(0.92 0.004 80);
   --sidebar-accent: oklch(0.22 0.02 27);
   --sidebar-accent-foreground: oklch(0.96 0.01 27);
   --sidebar-border: oklch(1 0 0 / 8%);
@@ -159,14 +184,9 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
-    /* Barely-there warm washes so the paper canvas never reads flat. */
-    background-image:
-      radial-gradient(48rem 30rem at 100% 0%, oklch(0.62 0.15 40 / 0.05), transparent 60%),
-      radial-gradient(40rem 26rem at 0% 100%, oklch(0.52 0.2 27 / 0.04), transparent 55%);
-    background-attachment: fixed;
   }
   h1, h2, h3, h4 {
-    letter-spacing: -0.015em;
+    letter-spacing: -0.01em;
   }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
@@ -213,60 +233,123 @@
     min-width: 0;
   }
 
-  /* ---------- Page chrome primitives ---------- */
+  /* ---------- Type hierarchy ----------
+     Level 1: page title    — condensed signage face, large
+     Level 2: section title — condensed, small caps feel, muted weight
+     Level 3: body/data     — Inter 14, numerals always tabular
+     Level 4: labels        — Inter 11 uppercase, steel               */
   .eyebrow {
     @apply text-[11px] uppercase tracking-[0.18em] text-primary font-semibold;
   }
   .page-title {
-    @apply text-[1.85rem] leading-tight font-bold tracking-tight mt-1;
+    @apply text-[1.9rem] leading-none font-semibold;
     font-family: var(--font-display);
+    letter-spacing: 0.01em;
   }
   .page-subtitle {
     @apply text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed;
   }
+  .section-title {
+    @apply text-[1.05rem] leading-none font-semibold uppercase tracking-[0.06em] text-foreground;
+    font-family: var(--font-display);
+  }
 
-  /* Elevated card surface: layered shadow + faint inner top highlight give
-     the "premium paper" depth without visual noise. */
+  /* Card surface: crisp single hairline + minimal lift. Depth comes from
+     hierarchy, not shadow theater. */
   .surface-card {
-    @apply rounded-2xl border border-border bg-card;
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.9),
-      0 1px 2px rgb(16 24 40 / 0.05),
-      0 8px 24px -12px rgb(16 24 40 / 0.12);
+    @apply rounded-xl border border-border bg-card;
+    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
   }
   .dark .surface-card {
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.04),
-      0 1px 2px rgb(0 0 0 / 0.3),
-      0 8px 24px -12px rgb(0 0 0 / 0.5);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
   }
 
-  /* Ink panel: the dark "frame" surface (login backdrop, kiosk, hero bands).
-     Carries a soft signal-red aurora in the corner — the brand's thread. */
+  /* Ink panel: the dark chrome surface (top bar, login, kiosk).
+     Carries a soft signal-red aurora — the brand's thread. */
   .ink-panel {
     background:
-      radial-gradient(56rem 32rem at 85% -10%, oklch(0.52 0.2 27 / 0.28), transparent 60%),
+      radial-gradient(56rem 32rem at 85% -10%, oklch(0.54 0.21 27 / 0.28), transparent 60%),
       radial-gradient(40rem 24rem at -10% 110%, oklch(0.45 0.12 27 / 0.14), transparent 55%),
       var(--ink);
     color: oklch(0.95 0.006 80);
+  }
+
+  /* Brand motif: the three speed lines from the logo, as a compact rule. */
+  .speed-lines {
+    position: relative;
+    display: inline-block;
+    width: 2.25rem;
+    height: 0.875rem;
+  }
+  .speed-lines::before,
+  .speed-lines::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--brand-red);
+    transform: skewX(-24deg);
+  }
+  .speed-lines::before {
+    top: 0;
+    width: 100%;
+  }
+  .speed-lines::after {
+    top: 5.5px;
+    width: 72%;
+  }
+  .speed-lines > i {
+    position: absolute;
+    left: 0;
+    top: 11px;
+    height: 3px;
+    width: 45%;
+    border-radius: 999px;
+    background: var(--brand-red);
+    transform: skewX(-24deg);
   }
 
   /* Signature gradient hairline — used as a top rule on hero cards. */
   .accent-hairline {
     background: linear-gradient(
       90deg,
-      oklch(0.52 0.2 27),
+      oklch(0.54 0.21 27),
       oklch(0.66 0.19 40) 45%,
-      oklch(0.52 0.2 27 / 0) 100%
+      oklch(0.54 0.21 27 / 0) 100%
     );
     height: 3px;
     border-radius: 999px;
   }
 
-  /* Hero numbers on stat tiles: display face, tabular, ink-colored. */
+  /* ---------- KPI band: one strip, cells divided by hairlines ----------
+     The first cell is the page's headline number and reads ~25% larger.  */
+  .kpi-band {
+    @apply grid grid-cols-2 xl:grid-cols-4 overflow-hidden rounded-xl border border-border bg-card;
+    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+  }
+  .dark .kpi-band {
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+  .kpi-cell {
+    @apply flex flex-col gap-1.5 p-5 border-border;
+  }
+  .kpi-band > .kpi-cell:not(:first-child) {
+    border-left-width: 1px;
+  }
+  @media (max-width: 1279.98px) {
+    .kpi-band > .kpi-cell:nth-child(odd) {
+      border-left-width: 0;
+    }
+    .kpi-band > .kpi-cell:nth-child(n + 3) {
+      border-top-width: 1px;
+    }
+  }
   .kpi-value {
-    @apply text-[2rem] leading-none font-bold tracking-tight tabular-nums text-foreground;
-    font-family: var(--font-display);
+    @apply text-[1.9rem] leading-none font-bold tracking-tight tabular-nums text-foreground;
+  }
+  .kpi-cell-hero .kpi-value {
+    @apply text-[2.4rem];
   }
   .kpi-label {
     @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
@@ -286,10 +369,31 @@
     @apply border-transparent bg-[oklch(0.62_0.15_65_/_0.15)] text-[oklch(0.46_0.13_60)] dark:bg-[oklch(0.75_0.14_70_/_0.16)] dark:text-[oklch(0.85_0.13_75)];
   }
   .chip-bad {
-    @apply border-transparent bg-[oklch(0.52_0.2_27_/_0.12)] text-[oklch(0.44_0.18_27)] dark:bg-[oklch(0.66_0.2_27_/_0.16)] dark:text-[oklch(0.8_0.15_27)];
+    @apply border-transparent bg-[oklch(0.54_0.21_27_/_0.12)] text-[oklch(0.44_0.18_27)] dark:bg-[oklch(0.66_0.2_27_/_0.16)] dark:text-[oklch(0.8_0.15_27)];
   }
   .chip-neutral {
     @apply border-border bg-muted/60 text-muted-foreground;
+  }
+
+  /* ---------- Top bar navigation ---------- */
+  .topbar-link {
+    @apply relative flex h-14 items-center gap-2 px-3.5 text-sm font-medium text-white/65 transition-colors;
+  }
+  .topbar-link:hover {
+    @apply text-white;
+  }
+  .topbar-link[data-active="true"] {
+    @apply text-white;
+  }
+  .topbar-link[data-active="true"]::after {
+    content: "";
+    position: absolute;
+    left: 0.875rem;
+    right: 0.875rem;
+    bottom: 0;
+    height: 3px;
+    border-radius: 999px 999px 0 0;
+    background: var(--brand-red-bright);
   }
 
   /* Card entrance: subtle rise, staggered by inline delay. */

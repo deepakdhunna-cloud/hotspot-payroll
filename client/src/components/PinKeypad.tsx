@@ -86,8 +86,8 @@ export default function PinKeypad() {
               <Lock className="h-3 w-3" /> Secure access
             </span>
             <h1
-              className="text-2xl font-bold tracking-tight"
-              style={{ fontFamily: "var(--font-display)" }}
+              className="text-[1.75rem] leading-none font-semibold"
+              style={{ fontFamily: "var(--font-display)", letterSpacing: "0.01em" }}
             >
               Enter your PIN
             </h1>

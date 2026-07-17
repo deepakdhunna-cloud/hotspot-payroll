@@ -15,17 +15,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StatCard } from "@/components/StatCard";
+import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
 import {
   AlertTriangle,
-  CalendarDays,
   Check,
   Clock,
   Download,
-  DollarSign,
   FileSpreadsheet,
   Loader2,
   Pencil,
@@ -229,51 +227,48 @@ export default function HoursAndPayTab({
 
   return (
     <div className="space-y-6">
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard
-          label="Total hours entered"
-          value={`${totals.hoursTotal.toFixed(1)} h`}
-          icon={<Clock />}
-        />
-        <StatCard
+      <KpiBand className="grid-cols-2 xl:grid-cols-3">
+        <KpiCell
+          hero
           label="Projected gross"
           value={fmtMoney(totals.grossTotal)}
-          icon={<DollarSign />}
-          style={{ animationDelay: "60ms" }}
+          sub="live total for the entries below"
         />
-        <StatCard
-          label="Week of"
-          value={fmtWeekRange(weekStart)}
-          icon={<CalendarDays />}
-          style={{ animationDelay: "120ms" }}
-          footer={
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExport}
-                disabled={!weekQ.data || weekQ.data.employees.length === 0}
-                title="Download this week as an .xlsx spreadsheet (opens in Google Sheets)"
-              >
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Export .xlsx
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSaveAll}
-                disabled={saveHoursM.isPending}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {saveHoursM.isPending ? "Saving…" : "Save all"}
-              </Button>
-            </div>
-          }
+        <KpiCell
+          label="Hours entered"
+          value={`${totals.hoursTotal.toFixed(1)} h`}
+          sub={`week of ${fmtWeekRange(weekStart)}`}
         />
-      </section>
+        <KpiCell
+          label="Saved"
+          value={`${(weekQ.data?.employees ?? []).filter((r) => r.entry).length}/${weekQ.data?.employees.length ?? 0}`}
+          sub="entries committed for this week"
+        />
+      </KpiBand>
 
       <Card className="surface-card border-0">
-        <CardHeader>
-          <CardTitle>Hours worked</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="section-title">Hours worked</CardTitle>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={!weekQ.data || weekQ.data.employees.length === 0}
+              title="Download this week as an .xlsx spreadsheet (opens in Google Sheets)"
+            >
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export .xlsx
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveAll}
+              disabled={saveHoursM.isPending}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saveHoursM.isPending ? "Saving…" : "Save all"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">
@@ -483,7 +478,7 @@ export default function HoursAndPayTab({
                         {saving[emp.id] ? (
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground inline" />
                         ) : row.entry ? (
-                          <span className="text-xs text-emerald-600 inline-flex items-center gap-1">
+                          <span className="text-xs text-success inline-flex items-center gap-1">
                             <Check className="h-3 w-3" /> Saved
                           </span>
                         ) : (
