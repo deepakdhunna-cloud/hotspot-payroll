@@ -30,11 +30,12 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, STORE_ABBR } from "@/lib/format";
-import { KeyRound, Phone, Plus, Search, Users, ArrowRight, X } from "lucide-react";
+import { KeyRound, Phone, Plus, Search, Users, ArrowRight, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import { StoreSelect } from "@/components/StoreSelect";
 
@@ -73,6 +74,22 @@ export default function Employees() {
   const stores = scopeQ.data?.stores ?? [];
   const roles = optionsQ.data?.roles ?? [];
   const utils = trpc.useUtils();
+
+  const bulkDeleteM = trpc.employees.bulkDelete.useMutation({
+    onSuccess: ({ deleted, skipped }) => {
+      if (deleted > 0)
+        toast.success(
+          `Deleted ${deleted} employee${deleted === 1 ? "" : "s"}. Full snapshots are kept in the activity log.`,
+        );
+      if (skipped.length > 0)
+        toast.warning(`${skipped.length} skipped (not in your scope).`);
+      setSelected(new Set());
+      utils.employees.list.invalidate();
+      utils.dashboard.summary.invalidate();
+      utils.attention.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const bulkM = trpc.employees.bulkUpdate.useMutation({
     onSuccess: ({ updated, skipped }) => {
@@ -236,6 +253,23 @@ export default function Employees() {
                 <ArrowRight className="h-4 w-4 mr-1" />
                 {bulkM.isPending ? "Applying…" : "Apply to selected"}
               </Button>
+              <ConfirmDialog
+                trigger={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9 text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
+                    disabled={bulkDeleteM.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1.5" />
+                    {bulkDeleteM.isPending ? "Deleting…" : `Delete ${selected.size}`}
+                  </Button>
+                }
+                title={`Permanently delete ${selected.size} employee${selected.size === 1 ? "" : "s"}?`}
+                description="This removes their profiles AND their punch history, payroll entries and scheduled shifts. A full snapshot of every deleted record is written to the activity log first, so nothing is lost forever — but this list can't be un-deleted from the app. If someone just stopped working here, consider deactivating from their profile instead."
+                confirmLabel={`Delete ${selected.size} employee${selected.size === 1 ? "" : "s"}`}
+                onConfirm={() => bulkDeleteM.mutate({ ids: Array.from(selected) })}
+              />
             </div>
           </div>
         )}

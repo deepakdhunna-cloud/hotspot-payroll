@@ -519,6 +519,47 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    /**
+     * Bulk delete — same contract as single delete, per employee: scope
+     * check (out-of-scope ids are skipped, never silently deleted), a full
+     * audit snapshot of the profile AND payroll history BEFORE the
+     * transactional removal of the employee + punches + shifts + payroll.
+     */
+    bulkDelete: protectedProcedure
+      .input(z.object({ ids: z.array(z.number().int()).min(1).max(100) }))
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        let deleted = 0;
+        const skipped: number[] = [];
+        for (const id of input.ids) {
+          const emp = await getEmployeeById(id);
+          if (
+            !emp ||
+            (!scope.isAdmin &&
+              !scope.stores.includes(emp.storeLocation as Store))
+          ) {
+            skipped.push(id);
+            continue;
+          }
+          const history = await getEmployeePayrollHistory(id, 520);
+          await logAudit({
+            actorScope: ctx.session.scope,
+            action: "employees.delete",
+            entityType: "employee",
+            entityId: id,
+            detail: JSON.stringify({
+              employee: emp,
+              payrollHistory: history,
+              bulk: true,
+            }),
+            ip: requestIp(ctx.req),
+          });
+          await deleteEmployee(id);
+          deleted++;
+        }
+        return { deleted, skipped };
+      }),
+
     history: protectedProcedure
       .input(z.object({ id: z.number().int() }))
       .query(async ({ ctx, input }) => {
