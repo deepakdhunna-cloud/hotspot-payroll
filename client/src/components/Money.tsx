@@ -13,15 +13,20 @@ export function Money({
   className?: string;
 }) {
   const neg = value < 0;
-  const abs = Math.abs(value);
-  const dollars = Math.floor(abs);
-  const cents = Math.round((abs - dollars) * 100);
+  // Let Intl do ALL the rounding, then split its output — guarantees the
+  // digits are always identical to what fmtMoney showed before this
+  // component existed (carry, half-up cases, grouping — everything).
+  const formatted = Math.abs(value).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const dot = formatted.lastIndexOf(".");
+  const dollars = formatted.slice(0, dot);
+  const cents = formatted.slice(dot + 1);
   return (
     <span className={cn("tabular-nums", className)}>
-      {neg ? "−" : ""}${dollars.toLocaleString("en-US")}
-      <span className="text-[0.58em] font-semibold opacity-55">
-        .{String(cents === 100 ? 0 : cents).padStart(2, "0")}
-      </span>
+      {neg ? "−" : ""}${dollars}
+      <span className="text-[0.58em] font-semibold opacity-55">.{cents}</span>
     </span>
   );
 }

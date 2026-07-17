@@ -193,6 +193,7 @@ export default function HoursAndPayTab({
     });
     const periodLabel = fmtWeekRange(weekStart);
     const filename = `Hotspot-Payroll-${periodLabel.replace(/\s/g, "")}.xlsx`;
+    try {
     await exportXlsx<{
       employee: string;
       store: string;
@@ -224,6 +225,12 @@ export default function HoursAndPayTab({
       totalsLabel: "Totals",
     });
     toast.success("Spreadsheet downloaded.");
+    } catch (err) {
+      console.error("[Export] failed:", err);
+      toast.error(
+        "Couldn't build the spreadsheet — a new version of the app was likely deployed. Refresh the page (your saved entries are safe) and export again.",
+      );
+    }
   };
 
   return (

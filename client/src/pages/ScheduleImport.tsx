@@ -5,6 +5,8 @@
  * suggestions (typos, nicknames, initials), and genuinely new names can be
  * added to the roster inline. Nothing touches payroll until commit.
  */
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { InitialsBadge } from "@/components/InitialsBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +43,7 @@ import {
   inProgressPayWeekStart,
   payWeekDays,
   shortDayLabel,
+  startOfPayWeek,
   toDateInput,
 } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
@@ -48,6 +51,7 @@ import {
   AlertCircle,
   ArrowRight,
   CalendarDays,
+  CalendarRange,
   CheckCircle2,
   ExternalLink,
   FileImage,
@@ -161,6 +165,8 @@ export default function ScheduleImport() {
   const [hourOverrides, setHourOverrides] = useState<Record<number, string>>({});
   const [qaRole, setQaRole] = useState<Record<number, string>>({});
   const [qaRate, setQaRate] = useState<Record<number, string>>({});
+  const [qaPhone, setQaPhone] = useState<Record<number, string>>({});
+  const [qaCode, setQaCode] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -196,6 +202,8 @@ export default function ScheduleImport() {
       setHourOverrides(initialHours);
       setQaRole({});
       setQaRate({});
+      setQaPhone({});
+      setQaCode({});
       const matched = data.rows.filter((r) => r.matchedEmployeeId).length;
       toast.success(
         `Read ${data.totalExtracted} people and ${data.totalHours.toFixed(1)} hours — ${matched} matched your roster automatically.`,
@@ -352,11 +360,18 @@ export default function ScheduleImport() {
     if (!rows || !effectiveStore) return;
     const r = rows[idx];
     const rate = Number(qaRate[idx]);
+    const code = (qaCode[idx] ?? "").trim();
+    if (code && !/^\d{4}$/.test(code)) {
+      toast.error("Clock code must be exactly 4 digits (or leave it blank).");
+      return;
+    }
     quickCreateM.mutate({
       fullName: r.extractedName.trim(),
       storeLocation: effectiveStore as any,
       role: (qaRole[idx] ?? "Cashier") as any,
       payRate: isNaN(rate) || rate < 0 ? undefined : rate,
+      phone: (qaPhone[idx] ?? "").trim() || undefined,
+      clockCode: code || undefined,
     });
   };
 
@@ -368,11 +383,14 @@ export default function ScheduleImport() {
       unmatchedIndices.map((i) => {
         const r = rows[i];
         const rate = Number(qaRate[i]);
+        const code = (qaCode[i] ?? "").trim();
         return quickCreateM.mutateAsync({
           fullName: r.extractedName.trim(),
           storeLocation: effectiveStore as any,
           role: (qaRole[i] ?? "Cashier") as any,
           payRate: isNaN(rate) || rate < 0 ? undefined : rate,
+          phone: (qaPhone[i] ?? "").trim() || undefined,
+          clockCode: /^\d{4}$/.test(code) ? code : undefined,
         });
       }),
     );
@@ -532,8 +550,9 @@ export default function ScheduleImport() {
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
                   If it's a familiar face under a different spelling, use the one-click link.
-                  If they're genuinely new, set a role and rate (editable later) and add them —
-                  their scheduled hours import automatically. Unlinked names are skipped.
+                  If they're genuinely new, set a role and rate — phone and a 4-digit kiosk
+                  code are optional here and can be added anytime from their profile. Their
+                  scheduled hours import automatically; unlinked names are skipped.
                 </p>
               </CardHeader>
               <CardContent className="space-y-2.5">
@@ -573,6 +592,28 @@ export default function ScheduleImport() {
                           value={qaRate[i] ?? ""}
                           onChange={(e) => setQaRate((m) => ({ ...m, [i]: e.target.value }))}
                           className="h-8 w-24 text-xs text-right tabular-nums"
+                        />
+                        <Input
+                          type="tel"
+                          placeholder="phone (optional)"
+                          value={qaPhone[i] ?? ""}
+                          onChange={(e) => setQaPhone((m) => ({ ...m, [i]: e.target.value }))}
+                          className="h-8 w-36 text-xs"
+                          title="Optional — can be added later on the profile"
+                        />
+                        <Input
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder="kiosk code"
+                          value={qaCode[i] ?? ""}
+                          onChange={(e) =>
+                            setQaCode((m) => ({
+                              ...m,
+                              [i]: e.target.value.replace(/[^0-9]/g, "").slice(0, 4),
+                            }))
+                          }
+                          className="h-8 w-24 text-xs text-center tabular-nums tracking-widest"
+                          title="Optional 4-digit clock-in code — can be set later on the profile"
                         />
                         <Button
                           size="sm"
@@ -770,6 +811,7 @@ export default function ScheduleImport() {
         loading={scheduleWeekQ.isLoading}
         imports={importsQ.data ?? []}
         employees={employeesList}
+        onMoved={setWeekStart}
       />
 
       {/* How it works + import history */}
@@ -899,18 +941,55 @@ function WeekScheduleBoard({
   loading,
   imports,
   employees,
+  onMoved,
 }: {
   weekStart: Date;
   shifts: BoardShift[];
   loading: boolean;
   imports: ImportRow[];
   employees: { id: number; fullName: string }[];
+  onMoved?: (to: Date) => void;
 }) {
   const utils = trpc.useUtils();
   const [editFor, setEditFor] = useState<{ id: number; name: string } | null>(null);
   const [addPick, setAddPick] = useState<string>("");
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveTarget, setMoveTarget] = useState("");
+  const moveWeekM = trpc.schedule.moveWeek.useMutation({
+    onSuccess: ({ moved, toWeek }) => {
+      const to = new Date(toWeek);
+      toast.success(
+        `Moved ${moved} shift${moved === 1 ? "" : "s"} to the week of ${fmtWeekRange(to)}.`,
+      );
+      setMoveOpen(false);
+      setMoveTarget("");
+      utils.schedule.week.invalidate();
+      utils.payroll.week.invalidate();
+      utils.dashboard.summary.invalidate();
+      utils.attention.list.invalidate();
+      onMoved?.(to);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteWeekM = trpc.schedule.deleteWeek.useMutation({
+    onSuccess: ({ deleted }) => {
+      toast.success(
+        `Deleted this week's schedule (${deleted} shift${deleted === 1 ? "" : "s"}). A snapshot is kept in the activity log.`,
+      );
+      utils.schedule.week.invalidate();
+      utils.payroll.week.invalidate();
+      utils.dashboard.summary.invalidate();
+      utils.attention.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const days = payWeekDays(weekStart);
+  // Today in store time, for the highlighted column.
+  const todayKey = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Chicago",
+  });
   const byEmployee = useMemo(() => {
     const m = new Map<number, { name: string; total: number; byDay: Map<string, BoardShift[]> }>();
     for (const s of shifts) {
@@ -985,6 +1064,35 @@ function WeekScheduleBoard({
               <ExternalLink className="h-4 w-4 mr-1.5" /> View uploaded schedule
             </Button>
           ) : null}
+          {shifts.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMoveOpen(true)}
+              title="Slide this whole schedule to a different pay week (wrong dates uploaded)"
+            >
+              <CalendarRange className="h-4 w-4 mr-1.5" /> Move week
+            </Button>
+          ) : null}
+          {shifts.length > 0 ? (
+            <ConfirmDialog
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
+                  title="Remove this week's committed schedule (wrong week uploaded, etc.)"
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" /> Delete week
+                </Button>
+              }
+              title={`Delete the schedule for ${fmtWeekRange(weekStart)}?`}
+              description={`Removes all ${shifts.length} shift${shifts.length === 1 ? "" : "s"} across ${byEmployee.size} ${byEmployee.size === 1 ? "person" : "people"} and clears their scheduled hours for this week — use this when a schedule was uploaded against the wrong week. Worked hours and pay are untouched, the original file stays in Recent imports, and a full snapshot is kept in the activity log. You can re-import or rebuild the week afterwards.`}
+              confirmLabel="Delete this week's schedule"
+              onConfirm={() => deleteWeekM.mutate({ weekStart })}
+              disabled={deleteWeekM.isPending}
+            />
+          ) : null}
           {addable.length > 0 && shifts.length > 0 ? (
             <Select
               value={addPick || undefined}
@@ -1023,11 +1131,27 @@ function WeekScheduleBoard({
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-[160px]">Employee</TableHead>
-                  {days.map((d) => (
-                    <TableHead key={d.toISOString()} className="text-center min-w-[92px]">
-                      {shortDayLabel(d)}
-                    </TableHead>
-                  ))}
+                  {days.map((d) => {
+                    const isToday = toDateInput(d) === todayKey;
+                    return (
+                      <TableHead
+                        key={d.toISOString()}
+                        className={`text-center min-w-[96px] ${isToday ? "bg-primary/5" : ""}`}
+                      >
+                        <span className="block leading-tight">
+                          {shortDayLabel(d).split(" ")[0]}
+                        </span>
+                        <span
+                          className={`block text-[15px] leading-tight font-bold tabular-nums normal-case tracking-normal ${
+                            isToday ? "text-primary" : "text-foreground"
+                          }`}
+                          style={{ fontFamily: "var(--font-display)" }}
+                        >
+                          {d.getUTCDate()}
+                        </span>
+                      </TableHead>
+                    );
+                  })}
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="w-[52px]" />
                 </TableRow>
@@ -1036,27 +1160,45 @@ function WeekScheduleBoard({
                 {Array.from(byEmployee.entries())
                   .sort((a, b) => a[1].name.localeCompare(b[1].name))
                   .map(([empId, rec]) => (
-                    <TableRow key={empId}>
-                      <TableCell className="font-medium">{rec.name}</TableCell>
+                    <TableRow key={empId} className="group">
+                      <TableCell>
+                        <div className="flex items-center gap-2.5">
+                          <InitialsBadge name={rec.name} size="sm" />
+                          <span className="font-medium">{rec.name}</span>
+                        </div>
+                      </TableCell>
                       {days.map((d) => {
                         const cell = rec.byDay.get(toDateInput(d)) ?? [];
+                        const isToday = toDateInput(d) === todayKey;
                         return (
-                          <TableCell key={d.toISOString()} className="text-center">
+                          <TableCell
+                            key={d.toISOString()}
+                            className={`text-center ${isToday ? "bg-primary/[0.03]" : ""}`}
+                          >
                             {cell.length === 0 ? (
-                              <span className="text-muted-foreground/40">—</span>
+                              <span className="text-muted-foreground/30">·</span>
                             ) : (
-                              cell.map((s) => (
-                                <div key={s.id} className="leading-tight py-0.5">
-                                  {s.startLabel && s.endLabel ? (
-                                    <div className="text-[11px] text-muted-foreground whitespace-nowrap">
-                                      {s.startLabel}–{s.endLabel}
-                                    </div>
-                                  ) : null}
-                                  <div className="text-xs font-semibold tabular-nums">
-                                    {s.hours.toFixed(1)}h
+                              <div className="flex flex-col items-center gap-1 py-0.5">
+                                {cell.map((s) => (
+                                  <div
+                                    key={s.id}
+                                    className="inline-flex flex-col items-center rounded-lg border px-2 py-1 leading-tight"
+                                    style={{
+                                      background: "#2a78d612",
+                                      borderColor: "#2a78d630",
+                                    }}
+                                  >
+                                    {s.startLabel && s.endLabel ? (
+                                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                        {s.startLabel}–{s.endLabel}
+                                      </span>
+                                    ) : null}
+                                    <span className="text-xs font-bold tabular-nums text-[#1d5eae]">
+                                      {s.hours.toFixed(1)}h
+                                    </span>
                                   </div>
-                                </div>
-                              ))
+                                ))}
+                              </div>
                             )}
                           </TableCell>
                         );
@@ -1068,7 +1210,7 @@ function WeekScheduleBoard({
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7"
+                          className="h-7 w-7 opacity-40 group-hover:opacity-100 transition-opacity"
                           onClick={() => setEditFor({ id: empId, name: rec.name })}
                           aria-label={`Edit ${rec.name}'s week`}
                         >
@@ -1081,11 +1223,20 @@ function WeekScheduleBoard({
                   <TableCell className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Coverage
                   </TableCell>
-                  {dayTotals.map((t, i) => (
-                    <TableCell key={i} className="text-center tabular-nums text-xs font-semibold">
-                      {t > 0 ? `${t.toFixed(1)}h` : "—"}
-                    </TableCell>
-                  ))}
+                  {dayTotals.map((t, i) => {
+                    const maxDay = Math.max(1, ...dayTotals);
+                    return (
+                      <TableCell
+                        key={i}
+                        className="text-center tabular-nums text-xs font-bold"
+                        style={{
+                          background: t > 0 ? `rgba(42,120,214,${(t / maxDay) * 0.16})` : undefined,
+                        }}
+                      >
+                        {t > 0 ? `${t.toFixed(1)}h` : "—"}
+                      </TableCell>
+                    );
+                  })}
                   <TableCell className="text-right tabular-nums font-bold">
                     {weekTotal.toFixed(1)}h
                   </TableCell>
@@ -1096,6 +1247,54 @@ function WeekScheduleBoard({
           </div>
         )}
       </CardContent>
+
+      {moveOpen ? (
+        <Dialog open onOpenChange={(open) => (!open ? setMoveOpen(false) : null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Move this schedule to a different week</DialogTitle>
+              <DialogDescription>
+                Every shift slides with its day of the week ({shifts.length} shift
+                {shifts.length === 1 ? "" : "s"}, {byEmployee.size}{" "}
+                {byEmployee.size === 1 ? "person" : "people"}) and scheduled hours follow.
+                The target week must be empty — delete or move it first if not.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Input
+                type="date"
+                value={moveTarget}
+                onChange={(e) => setMoveTarget(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {moveTarget
+                  ? `Snaps to the pay week of ${fmtWeekRange(startOfPayWeek(fromDateInput(moveTarget)))} (Thu–Wed).`
+                  : "Pick any date — it snaps to that pay week's Thursday."}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setMoveOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={!moveTarget || moveWeekM.isPending}
+                onClick={() =>
+                  moveWeekM.mutate({
+                    fromWeek: weekStart,
+                    toWeek: startOfPayWeek(fromDateInput(moveTarget)),
+                  })
+                }
+              >
+                {moveWeekM.isPending
+                  ? "Moving…"
+                  : moveTarget
+                    ? `Move to ${fmtWeekRange(startOfPayWeek(fromDateInput(moveTarget)))}`
+                    : "Move schedule"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {editFor ? (
         <EditWeekDialog
@@ -1190,94 +1389,123 @@ function EditWeekDialog({
 
   return (
     <Dialog open onOpenChange={(open) => (!open ? onClose() : null)}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {employeeName} · week of {fmtWeekRange(weekStart)}
-          </DialogTitle>
-          <DialogDescription>
-            Edit, add or remove shifts. Saving updates the schedule, scheduled hours in
-            payroll, and every dashboard.
-          </DialogDescription>
+      <DialogContent className="sm:max-w-xl p-0 gap-0 overflow-hidden">
+        {/* Ink masthead — the editor opens like a focused work surface */}
+        <DialogHeader className="ink-panel px-6 pt-5 pb-4 space-y-0">
+          <div className="flex items-center gap-3">
+            <InitialsBadge name={employeeName} />
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-white section-title normal-case tracking-normal text-[1.15rem]">
+                {employeeName}
+              </DialogTitle>
+              <DialogDescription className="text-white/60 text-xs mt-0.5">
+                Week of {fmtWeekRange(weekStart)} · edits flow to payroll and every dashboard
+              </DialogDescription>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-white/50 font-semibold">
+                Week total
+              </div>
+              <div
+                className="text-[1.6rem] leading-none font-bold text-white tabular-nums"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {total.toFixed(1)}h
+              </div>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="space-y-2 max-h-[46vh] overflow-y-auto pr-1">
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No shifts this week — add one below.
-            </p>
-          ) : (
-            rows.map((r, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Select
-                  value={r.date}
-                  onValueChange={(v) =>
-                    setRows((rs) => rs.map((x, j) => (j === i ? { ...x, date: v } : x)))
-                  }
-                >
-                  <SelectTrigger className="h-9 w-[7.5rem] text-xs shrink-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {days.map((d) => (
-                      <SelectItem key={d.toISOString()} value={toDateInput(d)}>
-                        {shortDayLabel(d)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  placeholder="9:00am"
-                  value={r.startLabel}
-                  onChange={(e) =>
-                    setRows((rs) =>
-                      rs.map((x, j) => (j === i ? { ...x, startLabel: e.target.value } : x)),
-                    )
-                  }
-                  className="h-9 text-xs"
-                />
-                <Input
-                  placeholder="5:00pm"
-                  value={r.endLabel}
-                  onChange={(e) =>
-                    setRows((rs) =>
-                      rs.map((x, j) => (j === i ? { ...x, endLabel: e.target.value } : x)),
-                    )
-                  }
-                  className="h-9 text-xs"
-                />
-                <Input
-                  type="number"
-                  step="0.25"
-                  min="0"
-                  max="24"
-                  placeholder="h"
-                  value={r.hours}
-                  onChange={(e) =>
-                    setRows((rs) =>
-                      rs.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)),
-                    )
-                  }
-                  className="h-9 w-20 text-xs text-right tabular-nums shrink-0"
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-                  aria-label="Remove shift"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))
-          )}
-        </div>
+        <div className="px-6 pt-4 pb-2">
+          {/* Column voice — labels once, not per row */}
+          <div className="grid grid-cols-[7.5rem_1fr_1fr_5rem_2rem] gap-2 px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            <span>Day</span>
+            <span>Start</span>
+            <span>End</span>
+            <span className="text-right">Hours</span>
+            <span />
+          </div>
 
-        <div className="flex items-center justify-between">
+          <div className="space-y-1.5 max-h-[42vh] overflow-y-auto pr-1">
+            {rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                No shifts this week — add the first one below.
+              </p>
+            ) : (
+              rows.map((r, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[7.5rem_1fr_1fr_5rem_2rem] items-center gap-2 rounded-lg border border-border bg-muted/30 px-1.5 py-1.5 transition-colors hover:bg-muted/50"
+                >
+                  <Select
+                    value={r.date}
+                    onValueChange={(v) =>
+                      setRows((rs) => rs.map((x, j) => (j === i ? { ...x, date: v } : x)))
+                    }
+                  >
+                    <SelectTrigger className="h-9 text-xs font-semibold bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {days.map((d) => (
+                        <SelectItem key={d.toISOString()} value={toDateInput(d)}>
+                          {shortDayLabel(d)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="9:00am"
+                    value={r.startLabel}
+                    onChange={(e) =>
+                      setRows((rs) =>
+                        rs.map((x, j) => (j === i ? { ...x, startLabel: e.target.value } : x)),
+                      )
+                    }
+                    className="h-9 text-xs bg-card"
+                  />
+                  <Input
+                    placeholder="5:00pm"
+                    value={r.endLabel}
+                    onChange={(e) =>
+                      setRows((rs) =>
+                        rs.map((x, j) => (j === i ? { ...x, endLabel: e.target.value } : x)),
+                      )
+                    }
+                    className="h-9 text-xs bg-card"
+                  />
+                  <Input
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    max="24"
+                    placeholder="0"
+                    value={r.hours}
+                    onChange={(e) =>
+                      setRows((rs) =>
+                        rs.map((x, j) => (j === i ? { ...x, hours: e.target.value } : x)),
+                      )
+                    }
+                    className="h-9 text-xs text-right tabular-nums font-semibold bg-card"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground/60 hover:text-destructive"
+                    onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                    aria-label="Remove shift"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+
           <Button
             size="sm"
             variant="outline"
+            className="mt-3 w-full border-dashed"
             onClick={() =>
               setRows((rs) => [
                 ...rs,
@@ -1287,17 +1515,14 @@ function EditWeekDialog({
           >
             <Plus className="h-4 w-4 mr-1.5" /> Add shift
           </Button>
-          <span className="text-sm tabular-nums text-muted-foreground">
-            week total: <span className="font-bold text-foreground">{total.toFixed(1)}h</span>
-          </span>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 mt-2 border-t border-border bg-muted/30">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={save} disabled={commitM.isPending}>
-            {commitM.isPending ? "Saving…" : "Save week"}
+            {commitM.isPending ? "Saving…" : `Save week · ${total.toFixed(1)}h`}
           </Button>
         </DialogFooter>
       </DialogContent>

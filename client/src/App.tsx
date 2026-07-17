@@ -16,13 +16,26 @@ import { useLocation } from "wouter";
  * exist (old hashes are gone). Instead of a broken page, reload once to
  * pick up the new build — a session flag prevents reload loops.
  */
+let reloadedThisLifetime = false;
 function lazyWithReload(load: () => Promise<{ default: React.ComponentType<any> }>) {
   return lazy(() =>
     load().catch((err) => {
-      const KEY = "chunk-reload-at";
-      const last = Number(sessionStorage.getItem(KEY) ?? 0);
+      // Dev keeps the real error visible; storage access is guarded because
+      // locked-down kiosk webviews can throw on sessionStorage itself.
+      if (import.meta.env.DEV || reloadedThisLifetime) throw err;
+      let last = 0;
+      try {
+        last = Number(sessionStorage.getItem("chunk-reload-at") ?? 0);
+      } catch {
+        /* storage unavailable — the in-memory flag still bounds reloads */
+      }
       if (Date.now() - last > 30_000) {
-        sessionStorage.setItem(KEY, String(Date.now()));
+        reloadedThisLifetime = true;
+        try {
+          sessionStorage.setItem("chunk-reload-at", String(Date.now()));
+        } catch {
+          /* same */
+        }
         window.location.reload();
         // Keep the promise pending while the reload happens.
         return new Promise<never>(() => {});

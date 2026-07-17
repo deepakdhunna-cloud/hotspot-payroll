@@ -747,3 +747,33 @@ export async function reopenAttentionItems(ids: number[]) {
     })
     .where(inArray(attentionItems.id, ids));
 }
+
+/**
+ * Wipe a week's schedule for the given stores in one transaction: all
+ * day-level shifts go, and the matching payroll entries' scheduledHours
+ * reset to 0 (hoursWorked / pay stay untouched). Callers must audit-log a
+ * snapshot of the deleted shifts first — nothing is ever silently lost.
+ */
+export async function deleteWeekSchedule(weekStart: Date, stores: string[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(scheduleShifts)
+      .where(
+        and(
+          eq(scheduleShifts.weekStart, weekStart),
+          inArray(scheduleShifts.storeLocation, stores)
+        )
+      );
+    await tx
+      .update(payrollEntries)
+      .set({ scheduledHours: "0.00" })
+      .where(
+        and(
+          eq(payrollEntries.weekStart, weekStart),
+          inArray(payrollEntries.storeLocation, stores)
+        )
+      );
+  });
+}

@@ -85,6 +85,7 @@ export default function HistoryTab({
     const filename = `Hotspot-Payroll-History-${toDateInput(
       startWeek,
     )}_to_${toDateInput(endWeek)}.xlsx`;
+    try {
     await exportXlsx<{
       employee: string;
       store: string;
@@ -148,6 +149,12 @@ export default function HistoryTab({
       totalsLabel: "Totals",
     });
     toast.success("Spreadsheet downloaded.");
+    } catch (err) {
+      console.error("[Export] failed:", err);
+      toast.error(
+        "Couldn't build the spreadsheet — a new version of the app was likely deployed. Refresh the page and export again.",
+      );
+    }
   };
 
   return (

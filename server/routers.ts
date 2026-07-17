@@ -21,6 +21,7 @@ import {
   deactivateEmployee,
   deleteEmployee,
   deletePunch,
+  deleteWeekSchedule,
   findEmployeesWithClockCodes,
   findOpenPunch,
   findOpenPunches,
@@ -244,6 +245,12 @@ export const appRouter = router({
           storeLocation: StoreEnum,
           role: RoleEnum.optional(),
           payRate: z.number().min(0).max(1000).optional(),
+          /** Optional at add time — both editable later on the profile. */
+          phone: z.string().max(32).optional(),
+          clockCode: z
+            .string()
+            .regex(/^\d{4}$/, "Clock code must be 4 digits")
+            .optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -254,13 +261,32 @@ export const appRouter = router({
             message: "You can only add employees to your assigned store.",
           });
         }
+        // Validate the kiosk code BEFORE creating, so a duplicate code never
+        // leaves a half-configured employee behind.
+        if (input.clockCode) {
+          const peers = await findEmployeesWithClockCodes(input.storeLocation);
+          for (const peer of peers) {
+            if (
+              peer.clockCodeHash &&
+              verifyClockCode(input.clockCode, peer.id, peer.clockCodeHash)
+            ) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message: `That clock code is already used by ${peer.fullName} at ${input.storeLocation}. Pick a different 4-digit code (or leave it blank and set it later).`,
+              });
+            }
+          }
+        }
         const id = await createEmployee({
           fullName: input.fullName.trim(),
-          phone: "—",
+          phone: input.phone?.trim() || "—",
           payRate: String(input.payRate ?? 0),
           role: input.role ?? "Cashier",
           storeLocation: input.storeLocation,
         });
+        if (input.clockCode) {
+          await setClockCodeHash(id, hashClockCode(input.clockCode, id));
+        }
         void logAudit({
           actorScope: ctx.session.scope,
           action: "employees.quickCreate",
@@ -269,6 +295,8 @@ export const appRouter = router({
           detail: JSON.stringify({
             fullName: input.fullName.trim(),
             store: input.storeLocation,
+            withPhone: !!input.phone,
+            withClockCode: !!input.clockCode,
           }),
           ip: requestIp(ctx.req),
         });
@@ -2204,6 +2232,164 @@ export const appRouter = router({
               `Employee #${s.employeeId}`,
           })),
         };
+      }),
+
+    /**
+     * Delete a week's committed schedule — the undo for uploading against
+     * the wrong week. Removes every day-level shift for the scope's store(s)
+     * and zeroes scheduledHours on that week's payroll entries (worked hours
+     * and pay are untouched). A full snapshot of the deleted shifts goes to
+     * the audit log first, and the original uploaded file stays in imports.
+     */
+    deleteWeek: protectedProcedure
+      .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const stores = resolveStores(scope, input.store) ?? [...STORES];
+        const week = getWeekStart(input.weekStart);
+        const shifts = await getShiftsForWeek(week, stores);
+        if (shifts.length === 0) {
+          return { deleted: 0 };
+        }
+        // Snapshot BEFORE deleting — same never-lose-data contract as
+        // employee deletion.
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "schedule.deleteWeek",
+          entityType: "schedule",
+          detail: JSON.stringify({
+            weekStart: week.toISOString(),
+            stores,
+            shiftCount: shifts.length,
+            snapshot: shifts.map(s => ({
+              employeeId: s.employeeId,
+              storeLocation: s.storeLocation,
+              shiftDate: s.shiftDate,
+              startLabel: s.startLabel,
+              endLabel: s.endLabel,
+              hours: s.hours,
+              importId: s.importId,
+            })),
+          }),
+          ip: requestIp(ctx.req),
+        });
+        await deleteWeekSchedule(week, stores);
+        return { deleted: shifts.length };
+      }),
+
+    /**
+     * Move a week's committed schedule to a different pay week — the rescue
+     * for a schedule uploaded against the wrong dates. Every shift slides by
+     * the week delta (day-of-week preserved), scheduled hours follow to the
+     * target week's payroll entries, and the source week is cleared last
+     * (copy-then-delete: a mid-move failure can duplicate, never lose).
+     */
+    moveWeek: protectedProcedure
+      .input(
+        z.object({
+          fromWeek: z.date(),
+          toWeek: z.date(),
+          store: StoreEnum.optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const stores = resolveStores(scope, input.store) ?? [...STORES];
+        const from = getWeekStart(input.fromWeek);
+        const to = getWeekStart(input.toWeek);
+        if (from.getTime() === to.getTime()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "That is the same pay week — pick a different one.",
+          });
+        }
+        const shifts = await getShiftsForWeek(from, stores);
+        if (shifts.length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "There is no committed schedule in that week to move.",
+          });
+        }
+        const targetShifts = await getShiftsForWeek(to, stores);
+        if (targetShifts.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "The target week already has a schedule. Delete or move that week first, then retry.",
+          });
+        }
+
+        const deltaDays = Math.round(
+          (to.getTime() - from.getTime()) / 86_400_000
+        );
+        const empIds = Array.from(new Set(shifts.map(s => s.employeeId)));
+        const emps = await getEmployeesByIds(empIds);
+        const empById = new Map(emps.map(e => [e.id, e]));
+        const targetEntries = await getPayrollByWeek(to);
+        const targetByEmp = new Map(targetEntries.map(e => [e.employeeId, e]));
+
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "schedule.moveWeek",
+          entityType: "schedule",
+          detail: JSON.stringify({
+            fromWeek: from.toISOString(),
+            toWeek: to.toISOString(),
+            stores,
+            shiftCount: shifts.length,
+          }),
+          ip: requestIp(ctx.req),
+        });
+
+        // 1. Copy every employee's shifts into the target week.
+        const byEmp = new Map<number, typeof shifts>();
+        for (const s of shifts) {
+          byEmp.set(s.employeeId, [...(byEmp.get(s.employeeId) ?? []), s]);
+        }
+        let moved = 0;
+        for (const [empId, empShifts] of Array.from(byEmp.entries())) {
+          const emp = empById.get(empId);
+          if (!emp) continue;
+          const rows = empShifts.map(s => {
+            const d = new Date(s.shiftDate);
+            d.setUTCDate(d.getUTCDate() + deltaDays);
+            return {
+              storeLocation: s.storeLocation,
+              shiftDate: d,
+              startLabel: s.startLabel,
+              endLabel: s.endLabel,
+              hours: String(s.hours),
+              source: s.source,
+              importId: s.importId,
+            };
+          });
+          await replaceWeekShifts(empId, to, rows);
+          const scheduled = empShifts.reduce((a, s) => a + Number(s.hours), 0);
+          const payRate = Number(emp.payRate);
+          const hoursWorked = Number(
+            targetByEmp.get(empId)?.hoursWorked ?? 0
+          );
+          const { regularPay, grossPay } = computeGrossPay(
+            hoursWorked,
+            payRate
+          );
+          await upsertPayrollEntry({
+            employeeId: empId,
+            storeLocation: emp.storeLocation,
+            weekStart: to,
+            hoursWorked: String(hoursWorked),
+            scheduledHours: String(Math.round(scheduled * 100) / 100),
+            payRateSnapshot: String(payRate),
+            regularPay: String(regularPay.toFixed(2)),
+            overtimePay: "0.00",
+            grossPay: String(grossPay.toFixed(2)),
+          });
+          moved += empShifts.length;
+        }
+
+        // 2. Only after every copy landed, clear the source week.
+        await deleteWeekSchedule(from, stores);
+        return { moved, toWeek: to };
       }),
 
     /** Recent schedule uploads for this scope (audit trail of imports). */
