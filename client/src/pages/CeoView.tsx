@@ -9,6 +9,8 @@
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AttentionCenter } from "@/components/AttentionCenter";
+import { InitialsBadge } from "@/components/InitialsBadge";
+import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
@@ -182,7 +184,7 @@ export default function CeoView() {
           <KpiCell
             hero
             label={isLiveWeek ? "Labor cost (live)" : "Gross payroll"}
-            value={fmtMoney(isLiveWeek ? liveLabor : agg.totalGross)}
+            value={<Money value={isLiveWeek ? liveLabor : agg.totalGross} />}
             sub={
               isLiveWeek
                 ? `clocked hours × pay rate · ${focusLabel}`
@@ -248,13 +250,13 @@ export default function CeoView() {
           {isLiveWeek ? (
             <KpiCell
               label="Payroll saved"
-              value={fmtMoney(agg.totalGross)}
+              value={<Money value={agg.totalGross} />}
               sub="saved after the week closes"
             />
           ) : (
             <KpiCell
               label="Net pay (est.)"
-              value={fmtMoney(agg.totalNet)}
+              value={<Money value={agg.totalNet} />}
               sub={`≈ ${fmtMoney(agg.totalFederal + agg.totalState)} withheld (est.)`}
             />
           )}
@@ -431,8 +433,13 @@ export default function CeoView() {
                         .map((r) => (
                           <TableRow key={r.id}>
                             <TableCell>
-                              <span className="font-medium">{r.fullName}</span>
-                              <div className="text-xs text-muted-foreground">{r.role}</div>
+                              <div className="flex items-center gap-2.5">
+                                <InitialsBadge name={r.fullName} size="sm" />
+                                <div className="min-w-0">
+                                  <span className="font-medium">{r.fullName}</span>
+                                  <div className="text-xs text-muted-foreground">{r.role}</div>
+                                </div>
+                              </div>
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">
                               {STORE_ABBR[r.storeLocation] ?? r.storeLocation}

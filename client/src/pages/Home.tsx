@@ -11,6 +11,9 @@
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AttentionCenter } from "@/components/AttentionCenter";
+import { EmptyState } from "@/components/EmptyState";
+import { InitialsBadge } from "@/components/InitialsBadge";
+import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
@@ -131,7 +134,7 @@ export default function Home() {
         title={`Welcome back, ${displayName}`}
         description={
           isLiveWeek
-            ? "Live view — hours and labor cost update as your team clocks in and out."
+            ? `${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} — live view, numbers move as your team clocks in and out.`
             : `Closed week · ${fmtWeekRange(weekStart)} — review what happened and finalize payroll.`
         }
         actions={
@@ -185,7 +188,7 @@ export default function Home() {
           />
           <KpiCell
             label="Projected payroll"
-            value={fmtMoney(totals.totalProjectedGross)}
+            value={<Money value={totals.totalProjectedGross} />}
             sub="worked days at cost + days ahead at schedule"
             footer={
               totals.totalScheduledCost > 0 ? (
@@ -205,7 +208,7 @@ export default function Home() {
           />
           <KpiCell
             label="Scheduled payroll"
-            value={fmtMoney(totals.totalScheduledCost)}
+            value={<Money value={totals.totalScheduledCost} />}
             sub={
               totals.totalScheduledCost > 0
                 ? "this week's schedule × pay rates"
@@ -214,7 +217,7 @@ export default function Home() {
           />
           <KpiCell
             label="Labor cost (live)"
-            value={fmtMoney(totals.totalGross)}
+            value={<Money value={totals.totalGross} />}
             sub="spent so far · clocked × pay rate"
           />
         </KpiBand>
@@ -223,7 +226,7 @@ export default function Home() {
           <KpiCell
             hero
             label="Payroll saved"
-            value={fmtMoney(totals.totalSavedGross)}
+            value={<Money value={totals.totalSavedGross} />}
             sub="committed gross pay for this week"
             footer={
               unsaved.length > 0 ? (
@@ -268,7 +271,7 @@ export default function Home() {
           />
           <KpiCell
             label="Labor cost"
-            value={fmtMoney(totals.totalGross)}
+            value={<Money value={totals.totalGross} />}
             sub="clocked hours × pay rate"
           />
         </KpiBand>
@@ -322,9 +325,10 @@ export default function Home() {
             </CardHeader>
             <CardContent>
               {clockedIn.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  Nobody is clocked in right now.
-                </p>
+                <EmptyState
+                  title="Nobody is on the clock"
+                  hint="This list fills in live as people punch in at the kiosk."
+                />
               ) : (
                 <>
                   <ul className="divide-y divide-border">
@@ -333,18 +337,21 @@ export default function Home() {
                       const long = hrs > 12;
                       return (
                         <li key={c.punchId} className="flex items-center justify-between py-2.5">
-                          <div className="min-w-0">
-                            <Link
-                              href={`/employees/${c.employeeId}`}
-                              className="text-sm font-medium hover:text-primary transition-colors"
-                            >
-                              {c.fullName}
-                            </Link>
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {c.role}
-                              {stores.length > 1
-                                ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
-                                : ""}
+                          <div className="min-w-0 flex items-center gap-2.5">
+                            <InitialsBadge name={c.fullName} size="sm" />
+                            <span className="min-w-0">
+                              <Link
+                                href={`/employees/${c.employeeId}`}
+                                className="text-sm font-medium hover:text-primary transition-colors"
+                              >
+                                {c.fullName}
+                              </Link>
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {c.role}
+                                {stores.length > 1
+                                  ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
+                                  : ""}
+                              </span>
                             </span>
                           </div>
                           <span
@@ -442,10 +449,10 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             {!data?.hasDaySchedule ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No day-level schedule for this week — import the Homebase schedule to see daily
-                coverage.
-              </p>
+              <EmptyState
+                title="No daily coverage yet"
+                hint="Import this week's schedule and each day's staffing shows here."
+              />
             ) : (
               <div className="flex items-end justify-between gap-2 h-32 pt-2">
                 {dayStrip.map((d) => (
@@ -534,22 +541,27 @@ export default function Home() {
                       return (
                         <TableRow key={emp.id}>
                           <TableCell>
-                            <Link
-                              href={`/employees/${emp.id}`}
-                              className="font-medium hover:text-primary transition-colors"
-                            >
-                              {emp.fullName}
-                            </Link>
-                            <div className="text-xs text-muted-foreground">
-                              {emp.role}
-                              {stores.length > 1
-                                ? ` · ${STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}`
-                                : ""}
+                            <div className="flex items-center gap-2.5">
+                              <InitialsBadge name={emp.fullName} />
+                              <div className="min-w-0">
+                                <Link
+                                  href={`/employees/${emp.id}`}
+                                  className="font-medium hover:text-primary transition-colors"
+                                >
+                                  {emp.fullName}
+                                </Link>
+                                <div className="text-xs text-muted-foreground">
+                                  {emp.role}
+                                  {stores.length > 1
+                                    ? ` · ${STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}`
+                                    : ""}
+                                </div>
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <div className="h-2 flex-1 max-w-56 rounded-full bg-muted overflow-hidden">
+                              <div className="h-2.5 flex-1 max-w-56 rounded-full bg-muted shadow-inner overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all"
                                   style={{
@@ -590,12 +602,14 @@ export default function Home() {
                               <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums font-semibold">
-                            {isLiveWeek
-                              ? fmtMoney(emp.clockHours * emp.payRate)
-                              : emp.grossPay > 0
-                                ? fmtMoney(emp.grossPay)
-                                : "—"}
+                          <TableCell className="text-right font-semibold">
+                            {isLiveWeek ? (
+                              <Money value={emp.clockHours * emp.payRate} />
+                            ) : emp.grossPay > 0 ? (
+                              <Money value={emp.grossPay} />
+                            ) : (
+                              "—"
+                            )}
                           </TableCell>
                         </TableRow>
                       );

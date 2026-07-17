@@ -74,9 +74,37 @@ export default function PinKeypad() {
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
-    <div className="ink-panel min-h-screen flex items-center justify-center p-4">
+    <div className="ink-panel min-h-screen grid lg:grid-cols-[1.15fr_1fr]">
+      {/* Brand statement panel — first impression, desktop only */}
+      <div className="hidden lg:flex flex-col justify-between p-12 xl:p-16 border-r border-white/10">
+        <BrandMark size="lg" tone="ink" className="self-start" />
+        <div className="max-w-md">
+          <span className="speed-lines mb-5 block" aria-hidden="true">
+            <i />
+          </span>
+          <h2
+            className="text-[2.6rem] leading-[1.02] font-bold text-white"
+            style={{ fontFamily: "var(--font-display)", letterSpacing: "0.005em" }}
+          >
+            Payroll, schedules &amp; the time clock.
+            <br />
+            <span className="text-white/60">All four stores, one place.</span>
+          </h2>
+          <p className="mt-5 text-sm text-white/55 leading-relaxed">
+            Live labor costs, imported schedules, and a kiosk your team taps in
+            and out of — everything a pay week needs, Thursday to Wednesday.
+          </p>
+        </div>
+        <p className="text-[11px] text-white/40 flex items-center gap-1.5">
+          <ShieldCheck className="h-3 w-3" /> Hotspot Market 11 · 13 · 14 · Travel Center
+        </p>
+      </div>
+
+      <div className="flex items-center justify-center p-4">
       <div className="w-full max-w-sm flex flex-col items-center gap-7">
-        <BrandMark size="lg" tone="ink" />
+        <div className="lg:hidden">
+          <BrandMark size="lg" tone="ink" />
+        </div>
 
         {/* Floating paper card — the keypad lives on a warm surface that
             pops against the ink backdrop. */}
@@ -144,9 +172,10 @@ export default function PinKeypad() {
           </div>
         </div>
 
-        <p className="text-[11px] text-white/50 text-center flex items-center gap-1.5">
+        <p className="lg:hidden text-[11px] text-white/50 text-center flex items-center gap-1.5">
           <ShieldCheck className="h-3 w-3" /> Hotspot Market 11 &middot; 13 &middot; 14 &middot; Travel Center
         </p>
+      </div>
       </div>
 
       <style>{`

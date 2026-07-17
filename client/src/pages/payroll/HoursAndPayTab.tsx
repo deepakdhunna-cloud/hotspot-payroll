@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
+import { Money } from "@/components/Money";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
@@ -231,7 +232,7 @@ export default function HoursAndPayTab({
         <KpiCell
           hero
           label="Projected gross"
-          value={fmtMoney(totals.grossTotal)}
+          value={<Money value={totals.grossTotal} />}
           sub="live total for the entries below"
         />
         <KpiCell

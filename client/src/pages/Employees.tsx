@@ -35,6 +35,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
+import { InitialsBadge } from "@/components/InitialsBadge";
 import { StoreSelect } from "@/components/StoreSelect";
 
 export default function Employees() {
@@ -293,12 +294,15 @@ export default function Employees() {
                       />
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={`/employees/${emp.id}`}
-                        className="font-medium hover:text-primary"
-                      >
-                        {emp.fullName}
-                      </Link>
+                      <div className="flex items-center gap-2.5">
+                        <InitialsBadge name={emp.fullName} size="sm" />
+                        <Link
+                          href={`/employees/${emp.id}`}
+                          className="font-medium hover:text-primary"
+                        >
+                          {emp.fullName}
+                        </Link>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="font-normal">
