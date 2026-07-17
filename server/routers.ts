@@ -961,17 +961,34 @@ export const appRouter = router({
             actualEnd,
             storesFilter
           );
-          let actual = 0;
+          let closedActual = 0;
           closedClock.forEach((hrs, empId) => {
-            actual += hrs * (rateByEmp.get(empId) ?? 0);
+            closedActual += hrs * (rateByEmp.get(empId) ?? 0);
           });
-          let remaining = 0;
+          // Today rides at plan until the day closes — but if the floor is
+          // already clocking past its schedule, the projection rises live
+          // (max of actual-so-far vs plan). Days ahead stay at plan.
+          let todayScheduled = 0;
+          let futureScheduled = 0;
           for (const s of shifts) {
-            if (new Date(s.shiftDate).getTime() >= todayMarker.getTime()) {
-              remaining += Number(s.hours) * (rateByEmp.get(s.employeeId) ?? 0);
-            }
+            const t = new Date(s.shiftDate).getTime();
+            const cost = Number(s.hours) * (rateByEmp.get(s.employeeId) ?? 0);
+            if (t === todayMarker.getTime()) todayScheduled += cost;
+            else if (t > todayMarker.getTime()) futureScheduled += cost;
           }
-          totalProjectedGross = actual + remaining;
+          let todayActual = 0;
+          if (dayBoundary.getTime() < weekEnd.getTime()) {
+            const todayClock = await hoursWorkedForWeekBulk(
+              dayBoundary,
+              weekEnd,
+              storesFilter
+            );
+            todayClock.forEach((hrs, empId) => {
+              todayActual += hrs * (rateByEmp.get(empId) ?? 0);
+            });
+          }
+          totalProjectedGross =
+            closedActual + Math.max(todayActual, todayScheduled) + futureScheduled;
         }
 
         // Live "on the clock" list with names and shift start times.
