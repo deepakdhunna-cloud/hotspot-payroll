@@ -125,7 +125,7 @@ export function parseLooseDateNearAnchor(
     const d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
     return isNaN(d.getTime()) ? null : d;
   }
-  const us = /^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/.exec(clean);
+  const us = /^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?$/.exec(clean);
   if (!us) return null;
   const month = +us[1];
   const day = +us[2];
@@ -154,24 +154,60 @@ export function parseLooseDateNearAnchor(
 
 /**
  * Resolve a day reference from a parsed schedule ("Mon", "monday",
- * "2026-05-11", "5/11") to the matching calendar day within the pay week.
- * Returns null when the reference can't be resolved.
+ * "2026-05-11", "5/11", "7.16.26", "Thu 7/16") to a calendar day within
+ * the pay week. A printed date that falls inside the week wins outright;
+ * a date from a DIFFERENT week (a reused last-week printout is a normal
+ * workflow) keeps its day of week and re-anchors to the selected week —
+ * the parse-level week-mismatch warning tells the manager it happened.
+ * Returns null only when nothing is parseable.
  */
 export function resolveScheduleDay(weekStart: Date, ref: string): Date | null {
   const days = getWeekDays(weekStart);
   const clean = ref.trim().toLowerCase();
   if (!clean) return null;
 
-  // Full ISO or US-style date → match by month/day inside the week window.
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(clean);
-  const us = /^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/.exec(clean);
-  if (iso || us) {
-    const month = iso ? Number(iso[2]) : Number(us![1]);
-    const day = iso ? Number(iso[3]) : Number(us![2]);
+  // A printed date — the whole ref, or embedded ("thu 7/16") — with any of
+  // / . - as separators. Dashes only when the whole ref is the date, so a
+  // stray range like "9-15" inside longer text can't be misread.
+  const iso = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(clean);
+  const whole = /^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?$/.exec(clean);
+  const embedded =
+    /(?:^|[^\d.\/])(\d{1,2})[\/.](\d{1,2})(?:[\/.](\d{2,4}))?(?=$|[^\d.\/])/.exec(
+      clean,
+    );
+  const dateMatch = iso
+    ? { month: +iso[2], day: +iso[3], year: +iso[1] }
+    : whole
+      ? { month: +whole[1], day: +whole[2], year: whole[3] ? +whole[3] : null }
+      : embedded
+        ? {
+            month: +embedded[1],
+            day: +embedded[2],
+            year: embedded[3] ? +embedded[3] : null,
+          }
+        : null;
+
+  if (
+    dateMatch &&
+    dateMatch.month >= 1 &&
+    dateMatch.month <= 12 &&
+    dateMatch.day >= 1 &&
+    dateMatch.day <= 31
+  ) {
+    const { month, day, year } = dateMatch;
     const hit = days.find(
       (d) => d.getUTCMonth() + 1 === month && d.getUTCDate() === day,
     );
     if (hit) return hit;
+    // Printed for another week: keep the weekday, re-anchor to this week.
+    const full =
+      year !== null
+        ? new Date(Date.UTC(year < 100 ? 2000 + year : year, month - 1, day))
+        : parseLooseDateNearAnchor(`${month}/${day}`, weekStart);
+    if (full && !isNaN(full.getTime())) {
+      const sameWeekday = days.find((d) => d.getUTCDay() === full.getUTCDay());
+      if (sameWeekday) return sameWeekday;
+    }
   }
 
   // Day-of-week name or abbreviation ("thu", "thurs", "thursday").

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseLooseDateNearAnchor, parseTimeLabelToMinutes } from "@shared/hotspot";
+import {
+  parseLooseDateNearAnchor,
+  parseTimeLabelToMinutes,
+  resolveScheduleDay,
+} from "@shared/hotspot";
 
 describe("parseTimeLabelToMinutes", () => {
   it("parses standard kiosk-style labels", () => {
@@ -51,5 +55,41 @@ describe("parseLooseDateNearAnchor", () => {
     expect(parseLooseDateNearAnchor("", anchor)).toBeNull();
     expect(parseLooseDateNearAnchor(null, anchor)).toBeNull();
     expect(parseLooseDateNearAnchor("13/45", anchor)).toBeNull();
+  });
+
+  it("parses dotted dates as printed on store schedules", () => {
+    expect(parseLooseDateNearAnchor("7.16.26", anchor)?.toISOString()).toBe(
+      "2026-07-16T00:00:00.000Z",
+    );
+    expect(parseLooseDateNearAnchor("7.9", anchor)?.toISOString()).toBe(
+      "2026-07-09T00:00:00.000Z",
+    );
+  });
+});
+
+describe("resolveScheduleDay", () => {
+  const week = new Date(Date.UTC(2026, 6, 16)); // pay week Thu Jul 16 – Wed Jul 22
+  const day = (ref: string) => resolveScheduleDay(week, ref)?.toISOString().slice(0, 10);
+
+  it("matches printed dates inside the week (slash, dot, ISO, embedded)", () => {
+    expect(day("7/16")).toBe("2026-07-16");
+    expect(day("7.18.26")).toBe("2026-07-18");
+    expect(day("2026-07-22")).toBe("2026-07-22");
+    expect(day("Thu 7/16")).toBe("2026-07-16");
+    expect(day("Wed 7.22")).toBe("2026-07-22");
+  });
+
+  it("re-anchors out-of-week dates by weekday (reused last-week printout)", () => {
+    // Jul 9 2026 is a Thursday; reused into the Jul 16 week → Thu Jul 16.
+    expect(day("7/9")).toBe("2026-07-16");
+    expect(day("7.10.26")).toBe("2026-07-17"); // Friday → Fri Jul 17
+    expect(day("7/15")).toBe("2026-07-22"); // Wednesday → Wed Jul 22
+  });
+
+  it("still resolves plain weekday names", () => {
+    expect(day("thursday")).toBe("2026-07-16");
+    expect(day("Mon")).toBe("2026-07-20");
+    expect(day("off")).toBeUndefined();
+    expect(day("")).toBeUndefined();
   });
 });

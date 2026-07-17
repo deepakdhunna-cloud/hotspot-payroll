@@ -551,10 +551,8 @@ export default function ScheduleImport() {
                         } on this file fall outside the selected week and would be skipped.`}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Committing into the wrong week puts every shift on the wrong
-                    dates.{" "}
                     {weekWarning.printedWeekStart
-                      ? "Switch to the printed week — or carry on only if you genuinely mean to reuse this schedule for a different week."
+                      ? "Each shift has been placed on the same weekday of your selected week — fine if you're reusing this schedule for another week. If it was meant for its printed week, switch before committing."
                       : "Double-check the pay week selected above, then read the file again."}
                   </p>
                 </div>

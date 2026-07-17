@@ -33,9 +33,9 @@ export type PdfTextItem = {
   height?: number;
 };
 
-/** "Thu", "Thursday", "Thu 7/16", "7/16", "7/16/26" — a day-column header. */
+/** "Thu", "Thursday", "Thu 7/16", "7/16", "7.16.26" — a day-column header. */
 const DAY_CELL =
-  /^(sun|mon|tue|wed|thu|fri|sat)[a-z]*\.?,?(\s+\d{1,2}[\/-]\d{1,2}(\/\d{2,4})?)?$|^\d{1,2}[\/-]\d{1,2}([\/-]\d{2,4})?$/i;
+  /^(sun|mon|tue|wed|thu|fri|sat)[a-z]*\.?,?(\s+\d{1,2}[\/.\-]\d{1,2}([\/.\-]\d{2,4})?)?$|^\d{1,2}[\/.\-]\d{1,2}([\/.\-]\d{2,4})?$/i;
 
 type Cell = { text: string; x0: number; x1: number };
 

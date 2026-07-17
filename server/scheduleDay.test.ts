@@ -47,8 +47,14 @@ describe("resolveScheduleDay", () => {
     );
   });
 
-  it("returns null for dates outside the week and garbage input", () => {
-    expect(resolveScheduleDay(WEEK, "5/20")).toBeNull();
+  it("re-anchors out-of-week dates by weekday (reused printouts)", () => {
+    // May 20 2026 is a Wednesday → Wed of the selected week, May 13.
+    expect(resolveScheduleDay(WEEK, "5/20")?.toISOString()).toBe(
+      "2026-05-13T00:00:00.000Z",
+    );
+  });
+
+  it("returns null for garbage input", () => {
     expect(resolveScheduleDay(WEEK, "")).toBeNull();
     expect(resolveScheduleDay(WEEK, "someday")).toBeNull();
   });
