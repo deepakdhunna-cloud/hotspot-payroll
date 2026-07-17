@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Bell,
   Building2,
   ChevronDown,
   ClipboardList,
@@ -96,6 +97,33 @@ function NavLinks({
   );
 }
 
+/** Topbar bell: live count of open attention items, visible on every page. */
+function AttentionBell({ onNavigate }: { onNavigate: () => void }) {
+  const listQ = trpc.attention.list.useQuery(undefined, {
+    refetchInterval: 60_000,
+  });
+  const count = listQ.data?.count ?? 0;
+  return (
+    <button
+      onClick={onNavigate}
+      className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/80 hover:text-white hover:border-white/30 transition-colors"
+      title={
+        count > 0
+          ? `${count} item${count === 1 ? "" : "s"} need attention — open the attention center`
+          : "Attention center — all clear"
+      }
+      aria-label="Attention center"
+    >
+      <Bell className="h-4 w-4" />
+      {count > 0 ? (
+        <span className="absolute -top-1.5 -right-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold tabular-nums text-white ring-2 ring-[var(--ink)]">
+          {count > 9 ? "9+" : count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
@@ -131,6 +159,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           />
 
           <div className="ml-auto flex items-center gap-2">
+            <AttentionBell onNavigate={() => setLocation("/")} />
             <button
               onClick={() =>
                 window.open("/clock", "_blank", "noopener,noreferrer")

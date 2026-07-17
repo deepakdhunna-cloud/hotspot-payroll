@@ -1,4 +1,5 @@
 import {
+  datetime,
   decimal,
   index,
   int,
@@ -258,3 +259,39 @@ export const auditLog = mysqlTable(
 
 export type AuditLogEntry = typeof auditLog.$inferSelect;
 export type InsertAuditLogEntry = typeof auditLog.$inferInsert;
+
+/**
+ * Attention items — the site-wide assistant's persistent task list.
+ * Detection scans live data and upserts one row per discrepancy (unique by
+ * refKey). Items stay OPEN — stacking up with their first-detected date —
+ * until a manager/CEO resolves them (approve/review) or the underlying
+ * condition verifiably clears (resolution "auto").
+ */
+export const attentionItems = mysqlTable(
+  "attention_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    /** Stable dedupe key, e.g. "long_punch:15570001" or "mismatch:9:2026-07-09". */
+    refKey: varchar("refKey", { length: 120 }).notNull().unique(),
+    /** long_punch | hours_mismatch | missing_schedule | missing_codes | unsaved_payroll */
+    kind: varchar("kind", { length: 32 }).notNull(),
+    storeLocation: varchar("storeLocation", { length: 64 }),
+    employeeId: int("employeeId"),
+    punchId: int("punchId"),
+    weekStart: datetime("weekStart"),
+    title: varchar("title", { length: 255 }).notNull(),
+    detail: text("detail"),
+    status: mysqlEnum("status", ["open", "resolved"]).default("open").notNull(),
+    /** approved | reviewed | dismissed | auto */
+    resolution: varchar("resolution", { length: 16 }),
+    resolvedBy: varchar("resolvedBy", { length: 64 }),
+    resolvedAt: datetime("resolvedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    statusIdx: index("idx_attention_status").on(table.status, table.storeLocation),
+  }),
+);
+
+export type AttentionItem = typeof attentionItems.$inferSelect;
+export type InsertAttentionItem = typeof attentionItems.$inferInsert;

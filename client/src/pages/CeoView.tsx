@@ -8,6 +8,7 @@
  * Tabs below hold the payroll detail, PIN management and the audit trail.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
+import { AttentionCenter } from "@/components/AttentionCenter";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
@@ -170,24 +171,8 @@ export default function CeoView() {
         }
       />
 
-      {/* Signals worth a decision — quiet when everything is fine */}
-      {(agg.overClockedCount > 0 || (!isLiveWeek && unsavedCount > 0)) && (
-        <div className="flex flex-wrap items-center gap-2 rise-in">
-          {agg.overClockedCount > 0 && (
-            <span className="chip-warn">
-              <AlertTriangle className="h-3 w-3" />
-              {agg.overClockedCount} employee{agg.overClockedCount === 1 ? "" : "s"} over
-              schedule ({focusLabel})
-            </span>
-          )}
-          {!isLiveWeek && unsavedCount > 0 && (
-            <span className="chip-warn">
-              <AlertTriangle className="h-3 w-3" />
-              {unsavedCount} worked but not saved to payroll
-            </span>
-          )}
-        </div>
-      )}
+      {/* The assistant — same persistent task stack, all stores in scope */}
+      <AttentionCenter />
 
       {/* Company pulse — one strip, the money leads */}
       {ceoQ.isLoading ? (

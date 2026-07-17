@@ -1,8 +1,10 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  attentionItems,
   auditLog,
   employees,
+  InsertAttentionItem,
   InsertAuditLogEntry,
   InsertEmployee,
   InsertManagerStore,
@@ -654,4 +656,94 @@ export async function listAuditLog(filter?: {
     .where(where as any)
     .orderBy(desc(auditLog.createdAt))
     .limit(filter?.limit ?? 100);
+}
+
+/* ---------------- attention items (site-wide assistant) ---------------- */
+
+export async function listAttentionItems(filter: {
+  stores?: string[];
+  status?: "open" | "resolved";
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conds = [] as any[];
+  if (filter.status) conds.push(eq(attentionItems.status, filter.status));
+  if (filter.stores && filter.stores.length > 0) {
+    conds.push(inArray(attentionItems.storeLocation, filter.stores));
+  }
+  return db
+    .select()
+    .from(attentionItems)
+    .where(conds.length > 0 ? and(...conds) : undefined)
+    .orderBy(asc(attentionItems.createdAt));
+}
+
+export async function getAttentionByRefKeys(refKeys: string[]) {
+  const db = await getDb();
+  if (!db || refKeys.length === 0) return [];
+  return db
+    .select()
+    .from(attentionItems)
+    .where(inArray(attentionItems.refKey, refKeys));
+}
+
+export async function getAttentionItemById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(attentionItems)
+    .where(eq(attentionItems.id, id))
+    .limit(1);
+  return rows[0];
+}
+
+export async function insertAttentionItems(items: InsertAttentionItem[]) {
+  const db = await getDb();
+  if (!db || items.length === 0) return;
+  // refKey is unique — a concurrent detection pass inserting the same key
+  // must not fail the whole sync.
+  await db
+    .insert(attentionItems)
+    .values(items)
+    .onDuplicateKeyUpdate({ set: { refKey: sql`refKey` } });
+}
+
+/** Refresh title/detail of open items whose numbers changed (counts etc.). */
+export async function updateAttentionText(
+  id: number,
+  fields: { title: string; detail: string | null }
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(attentionItems).set(fields).where(eq(attentionItems.id, id));
+}
+
+export async function resolveAttentionItems(
+  ids: number[],
+  resolution: string,
+  resolvedBy: string
+) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return;
+  await db
+    .update(attentionItems)
+    .set({ status: "resolved", resolution, resolvedBy, resolvedAt: new Date() })
+    .where(inArray(attentionItems.id, ids));
+}
+
+/** Re-open auto-resolved items whose condition came back (fresh clock). */
+export async function reopenAttentionItems(ids: number[]) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return;
+  await db
+    .update(attentionItems)
+    .set({
+      status: "open",
+      resolution: null,
+      resolvedBy: null,
+      resolvedAt: null,
+      createdAt: new Date(),
+    })
+    .where(inArray(attentionItems.id, ids));
 }

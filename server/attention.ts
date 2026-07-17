@@ -1,0 +1,333 @@
+/**
+ * The attention engine — a site-wide assistant that scans live data for
+ * anything wrong or off, and keeps a persistent, dated task list:
+ *
+ *  - long_punch:       someone on the clock (or a closed shift) over 12h in
+ *                      one stretch. Requires a human to approve the hours as
+ *                      correct, or register the real clock-out.
+ *  - hours_mismatch:   a closed week where an employee's clocked hours are
+ *                      more than an hour off their schedule. Requires review.
+ *  - missing_schedule: no day-level schedule for the live week (per store).
+ *  - missing_codes:    employees who can't use the kiosk (no clock code).
+ *  - unsaved_payroll:  a closed week with worked hours not saved to payroll.
+ *
+ * Items are keyed by refKey so they persist with their FIRST-detected date —
+ * stacking up until addressed. Manual kinds (long_punch, hours_mismatch)
+ * stay open until a person approves or reviews them; operational kinds
+ * auto-resolve the moment the underlying condition verifiably clears, and
+ * re-open with a fresh date if it comes back.
+ */
+import {
+  getAttentionByRefKeys,
+  hoursWorkedForWeekBulk,
+  insertAttentionItems,
+  listAttentionItems,
+  listEmployees,
+  listOpenPunches,
+  listPunchesInRange,
+  getPayrollByWeek,
+  getShiftsForWeek,
+  reopenAttentionItems,
+  resolveAttentionItems,
+  updateAttentionText,
+} from "./db";
+import {
+  getCurrentPayPeriodStart,
+  getWeekStart,
+} from "@shared/hotspot";
+
+export const LONG_PUNCH_HOURS = 12;
+export const MISMATCH_TOLERANCE_HOURS = 1;
+/** How far back closed punches are scanned for 12h+ shifts. */
+const LONG_PUNCH_LOOKBACK_DAYS = 14;
+
+export type AttentionCandidate = {
+  refKey: string;
+  kind:
+    | "long_punch"
+    | "hours_mismatch"
+    | "missing_schedule"
+    | "missing_codes"
+    | "unsaved_payroll";
+  storeLocation: string;
+  employeeId?: number | null;
+  punchId?: number | null;
+  weekStart?: Date | null;
+  title: string;
+  detail?: string | null;
+};
+
+const fmtDay = (d: Date) =>
+  new Date(d).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "America/Chicago",
+  });
+const fmtClock = (d: Date) =>
+  new Date(d).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Chicago",
+  });
+
+/** Scan current data and produce every discrepancy that holds RIGHT NOW. */
+export async function computeAttentionCandidates(
+  stores: string[],
+  now = new Date()
+): Promise<AttentionCandidate[]> {
+  const liveWeek = getWeekStart(now);
+  const closedWeek = getCurrentPayPeriodStart(now);
+  const closedWeekEnd = new Date(closedWeek);
+  closedWeekEnd.setUTCDate(closedWeekEnd.getUTCDate() + 7);
+  const lookbackStart = new Date(
+    now.getTime() - LONG_PUNCH_LOOKBACK_DAYS * 86_400_000
+  );
+
+  const [
+    emps,
+    openPunches,
+    recentPunches,
+    closedWeekClock,
+    closedWeekPayroll,
+    liveShifts,
+  ] = await Promise.all([
+    listEmployees({ stores }),
+    listOpenPunches(stores),
+    listPunchesInRange(lookbackStart, now, stores),
+    hoursWorkedForWeekBulk(closedWeek, closedWeekEnd, stores),
+    getPayrollByWeek(closedWeek, stores),
+    getShiftsForWeek(liveWeek, stores),
+  ]);
+  const empById = new Map(emps.map(e => [e.id, e]));
+  const out: AttentionCandidate[] = [];
+
+  /* ---- 1. Long punches: open right now, or closed within the lookback ---- */
+  const longOf = (p: {
+    id: number;
+    employeeId: number;
+    storeLocation: string;
+    clockInAt: Date | string;
+    clockOutAt?: Date | string | null;
+  }) => {
+    const emp = empById.get(p.employeeId);
+    if (!emp) return;
+    const inAt = new Date(p.clockInAt);
+    const endAt = p.clockOutAt ? new Date(p.clockOutAt) : now;
+    const hours = (endAt.getTime() - inAt.getTime()) / 3_600_000;
+    if (hours <= LONG_PUNCH_HOURS) return;
+    const stillOpen = !p.clockOutAt;
+    out.push({
+      refKey: `long_punch:${p.id}`,
+      kind: "long_punch",
+      storeLocation: p.storeLocation,
+      employeeId: p.employeeId,
+      punchId: p.id,
+      title: stillOpen
+        ? `${emp.fullName} has been clocked in ${hours.toFixed(1)}h and counting`
+        : `${emp.fullName} was clocked in ${hours.toFixed(1)}h in one shift`,
+      detail: stillOpen
+        ? `Clocked in ${fmtClock(inAt)} and never out. Register the real clock-out, or approve if this is genuinely correct.`
+        : `${fmtClock(inAt)} → ${fmtClock(endAt)}. Approve these hours as correct, or fix the punch.`,
+    });
+  };
+  for (const p of openPunches) longOf(p);
+  for (const p of recentPunches) {
+    if (p.clockOutAt) longOf(p);
+  }
+
+  /* ---- 2. Closed-week schedule vs worked mismatches ---- */
+  const scheduledByEmp = new Map<number, number>();
+  for (const entry of closedWeekPayroll) {
+    scheduledByEmp.set(entry.employeeId, Number(entry.scheduledHours ?? 0));
+  }
+  closedWeekClock.forEach((clocked, empId) => {
+    const emp = empById.get(empId);
+    if (!emp) return;
+    const scheduled = scheduledByEmp.get(empId) ?? 0;
+    if (scheduled <= 0) return;
+    const diff = clocked - scheduled;
+    if (Math.abs(diff) <= MISMATCH_TOLERANCE_HOURS) return;
+    out.push({
+      refKey: `mismatch:${empId}:${closedWeek.toISOString().slice(0, 10)}`,
+      kind: "hours_mismatch",
+      storeLocation: emp.storeLocation,
+      employeeId: empId,
+      weekStart: closedWeek,
+      title: `${emp.fullName} clocked ${clocked.toFixed(1)}h vs ${scheduled.toFixed(1)}h scheduled last week`,
+      detail: `${diff > 0 ? `${diff.toFixed(1)}h OVER` : `${Math.abs(diff).toFixed(1)}h UNDER`} schedule for the week of ${fmtDay(closedWeek)}. Review before payroll is finalized.`,
+    });
+  });
+
+  /* ---- 3. Missing live-week schedule, per store ---- */
+  const storesWithShifts = new Set(liveShifts.map(s => s.storeLocation));
+  for (const store of stores) {
+    if (storesWithShifts.has(store)) continue;
+    out.push({
+      refKey: `missing_schedule:${store}:${liveWeek.toISOString().slice(0, 10)}`,
+      kind: "missing_schedule",
+      storeLocation: store,
+      weekStart: liveWeek,
+      title: `No schedule imported for ${store} this week`,
+      detail:
+        "Without it, over-schedule alerts and daily coverage can't be checked.",
+    });
+  }
+
+  /* ---- 4. Employees who can't use the kiosk ---- */
+  const noCodeByStore = new Map<string, number>();
+  for (const e of emps) {
+    if (e.clockCodeHash) continue;
+    noCodeByStore.set(e.storeLocation, (noCodeByStore.get(e.storeLocation) ?? 0) + 1);
+  }
+  noCodeByStore.forEach((count, store) => {
+    out.push({
+      refKey: `missing_codes:${store}`,
+      kind: "missing_codes",
+      storeLocation: store,
+      title: `${count} employee${count === 1 ? "" : "s"} at ${store} can't clock in (no code)`,
+      detail: "Set 4-digit codes from each employee profile.",
+    });
+  });
+
+  /* ---- 5. Closed week worked but not saved to payroll, per store ---- */
+  const savedByEmp = new Map<number, number>();
+  for (const entry of closedWeekPayroll) {
+    savedByEmp.set(entry.employeeId, Number(entry.hoursWorked ?? 0));
+  }
+  const unsavedByStore = new Map<string, number>();
+  closedWeekClock.forEach((clocked, empId) => {
+    const emp = empById.get(empId);
+    if (!emp || clocked <= 0.25) return;
+    if ((savedByEmp.get(empId) ?? 0) > 0) return;
+    unsavedByStore.set(
+      emp.storeLocation,
+      (unsavedByStore.get(emp.storeLocation) ?? 0) + 1
+    );
+  });
+  unsavedByStore.forEach((count, store) => {
+    out.push({
+      refKey: `unsaved_payroll:${store}:${closedWeek.toISOString().slice(0, 10)}`,
+      kind: "unsaved_payroll",
+      storeLocation: store,
+      weekStart: closedWeek,
+      title: `${count} employee${count === 1 ? "" : "s"} at ${store} worked last week but aren't saved to payroll`,
+      detail: `Week of ${fmtDay(closedWeek)} still needs to be finalized.`,
+    });
+  });
+
+  return out;
+}
+
+/** Kinds a human must act on — they persist even while the condition holds. */
+const MANUAL_KINDS = new Set(["long_punch", "hours_mismatch"]);
+
+export type AttentionDiff = {
+  toInsert: AttentionCandidate[];
+  toReopenIds: number[];
+  toAutoResolveIds: number[];
+  toRetitle: { id: number; title: string; detail: string | null }[];
+};
+
+/**
+ * Pure sync decision. Given what holds NOW and what the table has:
+ *  - brand-new condition        → insert (dated now)
+ *  - open, condition gone       → auto-resolve (the task got done)
+ *  - auto-resolved, came back   → re-open with a fresh date
+ *  - manually resolved          → never resurrect (a human signed it off)
+ *  - open, numbers changed      → refresh title/detail, keep original date
+ */
+export function diffAttention(
+  candidates: AttentionCandidate[],
+  existing: {
+    id: number;
+    refKey: string;
+    status: string;
+    resolution: string | null;
+    title: string;
+    detail: string | null;
+  }[]
+): AttentionDiff {
+  const byRef = new Map(existing.map(e => [e.refKey, e]));
+  const candidateRefs = new Set(candidates.map(c => c.refKey));
+  const diff: AttentionDiff = {
+    toInsert: [],
+    toReopenIds: [],
+    toAutoResolveIds: [],
+    toRetitle: [],
+  };
+
+  for (const c of candidates) {
+    const row = byRef.get(c.refKey);
+    if (!row) {
+      diff.toInsert.push(c);
+    } else if (row.status === "resolved") {
+      if (row.resolution === "auto") diff.toReopenIds.push(row.id);
+      // manual resolutions stay resolved — a human already signed off
+    } else if (row.title !== c.title || (row.detail ?? null) !== (c.detail ?? null)) {
+      diff.toRetitle.push({ id: row.id, title: c.title, detail: c.detail ?? null });
+    }
+  }
+
+  for (const row of existing) {
+    if (row.status !== "open") continue;
+    if (candidateRefs.has(row.refKey)) continue;
+    // Condition no longer holds. Auto kinds clear silently; manual kinds
+    // clear too — if the punch was fixed or the hours now match, the task
+    // is genuinely done.
+    diff.toAutoResolveIds.push(row.id);
+  }
+
+  return diff;
+}
+
+/** Run detection for the given stores and sync the persistent list. */
+export async function syncAttention(stores: string[]) {
+  const candidates = await computeAttentionCandidates(stores);
+  const refKeys = candidates.map(c => c.refKey);
+  const existingByRef = await getAttentionByRefKeys(refKeys);
+  const openInScope = await listAttentionItems({ stores, status: "open" });
+  const known = new Map<
+    number,
+    { id: number; refKey: string; status: string; resolution: string | null; title: string; detail: string | null }
+  >();
+  for (const r of [...existingByRef, ...openInScope]) {
+    known.set(r.id, {
+      id: r.id,
+      refKey: r.refKey,
+      status: r.status,
+      resolution: r.resolution,
+      title: r.title,
+      detail: r.detail,
+    });
+  }
+  const diff = diffAttention(candidates, Array.from(known.values()));
+
+  if (diff.toInsert.length > 0) {
+    await insertAttentionItems(
+      diff.toInsert.map(c => ({
+        refKey: c.refKey,
+        kind: c.kind,
+        storeLocation: c.storeLocation,
+        employeeId: c.employeeId ?? null,
+        punchId: c.punchId ?? null,
+        weekStart: c.weekStart ?? null,
+        title: c.title,
+        detail: c.detail ?? null,
+      }))
+    );
+  }
+  await reopenAttentionItems(diff.toReopenIds);
+  await resolveAttentionItems(diff.toAutoResolveIds, "auto", "system");
+  for (const r of diff.toRetitle) {
+    await updateAttentionText(r.id, { title: r.title, detail: r.detail });
+  }
+
+  return listAttentionItems({ stores, status: "open" });
+}
+
+/** MANUAL_KINDS exported for the router's resolution rules. */
+export function isManualKind(kind: string) {
+  return MANUAL_KINDS.has(kind);
+}

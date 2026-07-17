@@ -10,6 +10,7 @@
  * one click away.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
+import { AttentionCenter } from "@/components/AttentionCenter";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
@@ -117,40 +118,6 @@ export default function Home() {
   }, [data?.scheduleDays, weekStart]);
   const maxDayHours = Math.max(1, ...dayStrip.map((d) => d.totalHours));
 
-  const attention: { text: string; href: string; cta: string }[] = [];
-  if (data) {
-    if (forgotten.length > 0)
-      attention.push({
-        text: `${forgotten.map((f) => f.fullName.split(" ")[0]).join(", ")} ${forgotten.length === 1 ? "has" : "have"} been clocked in over 12 hours — probably a missed punch-out.`,
-        href: "/payroll?tab=punches",
-        cta: "Fix punches",
-      });
-    if (overClocked.length > 0)
-      attention.push({
-        text: `${overClocked.length} employee${overClocked.length === 1 ? " is" : "s are"} over their scheduled hours this week.`,
-        href: "/payroll",
-        cta: "Review hours",
-      });
-    if (!isLiveWeek && unsaved.length > 0)
-      attention.push({
-        text: `${unsaved.length} employee${unsaved.length === 1 ? "" : "s"} worked this week but ${unsaved.length === 1 ? "isn't" : "aren't"} saved to payroll yet.`,
-        href: `/payroll?week=${toDateInput(weekStart)}`,
-        cta: "Finalize payroll",
-      });
-    if (isLiveWeek && !data.hasScheduleImport)
-      attention.push({
-        text: "Import this week's schedule so hours can be checked against it.",
-        href: "/schedule-import",
-        cta: "Import schedule",
-      });
-    if (data.missingClockCodes > 0)
-      attention.push({
-        text: `Set clock codes for ${data.missingClockCodes} employee${data.missingClockCodes === 1 ? "" : "s"} who can't use the kiosk yet.`,
-        href: "/employees",
-        cta: "Set codes",
-      });
-  }
-
   const displayName = isAdmin ? "CEO" : (greetingQ.data?.name ?? "Manager");
 
   return (
@@ -177,42 +144,8 @@ export default function Home() {
         }
       />
 
-      {/* Urgent checklist — open to-dos with a direct route to each fix.
-          Items disappear on their own once resolved, so every box is open. */}
-      {attention.length > 0 ? (
-        <Card className="surface-card border-0 border-l-4 border-l-warning rise-in">
-          <CardHeader className="pb-1 pt-4 flex flex-row items-center justify-between">
-            <CardTitle className="section-title flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-warning" />
-              Needs your attention
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning/15 px-1.5 text-[11px] font-bold tabular-nums text-[oklch(0.46_0.13_60)]">
-                {attention.length}
-              </span>
-            </CardTitle>
-            <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
-              clears itself as each item is done
-            </span>
-          </CardHeader>
-          <CardContent className="pb-2 divide-y divide-border">
-            {attention.map((a, i) => (
-              <div key={i} className="flex items-center gap-3 py-2.5">
-                <span
-                  className="h-[18px] w-[18px] shrink-0 rounded-[5px] border-2 border-warning/70 bg-warning/5"
-                  aria-hidden="true"
-                  title="Open to-do"
-                />
-                <p className="text-sm font-medium flex-1 min-w-0">{a.text}</p>
-                <Link href={a.href} className="shrink-0">
-                  <Button size="sm" variant="outline" className="h-7 text-xs bg-card">
-                    {a.cta}
-                    <ArrowUpRight className="h-3 w-3 ml-1" />
-                  </Button>
-                </Link>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
+      {/* The assistant — persistent, dated task stack across the whole site */}
+      <AttentionCenter />
 
       {/* KPI band — one strip, one dominant number per mode */}
       {summaryQ.isLoading ? (

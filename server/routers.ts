@@ -12,6 +12,8 @@ import {
 } from "./_core/trpc";
 import {
   closePunch,
+  getAttentionItemById,
+  resolveAttentionItems,
   countEmployees,
   createEmployee,
   createManualPunch,
@@ -74,6 +76,7 @@ import {
 } from "./_core/pinAuth";
 import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
 import { rankNameMatches } from "./nameMatch";
+import { syncAttention } from "./attention";
 
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
@@ -685,6 +688,90 @@ export const appRouter = router({
               `Employee #${e.employeeId}`,
           })),
         };
+      }),
+  }),
+
+  /**
+   * The attention center — the site-wide assistant. `list` runs live
+   * detection (12h+ punches, schedule-vs-worked mismatches, operational
+   * gaps), persists every discrepancy with its first-detected date, and
+   * returns the open stack. `resolve` is the human sign-off: approve a long
+   * shift's hours (optionally registering the real clock-out first) or mark
+   * a mismatch reviewed. Everything is store-scoped and audit-logged.
+   */
+  attention: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const scope = getScope(ctx.session);
+      const stores = resolveStores(scope) ?? [...STORES];
+      const items = await syncAttention(stores);
+      return { items, count: items.length };
+    }),
+
+    resolve: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          resolution: z.enum(["approved", "reviewed", "dismissed"]),
+          /** For an OPEN 12h+ punch: register the real clock-out first. */
+          clockOutAt: z.date().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        const item = await getAttentionItemById(input.id);
+        if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+        if (
+          !scope.isAdmin &&
+          item.storeLocation &&
+          !scope.stores.includes(item.storeLocation as Store)
+        ) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        if (item.status !== "open") {
+          return { success: true, alreadyResolved: true };
+        }
+
+        // Approving a long punch may include registering the true clock-out.
+        if (input.clockOutAt) {
+          if (item.kind !== "long_punch" || !item.punchId) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "A clock-out can only be registered on a long-shift item.",
+            });
+          }
+          const punch = await getPunchById(item.punchId);
+          if (!punch) throw new TRPCError({ code: "NOT_FOUND" });
+          if (punch.clockOutAt) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "That punch already has a clock-out — edit it from the Punches tab.",
+            });
+          }
+          if (input.clockOutAt.getTime() <= new Date(punch.clockInAt).getTime()) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Clock-out must be after the clock-in.",
+            });
+          }
+          await updatePunch(item.punchId, { clockOutAt: input.clockOutAt });
+        }
+
+        await resolveAttentionItems([item.id], input.resolution, ctx.session.scope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "attention.resolve",
+          entityType: "attention",
+          entityId: item.id,
+          detail: JSON.stringify({
+            kind: item.kind,
+            title: item.title,
+            resolution: input.resolution,
+            registeredClockOut: input.clockOutAt?.toISOString() ?? null,
+            pendingSince: item.createdAt,
+          }),
+          ip: requestIp(ctx.req),
+        });
+        return { success: true };
       }),
   }),
 
