@@ -58,7 +58,9 @@ import {
   type Store,
   businessDayBoundaryUtc,
   businessDayStart,
+  businessMinutesOfDay,
   computeGrossPay,
+  parseTimeLabelToMinutes,
   estimateWithholding,
   getWeekStart,
   overclockStatus,
@@ -965,30 +967,72 @@ export const appRouter = router({
           closedClock.forEach((hrs, empId) => {
             closedActual += hrs * (rateByEmp.get(empId) ?? 0);
           });
-          // Today rides at plan until the day closes — but if the floor is
-          // already clocking past its schedule, the projection rises live
-          // (max of actual-so-far vs plan). Days ahead stay at plan.
-          let todayScheduled = 0;
+          // Today = facts plus what's still scheduled: each person counts at
+          // their actual clocked cost so far PLUS the un-elapsed remainder of
+          // their shifts (pro-rated by wall clock). A no-show's planned cost
+          // melts away as their shift window passes; overtime pushes the
+          // figure up the minute it happens. Days ahead stay at plan.
+          const nowMin = businessMinutesOfDay();
+          const remainingTodayByEmp = new Map<number, number>();
+          const unparsedTodayByEmp = new Map<number, number>();
           let futureScheduled = 0;
           for (const s of shifts) {
             const t = new Date(s.shiftDate).getTime();
-            const cost = Number(s.hours) * (rateByEmp.get(s.employeeId) ?? 0);
-            if (t === todayMarker.getTime()) todayScheduled += cost;
-            else if (t > todayMarker.getTime()) futureScheduled += cost;
+            const rate = rateByEmp.get(s.employeeId) ?? 0;
+            const hours = Number(s.hours);
+            if (t > todayMarker.getTime()) {
+              futureScheduled += hours * rate;
+              continue;
+            }
+            if (t !== todayMarker.getTime()) continue;
+            const start = parseTimeLabelToMinutes(s.startLabel);
+            let end = parseTimeLabelToMinutes(s.endLabel);
+            if (start === null || end === null) {
+              // No readable times — resolved below against hours worked.
+              unparsedTodayByEmp.set(
+                s.employeeId,
+                (unparsedTodayByEmp.get(s.employeeId) ?? 0) + hours
+              );
+              continue;
+            }
+            if (end <= start) end += 24 * 60; // overnight shift
+            let fraction = 0;
+            if (nowMin <= start) fraction = 1;
+            else if (nowMin < end) fraction = (end - nowMin) / (end - start);
+            remainingTodayByEmp.set(
+              s.employeeId,
+              (remainingTodayByEmp.get(s.employeeId) ?? 0) + hours * fraction
+            );
           }
-          let todayActual = 0;
+          let todayCost = 0;
           if (dayBoundary.getTime() < weekEnd.getTime()) {
             const todayClock = await hoursWorkedForWeekBulk(
               dayBoundary,
               weekEnd,
               storesFilter
             );
-            todayClock.forEach((hrs, empId) => {
-              todayActual += hrs * (rateByEmp.get(empId) ?? 0);
+            const empIds = new Set<number>([
+              ...Array.from(todayClock.keys()),
+              ...Array.from(remainingTodayByEmp.keys()),
+              ...Array.from(unparsedTodayByEmp.keys()),
+            ]);
+            empIds.forEach(empId => {
+              const rate = rateByEmp.get(empId) ?? 0;
+              const worked = todayClock.get(empId) ?? 0;
+              // Shifts without readable times can't be pro-rated by clock —
+              // count whatever of them hasn't been worked yet.
+              const unparsedRemaining = Math.max(
+                0,
+                (unparsedTodayByEmp.get(empId) ?? 0) - worked
+              );
+              todayCost +=
+                (worked +
+                  (remainingTodayByEmp.get(empId) ?? 0) +
+                  unparsedRemaining) *
+                rate;
             });
           }
-          totalProjectedGross =
-            closedActual + Math.max(todayActual, todayScheduled) + futureScheduled;
+          totalProjectedGross = closedActual + todayCost + futureScheduled;
         }
 
         // Live "on the clock" list with names and shift start times.

@@ -189,7 +189,7 @@ export default function Home() {
           <KpiCell
             label="Projected payroll"
             value={<Money value={totals.totalProjectedGross} />}
-            sub="closed days at cost · today & ahead at plan — rises live if today runs over"
+            sub="worked so far + what\u2019s still scheduled ahead"
             footer={
               totals.totalScheduledCost > 0 ? (
                 totals.totalProjectedGross - totals.totalScheduledCost > 25 ? (

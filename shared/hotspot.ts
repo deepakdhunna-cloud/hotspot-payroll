@@ -205,3 +205,33 @@ export function businessDayBoundaryUtc(now: Date = new Date()): Date {
     marker.getTime() - (offsetHours * 60 + offsetMinutes) * 60_000
   );
 }
+
+/**
+ * Parse a printed shift time label ("9:00am", "11pm", "12:15 PM") into
+ * minutes since midnight, or null if unreadable. Used to pro-rate how much
+ * of today's schedule is still ahead when projecting payroll.
+ */
+export function parseTimeLabelToMinutes(label: string | null | undefined): number | null {
+  if (!label) return null;
+  const m = label.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(a|p)\.?m?\.?$/i);
+  if (!m) return null;
+  let hours = Number(m[1]);
+  const minutes = m[2] ? Number(m[2]) : 0;
+  if (hours < 1 || hours > 12 || minutes > 59) return null;
+  const pm = m[3].toLowerCase() === "p";
+  if (hours === 12) hours = 0;
+  return (hours + (pm ? 12 : 0)) * 60 + minutes;
+}
+
+/** Minutes since midnight in the store timezone for a given instant. */
+export function businessMinutesOfDay(now: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(now);
+  const h = Number(parts.find(p => p.type === "hour")?.value ?? 0) % 24;
+  const min = Number(parts.find(p => p.type === "minute")?.value ?? 0);
+  return h * 60 + min;
+}
