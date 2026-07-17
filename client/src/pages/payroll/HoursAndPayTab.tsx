@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { Money } from "@/components/Money";
+import { PositionBreakdown } from "@/components/PositionBreakdown";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
@@ -176,6 +177,27 @@ export default function HoursAndPayTab({
     }
     return { hoursTotal, grossTotal };
   }, [weekQ.data, hours, rates]);
+
+  // Same live numbers as the table, regrouped by position.
+  const positionItems = useMemo(
+    () =>
+      (weekQ.data?.employees ?? []).map((r) => {
+        const rawH = hours[r.employee.id];
+        const rawR = rates[r.employee.id];
+        const h = rawH === undefined || rawH === "" ? 0 : Number(rawH);
+        const rate =
+          rawR === undefined || rawR === ""
+            ? Number(r.employee.payRate)
+            : Number(rawR);
+        return {
+          role: r.employee.role,
+          hours: isNaN(h) ? 0 : h,
+          gross:
+            !isNaN(h) && !isNaN(rate) ? computeGross(h, rate).grossPay : 0,
+        };
+      }),
+    [weekQ.data, hours, rates],
+  );
 
   const handleExport = async () => {
     const rows = (weekQ.data?.employees ?? []).map((r) => {
@@ -503,6 +525,11 @@ export default function HoursAndPayTab({
           </div>
         </CardContent>
       </Card>
+
+      <PositionBreakdown
+        items={positionItems}
+        sub="this week's pay split by role — live from the hours above, so it always matches the table"
+      />
 
       <p className="text-xs text-muted-foreground flex items-center gap-1.5">
         <Download className="h-3 w-3" /> Saved hours, rates and gross are kept

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
+import { PositionBreakdown } from "@/components/PositionBreakdown";
 import { StatCard } from "@/components/StatCard";
 import {
   currentPayPeriodStart,
@@ -246,6 +247,15 @@ export default function HistoryTab({
           style={{ animationDelay: "120ms" }}
         />
       </section>
+
+      <PositionBreakdown
+        items={employees.map((e) => ({
+          role: e.role,
+          hours: e.hours,
+          gross: e.gross,
+        }))}
+        sub={`saved payroll split by role · ${fmtWeekRange(startWeek)} → ${fmtWeekRange(endWeek)}`}
+      />
 
       <Card className="surface-card border-0">
         <CardHeader>
