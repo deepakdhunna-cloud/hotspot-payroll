@@ -55,6 +55,8 @@ function fixHref(item: Item): { href: string; label: string } | null {
   switch (item.kind) {
     case "long_punch":
       return { href: "/payroll?tab=punches", label: "Open punches" };
+    case "auto_clockout":
+      return { href: "/payroll?tab=punches", label: "Fix punch time" };
     case "hours_mismatch":
       return {
         href: item.weekStart
@@ -78,7 +80,7 @@ function fixHref(item: Item): { href: string; label: string } | null {
   }
 }
 
-const MANUAL_KINDS = new Set(["long_punch", "hours_mismatch"]);
+const MANUAL_KINDS = new Set(["long_punch", "auto_clockout", "hours_mismatch"]);
 
 export function AttentionCenter({ className }: { className?: string }) {
   const utils = trpc.useUtils();

@@ -6,6 +6,7 @@
  * can review punches from previous months.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,6 +107,10 @@ export default function PunchesTab({
   const [editPunch, setEditPunch] = useState<PunchRow | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const settingsQ = trpc.settings.get.useQuery();
+
   const employeesQ = trpc.employees.list.useQuery(
     storeFilter === "all" ? undefined : { store: storeFilter as any },
   );
@@ -127,6 +132,27 @@ export default function PunchesTab({
     utils.payroll.week.invalidate();
     utils.payroll.range.invalidate();
   };
+
+  const setAutoM = trpc.settings.setAutoClockOut.useMutation({
+    onSuccess: (r) => {
+      utils.settings.get.invalidate();
+      if (r.hours) {
+        toast.success(
+          `Auto clock-out on — anyone still on the clock past ${r.hours}h gets clocked out at the limit and flagged for review.`,
+        );
+      } else {
+        toast.success("Auto clock-out turned off.");
+      }
+      if (r.closedNow > 0) {
+        toast.warning(
+          `${r.closedNow} punch${r.closedNow === 1 ? " was" : "es were"} already over the limit and ${r.closedNow === 1 ? "was" : "were"} closed just now — review ${r.closedNow === 1 ? "it" : "them"} in the attention center.`,
+        );
+        refreshAll();
+        utils.attention.list.invalidate();
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const filteredRows = useMemo(() => {
     const rowsAll = (listQ.data ?? []) as PunchRow[];
@@ -257,6 +283,38 @@ export default function PunchesTab({
             </div>
           </div>
           <div className="grid gap-1.5 ml-auto">
+            <Label
+              className="text-[11px] uppercase tracking-wider text-muted-foreground"
+              title="Anyone still on the clock past this many hours is clocked out automatically at the limit, and the attention center asks for a review."
+            >
+              Auto clock-out
+            </Label>
+            <Select
+              value={String(settingsQ.data?.autoClockOutHours ?? 0)}
+              onValueChange={(v) => setAutoM.mutate({ hours: Number(v) })}
+              disabled={!isAdmin || setAutoM.isPending || settingsQ.isLoading}
+            >
+              <SelectTrigger
+                className="w-[130px]"
+                title={
+                  isAdmin
+                    ? "Pick a limit longer than your longest real shift"
+                    : "Only the CEO account can change this"
+                }
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">Off</SelectItem>
+                {[8, 10, 12, 14, 16, 18, 20, 24].map((h) => (
+                  <SelectItem key={h} value={String(h)}>
+                    After {h}h
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground opacity-0">
               .
             </Label>

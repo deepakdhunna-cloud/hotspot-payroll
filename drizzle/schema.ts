@@ -295,3 +295,19 @@ export const attentionItems = mysqlTable(
 
 export type AttentionItem = typeof attentionItems.$inferSelect;
 export type InsertAttentionItem = typeof attentionItems.$inferInsert;
+
+/**
+ * Small key-value store for app-wide operating settings (e.g. the auto
+ * clock-out limit). One row per key; values are strings parsed by the
+ * reader so the table never needs a migration for a new setting.
+ */
+export const appSettings = mysqlTable("app_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  key: varchar("key", { length: 64 }).notNull().unique(),
+  value: varchar("value", { length: 255 }).notNull(),
+  updatedBy: varchar("updatedBy", { length: 64 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AppSetting = typeof appSettings.$inferSelect;
+export type InsertAppSetting = typeof appSettings.$inferInsert;

@@ -35,6 +35,7 @@ import {
   getCurrentPayPeriodStart,
   getWeekStart,
 } from "@shared/hotspot";
+import { isAutoClosedNote, sweepAutoClockOut } from "./autoClockOut";
 
 export const LONG_PUNCH_HOURS = 12;
 export const MISMATCH_TOLERANCE_HOURS = 1;
@@ -45,6 +46,7 @@ export type AttentionCandidate = {
   refKey: string;
   kind:
     | "long_punch"
+    | "auto_clockout"
     | "hours_mismatch"
     | "missing_schedule"
     | "missing_codes"
@@ -138,9 +140,39 @@ export async function computeAttentionCandidates(
         : `${fmtClock(inAt)} → ${fmtClock(endAt)}. Approve these hours as correct, or fix the punch.`,
     });
   };
+  // Punches the auto clock-out sweep closed get their own review task —
+  // the system picked the end time, so a human should confirm it.
+  const autoClosedOf = (p: {
+    id: number;
+    employeeId: number;
+    storeLocation: string;
+    clockInAt: Date | string;
+    clockOutAt: Date | string;
+  }) => {
+    const emp = empById.get(p.employeeId);
+    if (!emp) return;
+    const inAt = new Date(p.clockInAt);
+    const outAt = new Date(p.clockOutAt);
+    const hours = (outAt.getTime() - inAt.getTime()) / 3_600_000;
+    out.push({
+      refKey: `auto_clockout:${p.id}`,
+      kind: "auto_clockout",
+      storeLocation: p.storeLocation,
+      employeeId: p.employeeId,
+      punchId: p.id,
+      title: `${emp.fullName} was clocked out automatically after ${hours.toFixed(1)}h`,
+      detail: `Clocked in ${fmtClock(inAt)} and never out — the auto clock-out limit recorded the clock-out at ${fmtClock(outAt)}. If they actually left at a different time, fix the punch first, then mark this reviewed.`,
+    });
+  };
+
   for (const p of openPunches) longOf(p);
   for (const p of recentPunches) {
-    if (p.clockOutAt) longOf(p);
+    if (!p.clockOutAt) continue;
+    if (isAutoClosedNote(p.note)) {
+      autoClosedOf(p as Parameters<typeof autoClosedOf>[0]);
+    } else {
+      longOf(p);
+    }
   }
 
   /* ---- 2. Closed-week schedule vs worked mismatches ---- */
@@ -240,7 +272,7 @@ export async function computeAttentionCandidates(
 }
 
 /** Kinds a human must act on — they persist even while the condition holds. */
-const MANUAL_KINDS = new Set(["long_punch", "hours_mismatch"]);
+const MANUAL_KINDS = new Set(["long_punch", "auto_clockout", "hours_mismatch"]);
 
 export type AttentionDiff = {
   toInsert: AttentionCandidate[];
@@ -303,6 +335,15 @@ export function diffAttention(
 
 /** Run detection for the given stores and sync the persistent list. */
 export async function syncAttention(stores: string[]) {
+  // Close over-limit punches BEFORE scanning, so a punch that just crossed
+  // the auto clock-out limit shows up as one auto_clockout review task —
+  // not a transient "still on the clock" long_punch. Never let a sweep
+  // hiccup break the attention list itself.
+  try {
+    await sweepAutoClockOut();
+  } catch (err) {
+    console.error("[AutoClockOut] sweep failed:", err);
+  }
   const candidates = await computeAttentionCandidates(stores);
   const refKeys = candidates.map(c => c.refKey);
   const existingByRef = await getAttentionByRefKeys(refKeys);

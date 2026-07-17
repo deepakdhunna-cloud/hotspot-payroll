@@ -1,5 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { diffAttention, type AttentionCandidate } from "./attention";
+import { describe, expect, it, vi } from "vitest";
+import {
+  computeAttentionCandidates,
+  diffAttention,
+  type AttentionCandidate,
+} from "./attention";
+import { autoClockOutNote } from "./autoClockOut";
+import * as db from "./db";
+
+vi.mock("./db", () => ({
+  listEmployees: vi.fn(async () => []),
+  listOpenPunches: vi.fn(async () => []),
+  listPunchesInRange: vi.fn(async () => []),
+  hoursWorkedForWeekBulk: vi.fn(async () => new Map()),
+  getPayrollByWeek: vi.fn(async () => []),
+  getShiftsForWeek: vi.fn(async () => []),
+  getAttentionByRefKeys: vi.fn(async () => []),
+  insertAttentionItems: vi.fn(async () => {}),
+  listAttentionItems: vi.fn(async () => []),
+  reopenAttentionItems: vi.fn(async () => {}),
+  resolveAttentionItems: vi.fn(async () => {}),
+  updateAttentionText: vi.fn(async () => {}),
+  closePunchIfOpen: vi.fn(async () => false),
+  getAppSetting: vi.fn(async () => undefined),
+  logAudit: vi.fn(async () => {}),
+}));
 
 const cand = (refKey: string, title = "t"): AttentionCandidate => ({
   refKey,
@@ -63,5 +87,61 @@ describe("diffAttention — the stack's lifecycle rules", () => {
     expect(d.toRetitle).toHaveLength(1);
     expect(d.toRetitle[0].title).toBe("5 employees can't clock in");
     expect(d.toInsert).toEqual([]);
+  });
+});
+
+describe("computeAttentionCandidates — auto clock-out integration", () => {
+  const STORE = "Hotspot Market 13";
+  const now = new Date("2026-07-17T18:00:00Z");
+
+  it("an auto-closed punch becomes ONE auto_clockout task, never a long_punch", async () => {
+    vi.mocked(db.listEmployees).mockResolvedValueOnce([
+      { id: 1, fullName: "Maya Lopez", storeLocation: STORE, clockCodeHash: "x" },
+    ] as any);
+    // 14h punch closed by the sweep (note carries the marker) — long enough
+    // that the long_punch rule would fire if the dedupe were missing.
+    vi.mocked(db.listPunchesInRange).mockResolvedValueOnce([
+      {
+        id: 44,
+        employeeId: 1,
+        storeLocation: STORE,
+        clockInAt: new Date("2026-07-16T10:00:00Z"),
+        clockOutAt: new Date("2026-07-17T00:00:00Z"),
+        note: autoClockOutNote(14),
+      },
+    ] as any);
+    vi.mocked(db.getShiftsForWeek).mockResolvedValueOnce([
+      { storeLocation: STORE },
+    ] as any);
+
+    const out = await computeAttentionCandidates([STORE], now);
+    const auto = out.find((c) => c.refKey === "auto_clockout:44");
+    expect(auto).toBeTruthy();
+    expect(auto?.kind).toBe("auto_clockout");
+    expect(auto?.title).toContain("clocked out automatically after 14.0h");
+    expect(out.find((c) => c.refKey === "long_punch:44")).toBeUndefined();
+  });
+
+  it("a manually-closed long punch still becomes a long_punch task", async () => {
+    vi.mocked(db.listEmployees).mockResolvedValueOnce([
+      { id: 2, fullName: "Ray Ortiz", storeLocation: STORE, clockCodeHash: "x" },
+    ] as any);
+    vi.mocked(db.listPunchesInRange).mockResolvedValueOnce([
+      {
+        id: 45,
+        employeeId: 2,
+        storeLocation: STORE,
+        clockInAt: new Date("2026-07-16T04:00:00Z"),
+        clockOutAt: new Date("2026-07-16T17:30:00Z"),
+        note: null,
+      },
+    ] as any);
+    vi.mocked(db.getShiftsForWeek).mockResolvedValueOnce([
+      { storeLocation: STORE },
+    ] as any);
+
+    const out = await computeAttentionCandidates([STORE], now);
+    expect(out.find((c) => c.refKey === "long_punch:45")).toBeTruthy();
+    expect(out.find((c) => c.refKey === "auto_clockout:45")).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { csrfOriginGuard } from "../csrf";
 import { runBootstrap } from "../bootstrap";
+import { sweepAutoClockOut } from "../autoClockOut";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ensureDefaultPins } from "./pinAuth";
@@ -62,6 +63,17 @@ async function startServer() {
   await runBootstrap();
   // Ensure the default Hotspot PINs exist (CEO + 4 store PINs).
   ensureDefaultPins().catch((err) => console.error("[PinAuth] init failed:", err));
+  // Auto clock-out sweep: runs at boot and every 5 minutes so forgotten
+  // clock-outs are closed at the owner's limit even when nobody has the
+  // site open. (No-op until the CEO sets a limit in Payroll → Punches.)
+  const runSweep = () =>
+    sweepAutoClockOut()
+      .then((n) => {
+        if (n > 0) console.log(`[AutoClockOut] closed ${n} over-limit punch(es)`);
+      })
+      .catch((err) => console.error("[AutoClockOut] sweep failed:", err));
+  runSweep();
+  setInterval(runSweep, 5 * 60_000);
   // CSRF guard for mutating API requests (see server/csrf.ts + its tests).
   app.use("/api", csrfOriginGuard);
   // tRPC API

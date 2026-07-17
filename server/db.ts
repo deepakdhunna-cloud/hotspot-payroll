@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  appSettings,
   attentionItems,
   auditLog,
   employees,
@@ -394,6 +395,55 @@ export async function deletePunch(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   await db.delete(timePunches).where(eq(timePunches.id, id));
+}
+
+/**
+ * Close a punch ONLY if it is still open. The `clockOutAt IS NULL` guard
+ * makes concurrent closers (auto clock-out sweep vs a kiosk punch vs a
+ * second sweep) race-safe: exactly one wins. Returns whether THIS call
+ * closed it.
+ */
+export async function closePunchIfOpen(
+  id: number,
+  clockOutAt: Date,
+  note?: string,
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db
+    .update(timePunches)
+    .set(note === undefined ? { clockOutAt } : { clockOutAt, note })
+    .where(and(eq(timePunches.id, id), isNull(timePunches.clockOutAt)));
+  const affected = Number(
+    (result as any)[0]?.affectedRows ?? (result as any).affectedRows ?? 0,
+  );
+  return affected > 0;
+}
+
+/** Read one app-wide setting; undefined when unset (or no database). */
+export async function getAppSetting(key: string): Promise<string | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, key))
+    .limit(1);
+  return rows[0]?.value;
+}
+
+/** Create or overwrite one app-wide setting. */
+export async function setAppSetting(
+  key: string,
+  value: string,
+  updatedBy?: string,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db
+    .insert(appSettings)
+    .values({ key, value, updatedBy: updatedBy ?? null })
+    .onDuplicateKeyUpdate({ set: { value, updatedBy: updatedBy ?? null } });
 }
 
 /**

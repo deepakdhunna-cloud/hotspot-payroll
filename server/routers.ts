@@ -46,11 +46,19 @@ import {
   markImportCommitted,
   openPunch,
   replaceWeekShifts,
+  setAppSetting,
   setClockCodeHash,
   updateEmployee,
   updatePunch,
   upsertPayrollEntry,
 } from "./db";
+import {
+  AUTO_CLOCKOUT_MAX_HOURS,
+  AUTO_CLOCKOUT_MIN_HOURS,
+  AUTO_CLOCKOUT_SETTING_KEY,
+  getAutoClockOutHours,
+  sweepAutoClockOut,
+} from "./autoClockOut";
 import { hashClockCode, verifyClockCode } from "./_core/clockAuth";
 import {
   ROLES,
@@ -846,6 +854,58 @@ export const appRouter = router({
           ip: requestIp(ctx.req),
         });
         return { success: true };
+      }),
+  }),
+
+  /**
+   * App-wide operating settings. Today that's the auto clock-out limit:
+   * when set, anyone still on the clock past N hours is clocked out
+   * automatically at exactly the limit, and the attention center asks a
+   * human to verify each auto-closed punch.
+   */
+  settings: router({
+    get: protectedProcedure.query(async () => ({
+      autoClockOutHours: await getAutoClockOutHours(),
+    })),
+
+    setAutoClockOut: protectedProcedure
+      .input(
+        z.object({
+          /** 0 turns the feature off; otherwise whole hours within limits. */
+          hours: z.union([
+            z.literal(0),
+            z
+              .number()
+              .int()
+              .min(AUTO_CLOCKOUT_MIN_HOURS)
+              .max(AUTO_CLOCKOUT_MAX_HOURS),
+          ]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        if (!scope.isAdmin) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only the CEO account can change the auto clock-out limit.",
+          });
+        }
+        await setAppSetting(
+          AUTO_CLOCKOUT_SETTING_KEY,
+          String(input.hours),
+          ctx.session.scope
+        );
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "settings.autoClockOut",
+          entityType: "setting",
+          detail: JSON.stringify({ hours: input.hours || null }),
+          ip: requestIp(ctx.req),
+        });
+        // Take effect immediately: anyone already past the new limit is
+        // clocked out right now rather than at the next timer tick.
+        const closedNow = input.hours > 0 ? await sweepAutoClockOut() : 0;
+        return { hours: input.hours || null, closedNow };
       }),
   }),
 
