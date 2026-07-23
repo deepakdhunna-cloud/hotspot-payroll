@@ -40,6 +40,26 @@ function computeGross(hours: number, rate: number) {
   return { grossPay: hours * rate };
 }
 
+/**
+ * A payroll entry that only exists to carry scheduled hours (created by a
+ * schedule import/commit) — the manager never entered hours on it. Legacy
+ * rows from before the "schedule-only" marker are detected by their saved
+ * 0 hours alongside real clock punches.
+ */
+function isScheduleOnlyEntry(
+  entry: { notes: string | null; hoursWorked: string } | null,
+  clockH: number | undefined,
+): boolean {
+  if (!entry) return false;
+  if (entry.notes === "schedule-only") return true;
+  return (
+    entry.notes !== "fixed-pay" &&
+    Number(entry.hoursWorked) === 0 &&
+    clockH !== undefined &&
+    clockH > 0
+  );
+}
+
 export default function HoursAndPayTab({
   weekStart,
   storeFilter,
@@ -82,7 +102,12 @@ export default function HoursAndPayTab({
     weekQ.data?.employees.forEach((row) => {
       const empId = row.employee.id;
       const clockH = clockHoursMap.get(empId);
-      if (row.entry) {
+      // Entries created by a schedule import/commit only carry the
+      // scheduled hours — the manager never entered hours on them. Treat
+      // them (and legacy 0-hour rows saved before this marker existed)
+      // exactly like unsaved rows so clock punches keep auto-prefilling.
+      const scheduleOnly = isScheduleOnlyEntry(row.entry, clockH);
+      if (row.entry && !scheduleOnly) {
         const saved = Number(row.entry.hoursWorked);
         initialHours[empId] = String(saved);
         if (clockH !== undefined && Math.abs(saved - clockH) > 0.01) {
@@ -364,7 +389,13 @@ export default function HoursAndPayTab({
         />
         <KpiCell
           label="Saved"
-          value={`${(weekQ.data?.employees ?? []).filter((r) => r.entry).length}/${weekQ.data?.employees.length ?? 0}`}
+          value={`${
+            (weekQ.data?.employees ?? []).filter(
+              (r) =>
+                r.entry &&
+                !isScheduleOnlyEntry(r.entry, clockHoursMap.get(r.employee.id)),
+            ).length
+          }/${weekQ.data?.employees.length ?? 0}`}
           sub="rows saved so far this week"
         />
       </KpiBand>
@@ -678,7 +709,8 @@ export default function HoursAndPayTab({
                       <TableCell className="text-right">
                         {saving[emp.id] ? (
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground inline" />
-                        ) : row.entry ? (
+                        ) : row.entry &&
+                          !isScheduleOnlyEntry(row.entry, clockHours) ? (
                           <span className="text-xs text-success inline-flex items-center gap-1">
                             <Check className="h-3 w-3" /> Saved
                           </span>

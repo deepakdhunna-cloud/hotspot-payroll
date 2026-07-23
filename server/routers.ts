@@ -107,6 +107,13 @@ const RoleEnum = z.enum(ROLES);
  * re-open the row in set-pay mode.
  */
 const FIXED_PAY_NOTE = "fixed-pay";
+/**
+ * Marker for payroll entries that exist only because a schedule was
+ * committed (they carry scheduledHours). The manager has NOT entered hours
+ * for these rows yet, so the Hours & pay grid must keep auto-prefilling
+ * them from clock punches instead of treating them as a saved 0.
+ */
+const SCHEDULE_ONLY_NOTE = "schedule-only";
 
 function getScope(session: PinSession) {
   if (session.role === "admin") {
@@ -2780,9 +2787,8 @@ export const appRouter = router({
           }
 
           const payRate = Number(emp.payRate);
-          const hoursWorked = Number(
-            existingByEmp.get(emp.id)?.hoursWorked ?? 0
-          );
+          const existingEntry = existingByEmp.get(emp.id);
+          const hoursWorked = Number(existingEntry?.hoursWorked ?? 0);
           const { regularPay, grossPay } = computeGrossPay(
             hoursWorked,
             payRate
@@ -2798,6 +2804,10 @@ export const appRouter = router({
             regularPay: String(regularPay.toFixed(2)),
             overtimePay: "0.00",
             grossPay: String(grossPay.toFixed(2)),
+            // A schedule commit must never masquerade as manager-entered
+            // hours. Fresh rows are marked schedule-only; existing rows
+            // keep whatever note they already carry (fixed-pay, manual…).
+            notes: existingEntry ? (existingEntry.notes ?? null) : SCHEDULE_ONLY_NOTE,
           });
 
           // Day-level shifts: only dated shifts are persisted.
@@ -3010,9 +3020,8 @@ export const appRouter = router({
           await replaceWeekShifts(empId, to, rows);
           const scheduled = empShifts.reduce((a, s) => a + Number(s.hours), 0);
           const payRate = Number(emp.payRate);
-          const hoursWorked = Number(
-            targetByEmp.get(empId)?.hoursWorked ?? 0
-          );
+          const targetEntry = targetByEmp.get(empId);
+          const hoursWorked = Number(targetEntry?.hoursWorked ?? 0);
           const { regularPay, grossPay } = computeGrossPay(
             hoursWorked,
             payRate
@@ -3027,6 +3036,9 @@ export const appRouter = router({
             regularPay: String(regularPay.toFixed(2)),
             overtimePay: "0.00",
             grossPay: String(grossPay.toFixed(2)),
+            // Same rule as schedule.commit: never turn a schedule copy into
+            // manager-entered hours; keep real notes on existing rows.
+            notes: targetEntry ? (targetEntry.notes ?? null) : SCHEDULE_ONLY_NOTE,
           });
           moved += empShifts.length;
         }
