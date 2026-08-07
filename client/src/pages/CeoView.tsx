@@ -10,11 +10,12 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AttentionCenter } from "@/components/AttentionCenter";
 import { InitialsBadge } from "@/components/InitialsBadge";
+import { Input } from "@/components/ui/input";
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
-import { StoreSelect } from "@/components/StoreSelect";
+import { useStoreScope } from "@/contexts/StoreScopeContext";
 import { WeekTrend } from "@/components/WeekTrend";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,7 @@ export default function CeoView() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
-  const [storeFilter, setStoreFilter] = useState<string>("all");
+  const { scope: storeFilter, setScope: setStoreFilter } = useStoreScope();
 
   const optionsQ = trpc.meta.options.useQuery(undefined, { enabled: !!isAdmin });
   // Always fetch every store — the store cards ARE the filter, so the
@@ -167,12 +168,6 @@ export default function CeoView() {
         actions={
           <>
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
-            <StoreSelect
-              stores={stores}
-              isAdmin
-              value={storeFilter}
-              onChange={setStoreFilter}
-            />
           </>
         }
       />
@@ -601,7 +596,7 @@ function PinRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-end gap-2">
-          <input
+          <Input
             type="password"
             inputMode="numeric"
             pattern="\d*"
@@ -609,7 +604,7 @@ function PinRow({
             placeholder="New PIN (4–8 digits)"
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
-            className="h-9 w-44 rounded-md border border-input bg-background px-3 text-sm tabular-nums tracking-widest text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-9 w-44 text-center text-sm tabular-nums tracking-widest"
           />
           <Button
             size="sm"

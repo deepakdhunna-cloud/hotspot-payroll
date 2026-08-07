@@ -17,7 +17,7 @@ import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
-import { StoreSelect } from "@/components/StoreSelect";
+import { useStoreScope } from "@/contexts/StoreScopeContext";
 import { WeekTrend } from "@/components/WeekTrend";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +60,7 @@ export default function Home() {
     if (isCfo) setLocation("/cfo", { replace: true });
   }, [isCfo, setLocation]);
   const [weekStart, setWeekStart] = useState(() => inProgressPayWeekStart());
-  const [storeFilter, setStoreFilter] = useState("all");
+  const { scope: storeFilter } = useStoreScope();
   const [showAllClockedIn, setShowAllClockedIn] = useState(false);
 
   const scopeQ = trpc.meta.myScope.useQuery();
@@ -146,12 +146,6 @@ export default function Home() {
         actions={
           <>
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
-            <StoreSelect
-              stores={stores}
-              isAdmin={!!isAdmin}
-              value={storeFilter}
-              onChange={setStoreFilter}
-            />
           </>
         }
       />

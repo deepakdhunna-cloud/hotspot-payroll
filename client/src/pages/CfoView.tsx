@@ -32,14 +32,16 @@ import { BarChart3, Landmark, ShieldCheck } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "wouter";
 
+// Series + delta colors come from the token system (index.css) so the CFO
+// portal speaks the same color language as every other page.
 const STORE_COLORS = [
-  "oklch(0.30 0.035 255)",
-  "oklch(0.52 0.10 250)",
-  "oklch(0.70 0.065 220)",
-  "oklch(0.62 0.09 75)",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-5)",
 ];
-const UP = "oklch(0.52 0.14 155)";
-const DOWN = "oklch(0.55 0.19 27)";
+const UP = "var(--success)";
+const DOWN = "var(--destructive)";
 
 type CfoWeek = {
   weekStart: Date | string;
@@ -107,7 +109,7 @@ function WeeklyPayrollChart({
             x2={W - M.right}
             y1={y(t)}
             y2={y(t)}
-            stroke="oklch(0.9 0.005 250)"
+            style={{ stroke: "var(--border)" }}
             strokeWidth="1"
           />
           <text
@@ -115,7 +117,7 @@ function WeeklyPayrollChart({
             y={y(t) + 4}
             textAnchor="end"
             fontSize="11"
-            fill="oklch(0.55 0.01 250)"
+            style={{ fill: "var(--muted-foreground)" }}
             className="tabular-nums"
           >
             {fmtWholeMoney(t)}
@@ -127,7 +129,7 @@ function WeeklyPayrollChart({
         x2={W - M.right}
         y1={y(0)}
         y2={y(0)}
-        stroke="oklch(0.75 0.01 250)"
+        style={{ stroke: "var(--input)" }}
         strokeWidth="1.25"
       />
 
@@ -152,7 +154,7 @@ function WeeklyPayrollChart({
                   y={y1}
                   width={barW}
                   height={Math.max(0, y0 - y1)}
-                  fill={STORE_COLORS[si % STORE_COLORS.length]}
+                  style={{ fill: STORE_COLORS[si % STORE_COLORS.length] }}
                   opacity={w.estimated ? 0.75 : 1}
                 >
                   <title>{`${STORE_ABBR[s] ?? s} · ${weekLabel(w.weekStart)} · ${fmtMoney(g)}`}</title>
@@ -165,7 +167,7 @@ function WeeklyPayrollChart({
               textAnchor="middle"
               fontSize="12.5"
               fontWeight="700"
-              fill="oklch(0.25 0.02 255)"
+              style={{ fill: "var(--foreground)" }}
               className="tabular-nums"
             >
               {fmtWholeMoney(w.gross)}
@@ -177,7 +179,7 @@ function WeeklyPayrollChart({
               textAnchor="middle"
               fontSize="11.5"
               fontWeight="600"
-              fill="oklch(0.4 0.015 255)"
+              style={{ fill: "var(--muted-foreground)" }}
             >
               {weekLabel(w.weekStart)}
             </text>
@@ -188,7 +190,7 @@ function WeeklyPayrollChart({
                 textAnchor="middle"
                 fontSize="11"
                 fontWeight="700"
-                fill={delta >= 0 ? DOWN : UP}
+                style={{ fill: delta >= 0 ? DOWN : UP }}
                 className="tabular-nums"
               >
                 {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%
@@ -205,9 +207,8 @@ function WeeklyPayrollChart({
             y={y(projected)}
             width={barW}
             height={Math.max(0, y(0) - y(projected))}
-            fill="oklch(0.52 0.10 250)"
+            style={{ fill: "var(--chart-1)", stroke: "var(--chart-1)" }}
             opacity={0.3}
-            stroke="oklch(0.52 0.10 250)"
             strokeDasharray="5 4"
             strokeWidth="1.5"
           >
@@ -219,7 +220,7 @@ function WeeklyPayrollChart({
             textAnchor="middle"
             fontSize="12.5"
             fontWeight="700"
-            fill="oklch(0.45 0.06 250)"
+            style={{ fill: "var(--muted-foreground)" }}
             className="tabular-nums"
           >
             {fmtWholeMoney(projected)}
@@ -230,7 +231,7 @@ function WeeklyPayrollChart({
             textAnchor="middle"
             fontSize="11.5"
             fontWeight="600"
-            fill="oklch(0.45 0.06 250)"
+            style={{ fill: "var(--muted-foreground)" }}
           >
             this week
           </text>
@@ -239,7 +240,7 @@ function WeeklyPayrollChart({
             y={H - M.bottom + 34}
             textAnchor="middle"
             fontSize="11"
-            fill="oklch(0.55 0.03 250)"
+            style={{ fill: "var(--muted-foreground)" }}
           >
             projected
           </text>

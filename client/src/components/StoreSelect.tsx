@@ -20,12 +20,15 @@ export function StoreSelect({
   value,
   onChange,
   className,
+  tone = "card",
 }: {
   stores: string[];
   isAdmin: boolean;
   value: string; // "all" or a store name
   onChange: (next: string) => void;
   className?: string;
+  /** "card" on porcelain pages, "ink" inside the dark top bar */
+  tone?: "card" | "ink";
 }) {
   const canPickAll = isAdmin || stores.length > 1;
 
@@ -33,11 +36,19 @@ export function StoreSelect({
     return (
       <span
         className={cn(
-          "inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium shadow-sm",
+          "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium",
+          tone === "ink"
+            ? "border-white/15 bg-white/5 text-white/85"
+            : "border-border bg-card shadow-sm",
           className,
         )}
       >
-        <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+        <Building2
+          className={cn(
+            "h-3.5 w-3.5",
+            tone === "ink" ? "text-white/50" : "text-muted-foreground",
+          )}
+        />
         {STORE_ABBR[stores[0]] ?? stores[0]}
       </span>
     );
@@ -45,7 +56,15 @@ export function StoreSelect({
 
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={cn("h-9 w-44 bg-card shadow-sm", className)}>
+      <SelectTrigger
+        className={cn(
+          "h-9 w-44",
+          tone === "ink"
+            ? "border-white/15 bg-white/10 text-white shadow-none hover:border-white/30 [&_svg]:text-white/60"
+            : "bg-card shadow-sm",
+          className,
+        )}
+      >
         <SelectValue placeholder="Store" />
       </SelectTrigger>
       <SelectContent>

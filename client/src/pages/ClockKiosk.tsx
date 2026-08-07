@@ -177,8 +177,7 @@ export default function ClockKiosk() {
               <Clock className="h-4 w-4" /> Time Clock Kiosk
             </div>
             <h1
-              className="mt-2 text-3xl font-bold tracking-tight text-white"
-              style={{ fontFamily: "var(--font-display)" }}
+              className="font-display mt-2 text-3xl font-bold tracking-tight text-white"
             >
               Select your store
             </h1>
@@ -193,10 +192,10 @@ export default function ClockKiosk() {
                     setStore(s);
                     navigate(`/clock/${encodeURIComponent(s)}`);
                   }}
-                  className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-6 text-left transition-all hover:border-[oklch(0.62_0.21_27)] hover:bg-white/10"
+                  className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-6 text-left transition-all hover:border-[var(--brand-red-bright)] hover:bg-white/10"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-[oklch(0.62_0.21_27/0.15)] p-3 text-[oklch(0.72_0.19_27)] transition-colors">
+                    <div className="rounded-xl bg-primary/15 p-3 text-[var(--brand-red-bright)] transition-colors">
                       <Building2 className="h-6 w-6" />
                     </div>
                     <div>
@@ -219,9 +218,9 @@ export default function ClockKiosk() {
   const overlayClass =
     flash?.kind === "success"
       ? flash.action === "in"
-        ? "from-emerald-600/95 to-emerald-700/95"
-        : "from-sky-600/95 to-sky-700/95"
-      : "from-red-600/95 to-red-700/95";
+        ? "kiosk-flash-in"
+        : "kiosk-flash-out"
+      : "kiosk-flash-error";
 
   return (
     <div className="ink-panel relative min-h-screen overflow-hidden">
@@ -234,7 +233,7 @@ export default function ClockKiosk() {
 
         <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-[oklch(0.62_0.21_27/0.15)] p-2 text-[oklch(0.72_0.19_27)]">
+            <div className="rounded-lg bg-primary/15 p-2 text-[var(--brand-red-bright)]">
               <Building2 className="h-5 w-5" />
             </div>
             <div>
@@ -270,8 +269,7 @@ export default function ClockKiosk() {
                 <ShieldCheck className="h-4 w-4" /> Enter your 4-digit code
               </div>
               <h1
-                className="mt-2 text-3xl font-bold tracking-tight"
-                style={{ fontFamily: "var(--font-display)" }}
+                className="font-display mt-2 text-3xl font-bold tracking-tight"
               >
                 Clock In or Out
               </h1>
@@ -320,10 +318,9 @@ export default function ClockKiosk() {
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className={cn(
-              "pointer-events-auto w-full max-w-md rounded-3xl bg-gradient-to-br p-8 text-white shadow-2xl",
+              "kiosk-flash-pop pointer-events-auto w-full max-w-md rounded-3xl p-8 text-white shadow-2xl",
               overlayClass,
             )}
-            style={{ animation: "kiosk-flash 220ms cubic-bezier(0.23, 1, 0.32, 1)" }}
           >
             {flash.kind === "success" ? (
               <div className="text-center">
@@ -392,13 +389,6 @@ export default function ClockKiosk() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes kiosk-flash {
-          0% { transform: scale(0.95); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }
@@ -417,8 +407,7 @@ function LiveClock() {
   return (
     <div className="text-right">
       <div
-        className="text-3xl font-semibold tabular-nums text-white"
-        style={{ fontFamily: "var(--font-display)" }}
+        className="font-display text-3xl font-semibold tabular-nums text-white"
       >
         {formatClock(now)}
       </div>

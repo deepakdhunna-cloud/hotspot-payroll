@@ -582,12 +582,12 @@ export default function ScheduleImport() {
             </div>
             <div className="kpi-cell">
               <span className="kpi-label">Matched to roster</span>
-              <span className="kpi-value text-[oklch(0.4_0.11_160)]">{matchedCount}</span>
+              <span className="kpi-value delta-good">{matchedCount}</span>
             </div>
             <div className="kpi-cell">
               <span className="kpi-label">Need review</span>
               <span
-                className={`kpi-value ${unmatchedIndices.length > 0 ? "text-[oklch(0.46_0.13_60)]" : ""}`}
+                className={`kpi-value ${unmatchedIndices.length > 0 ? "text-warning" : ""}`}
               >
                 {unmatchedIndices.length}
               </span>
@@ -627,7 +627,7 @@ export default function ScheduleImport() {
                       <span className="text-xs text-muted-foreground tabular-nums">
                         {Number(hourOverrides[i] ?? rows[i].scheduledHours).toFixed(1)}h scheduled
                       </span>
-                      <div className="flex items-center gap-2 ml-auto">
+                      <div className="flex w-full flex-wrap items-center gap-2 md:ml-auto md:w-auto">
                         <Select
                           value={qaRole[i] ?? "Cashier"}
                           onValueChange={(v) => setQaRole((m) => ({ ...m, [i]: v }))}
@@ -1241,18 +1241,14 @@ function WeekScheduleBoard({
                                 {cell.map((s) => (
                                   <div
                                     key={s.id}
-                                    className="inline-flex flex-col items-center rounded-lg border px-2 py-1 leading-tight"
-                                    style={{
-                                      background: "#2a78d612",
-                                      borderColor: "#2a78d630",
-                                    }}
+                                    className="pill-sched inline-flex flex-col items-center px-2 py-1 leading-tight"
                                   >
                                     {s.startLabel && s.endLabel ? (
                                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">
                                         {s.startLabel}–{s.endLabel}
                                       </span>
                                     ) : null}
-                                    <span className="text-xs font-bold tabular-nums text-[#1d5eae]">
+                                    <span className="text-xs font-bold tabular-nums">
                                       {s.hours.toFixed(1)}h
                                     </span>
                                   </div>
@@ -1289,7 +1285,10 @@ function WeekScheduleBoard({
                         key={i}
                         className="text-center tabular-nums text-xs font-bold"
                         style={{
-                          background: t > 0 ? `rgba(42,120,214,${(t / maxDay) * 0.16})` : undefined,
+                          background:
+                            t > 0
+                              ? `color-mix(in oklab, var(--chart-1) ${Math.round((t / maxDay) * 16)}%, transparent)`
+                              : undefined,
                         }}
                       >
                         {t > 0 ? `${t.toFixed(1)}h` : "—"}

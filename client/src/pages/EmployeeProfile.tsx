@@ -30,6 +30,8 @@ import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange } from "@/lib/format";
 import { fmtDateTime, fmtDuration } from "@/lib/payweek";
 import { StatCard } from "@/components/StatCard";
+import { PageHeader } from "@/components/PageHeader";
+import { InitialsBadge } from "@/components/InitialsBadge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   AlertDialog,
@@ -101,63 +103,61 @@ export default function EmployeeProfile() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div>
         <Link href="/employees">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" /> Back to roster
           </Button>
         </Link>
-        {emp && (
-          <div className="flex items-center gap-2">
-            <Dialog open={editOpen} onOpenChange={setEditOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Pencil className="h-4 w-4 mr-2" /> Edit profile
-                </Button>
-              </DialogTrigger>
-              <EditEmployeeDialog
-                emp={emp}
-                roles={optionsQ.data?.roles ?? []}
-                stores={scopeQ.data?.stores ?? []}
-                onClose={() => setEditOpen(false)}
-              />
-            </Dialog>
-            <DeleteEmployeeButton
-              id={emp.id}
-              name={emp.fullName}
-              onDeleted={() => navigate("/employees")}
-            />
-          </div>
-        )}
       </div>
+
+      {empQ.isLoading && (
+        <div className="space-y-4" role="status" aria-label="Loading employee">
+          <div className="h-24 animate-pulse rounded-xl bg-muted" />
+          <div className="h-44 animate-pulse rounded-xl bg-muted" />
+          <div className="h-64 animate-pulse rounded-xl bg-muted" />
+        </div>
+      )}
 
       {emp && (
         <>
-          <Card className="surface-card border-0 overflow-hidden rise-in">
-            <div className="bg-primary/5 p-6 border-b border-primary/10">
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full bg-primary/10 border border-primary/20 text-primary flex items-center justify-center text-2xl font-bold">
-                  {emp.fullName
-                    .split(" ")
-                    .map((p) => p[0])
-                    .slice(0, 2)
-                    .join("")
-                    .toUpperCase()}
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold">{emp.fullName}</h1>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                    <Badge variant="secondary" className="font-normal">
-                      {emp.role}
-                    </Badge>
-                    <span>·</span>
-                    <span className="flex items-center gap-1">
-                      <Building2 className="h-3 w-3" /> {emp.storeLocation}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <PageHeader
+            eyebrow="Employee"
+            title={
+              <span className="flex items-center gap-3">
+                <InitialsBadge name={emp.fullName} />
+                <span className="min-w-0 truncate">{emp.fullName}</span>
+              </span>
+            }
+            description={
+              <span className="flex items-center gap-2">
+                <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                  {emp.role}
+                </span>
+                <span>·</span>
+                <span className="flex items-center gap-1">
+                  <Building2 className="h-3 w-3" /> {emp.storeLocation}
+                </span>
+              </span>
+            }
+            actions={
+              <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Pencil className="h-4 w-4 mr-2" /> Edit profile
+                  </Button>
+                </DialogTrigger>
+                <EditEmployeeDialog
+                  emp={emp}
+                  roles={optionsQ.data?.roles ?? []}
+                  stores={scopeQ.data?.stores ?? []}
+                  onClose={() => setEditOpen(false)}
+                />
+              </Dialog>
+            }
+          />
+
+          <Card className="surface-card border-0 rise-in">
             <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6">
               <Field
                 icon={<DollarSign className="h-4 w-4" />}
@@ -257,6 +257,26 @@ export default function EmployeeProfile() {
             isLoading={punchesQ.isLoading}
             punches={(punchesQ.data ?? []) as any[]}
           />
+
+          {/* Destructive action lives at the end of the page, away from the
+              everyday controls. Deactivate (inside Edit profile) is the safe
+              default for departures; Delete is for records created by mistake. */}
+          <Card className="border-destructive/25">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">Remove this employee</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Deleting is permanent. If they simply left the team, use
+                  Deactivate inside Edit profile so payroll history stays intact.
+                </p>
+              </div>
+              <DeleteEmployeeButton
+                id={emp.id}
+                name={emp.fullName}
+                onDeleted={() => navigate("/employees")}
+              />
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

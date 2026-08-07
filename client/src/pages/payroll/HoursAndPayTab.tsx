@@ -1,8 +1,10 @@
 /**
  * Hours & pay tab — the per-employee weekly grid that auto-prefills from
- * clock punches and lets a manager override any row by clicking the pencil.
- * Lifted out of the original WeeklyPayroll page so the new combined Payroll
- * page can compose it alongside Punches and History tabs.
+ * clock punches and lets a manager override any row.
+ *
+ * Editing model: edits stay local and mark the row as "Edited"; nothing
+ * saves until the manager commits — per row, or all at once from the
+ * floating commit bar. A refetch never clobbers a row you're editing.
  */
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +13,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -18,9 +21,11 @@ import {
 import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { Money } from "@/components/Money";
 import { PositionBreakdown } from "@/components/PositionBreakdown";
+import { TableStateRows } from "@/components/QueryStates";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
+import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   Check,
@@ -33,7 +38,7 @@ import {
   Save,
   Undo2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 
 function computeGross(hours: number, rate: number) {
@@ -60,6 +65,8 @@ function isScheduleOnlyEntry(
   );
 }
 
+type RowBaseline = { hours: string; rate: string; fixed: string | undefined };
+
 export default function HoursAndPayTab({
   weekStart,
   storeFilter,
@@ -83,6 +90,22 @@ export default function HoursAndPayTab({
   // of hours × rate (salary weeks, agreed flat rates, bonuses). Hours are
   // still recorded — they just stop driving the dollars.
   const [fixedPay, setFixedPay] = useState<Record<number, string>>({});
+  const [batchProgress, setBatchProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+
+  // Last-saved values per row; "dirty" = current state differs from this.
+  const baseline = useRef<Record<number, RowBaseline>>({});
+  const [baselineVersion, bumpBaseline] = useReducer((x: number) => x + 1, 0);
+
+  // Live mirrors so the init effect can merge without stale closures.
+  const hoursRef = useRef(hours);
+  hoursRef.current = hours;
+  const ratesRef = useRef(rates);
+  ratesRef.current = rates;
+  const fixedRef = useRef(fixedPay);
+  fixedRef.current = fixedPay;
 
   const clockHoursQ = trpc.clock.weekHoursBulk.useQuery({
     weekStart,
@@ -94,11 +117,21 @@ export default function HoursAndPayTab({
     return m;
   }, [clockHoursQ.data]);
 
+  const rowIsDirty = (empId: number): boolean => {
+    const b = baseline.current[empId];
+    if (!b) return false;
+    return (
+      (hoursRef.current[empId] ?? "") !== b.hours ||
+      (ratesRef.current[empId] ?? "") !== b.rate ||
+      fixedRef.current[empId] !== b.fixed
+    );
+  };
+
   useEffect(() => {
-    const initialHours: Record<number, string> = {};
-    const initialRates: Record<number, string> = {};
-    const initialOverride: Record<number, boolean> = {};
-    const initialFixed: Record<number, string> = {};
+    const nextHours: Record<number, string> = {};
+    const nextRates: Record<number, string> = {};
+    const nextOverride: Record<number, boolean> = {};
+    const nextFixed: Record<number, string> = {};
     weekQ.data?.employees.forEach((row) => {
       const empId = row.employee.id;
       const clockH = clockHoursMap.get(empId);
@@ -107,153 +140,222 @@ export default function HoursAndPayTab({
       // them (and legacy 0-hour rows saved before this marker existed)
       // exactly like unsaved rows so clock punches keep auto-prefilling.
       const scheduleOnly = isScheduleOnlyEntry(row.entry, clockH);
+      let freshHours: string;
       if (row.entry && !scheduleOnly) {
         const saved = Number(row.entry.hoursWorked);
-        initialHours[empId] = String(saved);
+        freshHours = String(saved);
         if (clockH !== undefined && Math.abs(saved - clockH) > 0.01) {
-          initialOverride[empId] = true;
+          nextOverride[empId] = true;
         }
       } else if (clockH !== undefined && clockH > 0) {
-        initialHours[empId] = clockH.toFixed(2);
+        freshHours = clockH.toFixed(2);
       } else {
-        initialHours[empId] = "";
+        freshHours = "";
       }
       // Set-pay mode: a week saved as set pay re-opens with its saved
       // amount; a standing profile amount covers EVERY other week — past
       // or future, saved hourly or not saved yet.
       const standingWeekly = Number(row.employee.weeklyPay ?? 0);
+      let freshFixed: string | undefined;
       if (row.entry?.notes === "fixed-pay") {
-        initialFixed[empId] = String(Number(row.entry.grossPay));
+        freshFixed = String(Number(row.entry.grossPay));
       } else if (standingWeekly > 0) {
-        initialFixed[empId] = String(standingWeekly);
+        freshFixed = String(standingWeekly);
       }
-      initialRates[empId] = String(
+      const freshRate = String(
         Number(row.entry?.payRateSnapshot ?? row.employee.payRate ?? 0),
       );
+
+      // Merge: a row mid-edit keeps its local values and its old baseline,
+      // so a background refetch can't wipe unsaved work.
+      if (rowIsDirty(empId)) {
+        nextHours[empId] = hoursRef.current[empId] ?? "";
+        nextRates[empId] = ratesRef.current[empId] ?? "";
+        const f = fixedRef.current[empId];
+        if (f !== undefined) nextFixed[empId] = f;
+        if (manualOverride[empId]) nextOverride[empId] = true;
+      } else {
+        nextHours[empId] = freshHours;
+        nextRates[empId] = freshRate;
+        if (freshFixed !== undefined) nextFixed[empId] = freshFixed;
+        baseline.current[empId] = {
+          hours: freshHours,
+          rate: freshRate,
+          fixed: freshFixed,
+        };
+      }
     });
-    setHours(initialHours);
-    setRates(initialRates);
-    setManualOverride(initialOverride);
-    setFixedPay(initialFixed);
+    setHours(nextHours);
+    setRates(nextRates);
+    setManualOverride(nextOverride);
+    setFixedPay(nextFixed);
+    bumpBaseline();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekQ.data, clockHoursMap]);
 
   const utils = trpc.useUtils();
   const saveHoursM = trpc.payroll.saveHours.useMutation({
-    onSuccess: () => {
-      utils.payroll.week.invalidate();
-      utils.payroll.range.invalidate();
-      utils.employees.list.invalidate();
-      utils.dashboard.summary.invalidate();
-    },
     onError: (e) => toast.error(e.message),
   });
-
-  const handleSaveOne = async (employeeId: number, scheduled: number) => {
-    const rawHours = hours[employeeId];
-    const rawRate = rates[employeeId];
-    const numHours = Number(rawHours);
-    const numRate = Number(rawRate);
-    const fixedRaw = fixedPay[employeeId];
-    const isFixed = fixedRaw !== undefined;
-    if (isFixed) {
-      const amount = Number(fixedRaw);
-      if (fixedRaw === "" || isNaN(amount) || amount < 0) {
-        toast.error("Enter a valid set-pay amount.");
-        return;
-      }
-      // Hours stay on the record but no longer drive the dollars — an
-      // empty hours field simply records zero.
-      const hoursVal =
-        rawHours === "" || isNaN(numHours) || numHours < 0 ? 0 : numHours;
-      setSaving((s) => ({ ...s, [employeeId]: true }));
-      try {
-        await saveHoursM.mutateAsync({
-          employeeId,
-          weekStart,
-          hoursWorked: hoursVal,
-          scheduledHours: scheduled,
-          payRateOverride:
-            rawRate !== "" && !isNaN(numRate) && numRate >= 0
-              ? numRate
-              : undefined,
-          fixedGross: amount,
-        });
-        toast.success("Saved as set pay");
-      } finally {
-        setSaving((s) => ({ ...s, [employeeId]: false }));
-      }
-      return;
-    }
-    if (rawHours === "" || isNaN(numHours) || numHours < 0) {
-      toast.error("Enter a valid number of hours.");
-      return;
-    }
-    if (rawRate === "" || isNaN(numRate) || numRate < 0) {
-      toast.error("Enter a valid pay rate.");
-      return;
-    }
-    setSaving((s) => ({ ...s, [employeeId]: true }));
-    try {
-      await saveHoursM.mutateAsync({
-        employeeId,
-        weekStart,
-        hoursWorked: numHours,
-        scheduledHours: scheduled,
-        payRateOverride: numRate,
-      });
-      toast.success("Saved");
-    } finally {
-      setSaving((s) => ({ ...s, [employeeId]: false }));
-    }
+  const invalidateAll = () => {
+    utils.payroll.week.invalidate();
+    utils.payroll.range.invalidate();
+    utils.employees.list.invalidate();
+    utils.dashboard.summary.invalidate();
   };
 
-  const handleSaveAll = async () => {
-    const rowsForSave = weekQ.data?.employees ?? [];
-    let saved = 0;
-    setSaving({});
-    for (const row of rowsForSave) {
-      const empId = row.employee.id;
-      const rawHours = hours[empId];
-      const fixedRaw = fixedPay[empId];
-      if (fixedRaw !== undefined) {
-        const amount = Number(fixedRaw);
-        if (fixedRaw === "" || isNaN(amount) || amount < 0) continue;
-        const numHours = Number(rawHours);
-        await saveHoursM.mutateAsync({
-          employeeId: empId,
-          weekStart,
-          hoursWorked:
-            rawHours === "" || rawHours === undefined || isNaN(numHours)
-              ? 0
-              : Math.max(0, numHours),
-          scheduledHours: Number(row.entry?.scheduledHours ?? 0),
-          fixedGross: amount,
-        });
-        saved++;
-        continue;
-      }
-      if (rawHours === "" || rawHours === undefined) continue;
-      const numHours = Number(rawHours);
-      const numRate = Number(rates[empId]);
-      if (isNaN(numHours) || numHours < 0) continue;
-      if (isNaN(numRate) || numRate < 0) continue;
+  /** Validate a row's current values. Returns the payload or an error string. */
+  const buildPayload = (
+    empId: number,
+    scheduled: number,
+  ):
+    | { kind: "fixed"; hoursWorked: number; amount: number; rate?: number }
+    | { kind: "hourly"; hoursWorked: number; rate: number }
+    | { kind: "error"; message: string }
+    | { kind: "skip" } => {
+    const rawHours = hours[empId];
+    const rawRate = rates[empId];
+    const numHours = Number(rawHours);
+    const numRate = Number(rawRate);
+    const fixedRaw = fixedPay[empId];
+    if (fixedRaw !== undefined) {
+      const amount = Number(fixedRaw);
+      if (fixedRaw === "" || isNaN(amount) || amount < 0)
+        return { kind: "error", message: "needs a valid set-pay amount" };
+      const hoursVal =
+        rawHours === "" || rawHours === undefined || isNaN(numHours) || numHours < 0
+          ? 0
+          : numHours;
+      return {
+        kind: "fixed",
+        hoursWorked: hoursVal,
+        amount,
+        rate:
+          rawRate !== "" && !isNaN(numRate) && numRate >= 0 ? numRate : undefined,
+      };
+    }
+    if (rawHours === "" || rawHours === undefined)
+      return { kind: "skip" };
+    if (isNaN(numHours) || numHours < 0)
+      return { kind: "error", message: "needs a valid number of hours" };
+    if (rawRate === "" || isNaN(numRate) || numRate < 0)
+      return { kind: "error", message: "needs a valid pay rate" };
+    return { kind: "hourly", hoursWorked: numHours, rate: numRate };
+  };
+
+  const commitBaseline = (empId: number) => {
+    baseline.current[empId] = {
+      hours: hours[empId] ?? "",
+      rate: rates[empId] ?? "",
+      fixed: fixedPay[empId],
+    };
+    bumpBaseline();
+  };
+
+  const handleSaveOne = async (empId: number, scheduled: number) => {
+    const payload = buildPayload(empId, scheduled);
+    if (payload.kind === "error") {
+      toast.error(`This row ${payload.message}.`);
+      return;
+    }
+    if (payload.kind === "skip") {
+      toast.error("Enter hours before saving.");
+      return;
+    }
+    setSaving((s) => ({ ...s, [empId]: true }));
+    try {
       await saveHoursM.mutateAsync({
         employeeId: empId,
         weekStart,
-        hoursWorked: numHours,
-        scheduledHours: Number(row.entry?.scheduledHours ?? 0),
-        payRateOverride: numRate,
+        hoursWorked: payload.hoursWorked,
+        scheduledHours: scheduled,
+        payRateOverride: payload.rate,
+        ...(payload.kind === "fixed" ? { fixedGross: payload.amount } : {}),
       });
-      saved++;
+      commitBaseline(empId);
+      toast.success(payload.kind === "fixed" ? "Saved as set pay" : "Saved");
+      invalidateAll();
+    } finally {
+      setSaving((s) => ({ ...s, [empId]: false }));
     }
-    toast.success(`Saved ${saved} payroll entr${saved === 1 ? "y" : "ies"}.`);
+  };
+
+  const rows = weekQ.data?.employees ?? [];
+
+  const dirtyIds = useMemo(
+    () => rows.map((r) => r.employee.id).filter((id) => rowIsDirty(id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, hours, rates, fixedPay, baselineVersion],
+  );
+
+  /** Save every dirty row; report progress and any rows that failed. */
+  const handleSaveAll = async () => {
+    const targets = rows.filter((r) => dirtyIds.includes(r.employee.id));
+    if (targets.length === 0) return;
+    const failed: string[] = [];
+    let done = 0;
+    setBatchProgress({ done: 0, total: targets.length });
+    for (const row of targets) {
+      const empId = row.employee.id;
+      const scheduled = Number(row.entry?.scheduledHours ?? 0);
+      const payload = buildPayload(empId, scheduled);
+      if (payload.kind === "error") {
+        failed.push(`${row.employee.fullName} (${payload.message})`);
+        continue;
+      }
+      if (payload.kind === "skip") continue;
+      try {
+        await saveHoursM.mutateAsync({
+          employeeId: empId,
+          weekStart,
+          hoursWorked: payload.hoursWorked,
+          scheduledHours: scheduled,
+          payRateOverride: payload.rate,
+          ...(payload.kind === "fixed" ? { fixedGross: payload.amount } : {}),
+        });
+        commitBaseline(empId);
+        done++;
+      } catch {
+        failed.push(row.employee.fullName);
+      }
+      setBatchProgress({ done, total: targets.length });
+    }
+    setBatchProgress(null);
+    invalidateAll();
+    if (failed.length) {
+      toast.error(
+        `Saved ${done}, but ${failed.length} didn't save: ${failed.join(", ")}`,
+      );
+    } else {
+      toast.success(`Saved ${done} payroll entr${done === 1 ? "y" : "ies"}.`);
+    }
+  };
+
+  /** Throw away local edits and fall back to the last-saved values. */
+  const handleDiscard = () => {
+    const nextHours = { ...hours };
+    const nextRates = { ...rates };
+    const nextFixed = { ...fixedPay };
+    for (const id of dirtyIds) {
+      const b = baseline.current[id];
+      if (!b) continue;
+      nextHours[id] = b.hours;
+      nextRates[id] = b.rate;
+      if (b.fixed === undefined) delete nextFixed[id];
+      else nextFixed[id] = b.fixed;
+    }
+    setHours(nextHours);
+    setRates(nextRates);
+    setFixedPay(nextFixed);
+    bumpBaseline();
   };
 
   const totals = useMemo(() => {
-    const rowsForTotals = weekQ.data?.employees ?? [];
+    let scheduledTotal = 0;
     let hoursTotal = 0;
     let grossTotal = 0;
-    for (const r of rowsForTotals) {
+    for (const r of rows) {
+      scheduledTotal += Number(r.entry?.scheduledHours ?? 0);
       const rawH = hours[r.employee.id];
       const rawR = rates[r.employee.id];
       const fixedRaw = fixedPay[r.employee.id];
@@ -272,8 +374,8 @@ export default function HoursAndPayTab({
         grossTotal += computeGross(h, rate).grossPay;
       }
     }
-    return { hoursTotal, grossTotal };
-  }, [weekQ.data, hours, rates, fixedPay]);
+    return { scheduledTotal, hoursTotal, grossTotal };
+  }, [rows, hours, rates, fixedPay]);
 
   // Same live numbers as the table rows, regrouped by position. Rate
   // mirrors the row's own expression (cleared field = $0, like the row's
@@ -281,7 +383,7 @@ export default function HoursAndPayTab({
   // means people actually being paid this week.
   const positionItems = useMemo(
     () =>
-      (weekQ.data?.employees ?? [])
+      rows
         .map((r) => {
           const rawH = hours[r.employee.id];
           const rawR = rates[r.employee.id];
@@ -309,11 +411,11 @@ export default function HoursAndPayTab({
           };
         })
         .filter((it) => it.hours > 0 || it.gross > 0),
-    [weekQ.data, hours, rates, fixedPay],
+    [rows, hours, rates, fixedPay],
   );
 
   const handleExport = async () => {
-    const rows = (weekQ.data?.employees ?? []).map((r) => {
+    const exportRows = rows.map((r) => {
       const h = Number(hours[r.employee.id] ?? 0);
       const rate = Number(rates[r.employee.id] ?? r.employee.payRate);
       const fixedRaw = fixedPay[r.employee.id];
@@ -334,37 +436,37 @@ export default function HoursAndPayTab({
     const periodLabel = fmtWeekRange(weekStart);
     const filename = `Hotspot-Payroll-${periodLabel.replace(/\s/g, "")}.xlsx`;
     try {
-    await exportXlsx<{
-      employee: string;
-      store: string;
-      role: string;
-      rate: number;
-      scheduled: number;
-      hours: number;
-      gross: number;
-    }>(filename, {
-      name: "Hours & pay",
-      title: `Hotspot Market — Weekly Payroll`,
-      subtitle: `Pay period: ${periodLabel}`,
-      columns: [
-        { header: "Employee", key: "employee", width: 24 },
-        { header: "Store", key: "store", width: 18 },
-        { header: "Role", key: "role", width: 14 },
-        { header: "Pay rate", key: "rate", width: 12, numFmt: "$#,##0.00", align: "right" },
-        { header: "Scheduled", key: "scheduled", width: 12, numFmt: "0.00", align: "right" },
-        { header: "Hours worked", key: "hours", width: 14, numFmt: "0.00", align: "right" },
-        { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
-      ],
-      rows,
-      totals: {
-        scheduled: rows.reduce((a, b) => a + b.scheduled, 0),
-        hours: rows.reduce((a, b) => a + b.hours, 0),
-        gross: rows.reduce((a, b) => a + b.gross, 0),
-      },
-      totalsLabelKey: "employee",
-      totalsLabel: "Totals",
-    });
-    toast.success("Spreadsheet downloaded.");
+      await exportXlsx<{
+        employee: string;
+        store: string;
+        role: string;
+        rate: number;
+        scheduled: number;
+        hours: number;
+        gross: number;
+      }>(filename, {
+        name: "Hours & pay",
+        title: `Hotspot Market — Weekly Payroll`,
+        subtitle: `Pay period: ${periodLabel}`,
+        columns: [
+          { header: "Employee", key: "employee", width: 24 },
+          { header: "Store", key: "store", width: 18 },
+          { header: "Role", key: "role", width: 14 },
+          { header: "Pay rate", key: "rate", width: 12, numFmt: "$#,##0.00", align: "right" },
+          { header: "Scheduled", key: "scheduled", width: 12, numFmt: "0.00", align: "right" },
+          { header: "Hours worked", key: "hours", width: 14, numFmt: "0.00", align: "right" },
+          { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
+        ],
+        rows: exportRows,
+        totals: {
+          scheduled: exportRows.reduce((a, b) => a + b.scheduled, 0),
+          hours: exportRows.reduce((a, b) => a + b.hours, 0),
+          gross: exportRows.reduce((a, b) => a + b.gross, 0),
+        },
+        totalsLabelKey: "employee",
+        totalsLabel: "Totals",
+      });
+      toast.success("Spreadsheet downloaded.");
     } catch (err) {
       console.error("[Export] failed:", err);
       toast.error(
@@ -372,6 +474,102 @@ export default function HoursAndPayTab({
       );
     }
   };
+
+  const savedCount = rows.filter(
+    (r) =>
+      r.entry && !isScheduleOnlyEntry(r.entry, clockHoursMap.get(r.employee.id)),
+  ).length;
+
+  /** Everything one row needs, precomputed once for table + card views. */
+  const rowView = (row: (typeof rows)[number]) => {
+    const emp = row.employee;
+    const scheduled = Number(row.entry?.scheduledHours ?? 0);
+    const rawHours = hours[emp.id] ?? "";
+    const rawRate = rates[emp.id] ?? String(Number(emp.payRate));
+    const hrs = rawHours === "" ? 0 : Number(rawHours);
+    const rate = rawRate === "" ? 0 : Number(rawRate);
+    const fixedRaw = fixedPay[emp.id];
+    const isFixedRow = fixedRaw !== undefined;
+    const { grossPay: hourlyGross } = computeGross(hrs, rate);
+    const grossPay = isFixedRow
+      ? fixedRaw === "" || isNaN(Number(fixedRaw))
+        ? 0
+        : Number(fixedRaw)
+      : hourlyGross;
+    const clockHours = clockHoursMap.get(emp.id);
+    const hasClockHours = clockHours !== undefined && clockHours > 0;
+    const isManual = manualOverride[emp.id] === true;
+    const showReadOnlyClock = hasClockHours && !isManual;
+    // Clocked meaningfully past schedule — flag it for the manager.
+    const overBy =
+      clockHours !== undefined && scheduled > 0 && clockHours > scheduled + 0.25
+        ? clockHours - scheduled
+        : null;
+    const dirty = dirtyIds.includes(emp.id);
+    const isSaved =
+      !!row.entry && !isScheduleOnlyEntry(row.entry, clockHours);
+    return {
+      emp,
+      scheduled,
+      rawHours,
+      rawRate,
+      fixedRaw,
+      isFixedRow,
+      grossPay,
+      clockHours,
+      hasClockHours,
+      isManual,
+      showReadOnlyClock,
+      overBy,
+      dirty,
+      isSaved,
+    };
+  };
+
+  const setRowFixed = (empId: number, value: string | null) =>
+    setFixedPay((s) => {
+      const next = { ...s };
+      if (value === null) delete next[empId];
+      else next[empId] = value;
+      return next;
+    });
+
+  const RowStatus = ({
+    empId,
+    dirty,
+    isSaved,
+    scheduled,
+  }: {
+    empId: number;
+    dirty: boolean;
+    isSaved: boolean;
+    scheduled: number;
+  }) =>
+    saving[empId] ? (
+      <Loader2 className="inline h-4 w-4 animate-spin text-muted-foreground" />
+    ) : dirty ? (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="chip-warn">
+          <Pencil className="h-3 w-3" /> edited
+        </span>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-7 w-7 text-primary"
+          onClick={() => handleSaveOne(empId, scheduled)}
+          aria-label="Save this row"
+          title="Save this row"
+        >
+          <Save className="h-4 w-4" />
+        </Button>
+      </span>
+    ) : isSaved ? (
+      <span className="inline-flex items-center gap-1 text-xs text-success">
+        <Check className="h-3 w-3" /> Saved
+      </span>
+    ) : (
+      <span className="text-xs text-muted-foreground">—</span>
+    );
 
   return (
     <div className="space-y-6">
@@ -389,14 +587,12 @@ export default function HoursAndPayTab({
         />
         <KpiCell
           label="Saved"
-          value={`${
-            (weekQ.data?.employees ?? []).filter(
-              (r) =>
-                r.entry &&
-                !isScheduleOnlyEntry(r.entry, clockHoursMap.get(r.employee.id)),
-            ).length
-          }/${weekQ.data?.employees.length ?? 0}`}
-          sub="rows saved so far this week"
+          value={`${savedCount}/${rows.length}`}
+          sub={
+            dirtyIds.length > 0
+              ? `${dirtyIds.length} row${dirtyIds.length === 1 ? "" : "s"} edited — unsaved`
+              : "rows saved so far this week"
+          }
         />
       </KpiBand>
 
@@ -408,97 +604,188 @@ export default function HoursAndPayTab({
               variant="outline"
               size="sm"
               onClick={handleExport}
-              disabled={!weekQ.data || weekQ.data.employees.length === 0}
+              disabled={rows.length === 0}
               title="Download this week as an .xlsx spreadsheet (opens in Google Sheets)"
             >
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
               Export .xlsx
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveAll}
-              disabled={saveHoursM.isPending}
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {saveHoursM.isPending ? "Saving…" : "Save all"}
             </Button>
           </div>
         </CardHeader>
         <CardContent className="px-0">
-          <div className="overflow-x-auto">
+          {/* ---------- Phone layout: one card per employee ---------- */}
+          <div className="space-y-3 px-4 pb-2 md:hidden">
+            {weekQ.isLoading &&
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-28 animate-pulse rounded-xl bg-muted" />
+              ))}
+            {weekQ.isError && (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                Couldn&apos;t load this week.{" "}
+                <button className="font-semibold text-primary" onClick={() => weekQ.refetch()}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {!weekQ.isLoading && !weekQ.isError && rows.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No active employees in this scope.
+              </p>
+            )}
+            {rows.map((row) => {
+              const v = rowView(row);
+              return (
+                <div
+                  key={v.emp.id}
+                  className={cn(
+                    "rounded-xl border border-border bg-card p-4",
+                    v.dirty && "border-primary/35",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">{v.emp.fullName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation} ·{" "}
+                        {v.scheduled.toFixed(1)}h scheduled
+                      </div>
+                    </div>
+                    <RowStatus
+                      empId={v.emp.id}
+                      dirty={v.dirty}
+                      isSaved={v.isSaved}
+                      scheduled={v.scheduled}
+                    />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Pay rate
+                      </span>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.25"
+                        min="0"
+                        value={v.rawRate}
+                        onChange={(e) =>
+                          setRates((s) => ({ ...s, [v.emp.id]: e.target.value }))
+                        }
+                        className="mt-1 h-10 text-right tabular-nums"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Hours
+                      </span>
+                      {v.showReadOnlyClock ? (
+                        <button
+                          type="button"
+                          className="mt-1 flex h-10 w-full items-center justify-between rounded-md border border-input bg-secondary/50 px-3 text-sm"
+                          onClick={() =>
+                            setManualOverride((s) => ({ ...s, [v.emp.id]: true }))
+                          }
+                          title="Auto-pulled from the time clock — tap to edit manually"
+                        >
+                          <span className="chip-good">
+                            <Clock className="h-3 w-3" /> clock
+                          </span>
+                          <span className="font-medium tabular-nums">
+                            {Number(v.clockHours).toFixed(2)}
+                          </span>
+                        </button>
+                      ) : (
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.25"
+                          min="0"
+                          value={v.rawHours}
+                          onChange={(e) =>
+                            setHours((s) => ({ ...s, [v.emp.id]: e.target.value }))
+                          }
+                          placeholder={
+                            v.hasClockHours ? Number(v.clockHours).toFixed(2) : "0"
+                          }
+                          className="mt-1 h-10 text-right tabular-nums"
+                        />
+                      )}
+                    </label>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {v.overBy !== null && (
+                        <span className="chip-warn">
+                          <AlertTriangle className="h-3 w-3" /> +{v.overBy.toFixed(1)}h
+                        </span>
+                      )}
+                      {v.isFixedRow ? (
+                        <span className="chip-warn">
+                          <DollarSign className="h-3 w-3" /> set pay
+                        </span>
+                      ) : null}
+                    </div>
+                    {v.isFixedRow ? (
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={v.fixedRaw}
+                        onChange={(e) => setRowFixed(v.emp.id, e.target.value)}
+                        aria-label={`Set pay amount for ${v.emp.fullName}`}
+                        className="h-9 w-28 text-right tabular-nums"
+                      />
+                    ) : (
+                      <span className="font-semibold tabular-nums">
+                        {fmtMoney(v.grossPay)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ---------- Desktop layout: the grid ---------- */}
+          <div className="hidden overflow-x-auto md:block">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Store</TableHead>
-                  <TableHead className="text-right w-[130px]">
-                    Pay rate
+                  <TableHead className="sticky left-0 z-10 bg-card">
+                    Employee
                   </TableHead>
+                  <TableHead className="w-[130px] text-right">Pay rate</TableHead>
                   <TableHead className="text-right">Scheduled</TableHead>
-                  <TableHead className="text-right w-[140px]">
+                  <TableHead className="w-[150px] text-right">
                     Hours worked
                   </TableHead>
                   <TableHead className="text-right">Gross</TableHead>
-                  <TableHead className="w-[100px] text-right">Saved</TableHead>
+                  <TableHead className="w-[110px] text-right">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {weekQ.isLoading && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center py-10 text-sm text-muted-foreground"
-                    >
-                      Loading employees…
-                    </TableCell>
-                  </TableRow>
-                )}
-                {weekQ.data?.employees.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center py-10 text-sm text-muted-foreground"
-                    >
-                      No active employees in this scope.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {weekQ.data?.employees.map((row) => {
-                  const emp = row.employee;
-                  const scheduled = Number(row.entry?.scheduledHours ?? 0);
-                  const rawHours = hours[emp.id] ?? "";
-                  const rawRate =
-                    rates[emp.id] ?? String(Number(emp.payRate));
-                  const hrs = rawHours === "" ? 0 : Number(rawHours);
-                  const rate = rawRate === "" ? 0 : Number(rawRate);
-                  const fixedRaw = fixedPay[emp.id];
-                  const isFixedRow = fixedRaw !== undefined;
-                  const { grossPay: hourlyGross } = computeGross(hrs, rate);
-                  const grossPay = isFixedRow
-                    ? fixedRaw === "" || isNaN(Number(fixedRaw))
-                      ? 0
-                      : Number(fixedRaw)
-                    : hourlyGross;
-                  const clockHours = clockHoursMap.get(emp.id);
-                  const hasClockHours =
-                    clockHours !== undefined && clockHours > 0;
-                  const isManual = manualOverride[emp.id] === true;
-                  const showReadOnlyClock = hasClockHours && !isManual;
-                  // Clocked meaningfully past schedule — flag it for the
-                  // manager while they enter payroll.
-                  const overBy =
-                    clockHours !== undefined &&
-                    scheduled > 0 &&
-                    clockHours > scheduled + 0.25
-                      ? clockHours - scheduled
-                      : null;
+                <TableStateRows
+                  colSpan={6}
+                  isLoading={weekQ.isLoading}
+                  isError={weekQ.isError}
+                  onRetry={() => weekQ.refetch()}
+                  isEmpty={!weekQ.isLoading && rows.length === 0}
+                  emptyTitle="No active employees in this scope"
+                  emptyHint="Change the store filter, or add employees from the Employees page."
+                />
+                {rows.map((row) => {
+                  const v = rowView(row);
                   return (
-                    <TableRow key={emp.id}>
-                      <TableCell className="font-medium">
-                        {emp.fullName}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}
+                    <TableRow
+                      key={v.emp.id}
+                      className={cn(v.dirty && "bg-primary/[0.03]")}
+                    >
+                      <TableCell className="sticky left-0 z-10 bg-card font-medium">
+                        <div>{v.emp.fullName}</div>
+                        <div className="text-[11px] font-normal text-muted-foreground">
+                          {STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Input
@@ -507,51 +794,36 @@ export default function HoursAndPayTab({
                           step="0.25"
                           min="0"
                           max="1000"
-                          value={rawRate}
+                          value={v.rawRate}
                           onChange={(e) =>
-                            setRates((s) => ({
-                              ...s,
-                              [emp.id]: e.target.value,
-                            }))
+                            setRates((s) => ({ ...s, [v.emp.id]: e.target.value }))
                           }
-                          onBlur={() => {
-                            const numRate = Number(rawRate);
-                            const profileRate = Number(emp.payRate);
-                            if (
-                              rawRate !== "" &&
-                              !isNaN(numRate) &&
-                              numRate !== profileRate &&
-                              rawHours !== ""
-                            ) {
-                              handleSaveOne(emp.id, scheduled);
-                            }
-                          }}
                           placeholder="0.00"
-                          className="text-right tabular-nums h-9"
+                          className="h-9 text-right tabular-nums"
                         />
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         <div className="flex items-center justify-end gap-2">
-                          {overBy !== null && (
+                          {v.overBy !== null && (
                             <span
                               className="chip-warn"
                               title="Clock hours exceed scheduled hours"
                             >
                               <AlertTriangle className="h-3 w-3" /> +
-                              {overBy.toFixed(1)}h over
+                              {v.overBy.toFixed(1)}h over
                             </span>
                           )}
-                          <span>{scheduled.toFixed(1)} h</span>
+                          <span>{v.scheduled.toFixed(1)} h</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        {showReadOnlyClock ? (
+                        {v.showReadOnlyClock ? (
                           <div className="flex items-center justify-end gap-2">
                             <span
-                              className="tabular-nums font-medium"
+                              className="font-medium tabular-nums"
                               title="Auto-pulled from time clock punches"
                             >
-                              {Number(clockHours).toFixed(2)}
+                              {Number(v.clockHours).toFixed(2)}
                             </span>
                             <span className="chip-good">
                               <Clock className="h-3 w-3" /> clock
@@ -560,12 +832,12 @@ export default function HoursAndPayTab({
                               size="icon"
                               variant="ghost"
                               className="h-7 w-7"
-                              onClick={() => {
+                              onClick={() =>
                                 setManualOverride((s) => ({
                                   ...s,
-                                  [emp.id]: true,
-                                }));
-                              }}
+                                  [v.emp.id]: true,
+                                }))
+                              }
                               aria-label="Override clock hours"
                               title="Edit manually"
                             >
@@ -580,48 +852,35 @@ export default function HoursAndPayTab({
                               step="0.25"
                               min="0"
                               max="168"
-                              value={rawHours}
+                              value={v.rawHours}
                               onChange={(e) =>
                                 setHours((s) => ({
                                   ...s,
-                                  [emp.id]: e.target.value,
+                                  [v.emp.id]: e.target.value,
                                 }))
                               }
-                              onBlur={() => {
-                                if (
-                                  rawHours !== "" &&
-                                  rawHours !==
-                                    String(Number(row.entry?.hoursWorked ?? 0))
-                                ) {
-                                  handleSaveOne(emp.id, scheduled);
-                                }
-                              }}
                               placeholder={
-                                hasClockHours
-                                  ? Number(clockHours).toFixed(2)
+                                v.hasClockHours
+                                  ? Number(v.clockHours).toFixed(2)
                                   : "0"
                               }
-                              className="text-right tabular-nums h-9"
+                              className="h-9 text-right tabular-nums"
                             />
-                            {hasClockHours && isManual && (
+                            {v.hasClockHours && v.isManual && (
                               <div className="flex items-center gap-2 text-[10px]">
                                 <span className="chip-warn">
                                   <Pencil className="h-3 w-3" /> manual
                                 </span>
                                 <button
                                   type="button"
-                                  className="text-primary hover:underline inline-flex items-center gap-1"
+                                  className="inline-flex items-center gap-1 text-primary hover:underline"
                                   onClick={() => {
-                                    const v = Number(clockHours).toFixed(2);
-                                    setHours((s) => ({
-                                      ...s,
-                                      [emp.id]: v,
-                                    }));
+                                    const val = Number(v.clockHours).toFixed(2);
+                                    setHours((s) => ({ ...s, [v.emp.id]: val }));
                                     setManualOverride((s) => ({
                                       ...s,
-                                      [emp.id]: false,
+                                      [v.emp.id]: false,
                                     }));
-                                    handleSaveOne(emp.id, scheduled);
                                   }}
                                   title="Reset to clock hours"
                                 >
@@ -633,31 +892,18 @@ export default function HoursAndPayTab({
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {isFixedRow ? (
+                        {v.isFixedRow ? (
                           <div className="flex flex-col items-end gap-1">
                             <Input
                               type="number"
                               inputMode="decimal"
                               step="0.01"
                               min="0"
-                              value={fixedRaw}
-                              onChange={(e) =>
-                                setFixedPay((s) => ({
-                                  ...s,
-                                  [emp.id]: e.target.value,
-                                }))
-                              }
-                              onBlur={() => {
-                                if (
-                                  fixedRaw !== "" &&
-                                  !isNaN(Number(fixedRaw))
-                                ) {
-                                  handleSaveOne(emp.id, scheduled);
-                                }
-                              }}
+                              value={v.fixedRaw}
+                              onChange={(e) => setRowFixed(v.emp.id, e.target.value)}
                               placeholder="0.00"
-                              aria-label={`Set pay amount for ${emp.fullName}`}
-                              className="text-right tabular-nums h-9 w-28 ml-auto"
+                              aria-label={`Set pay amount for ${v.emp.fullName}`}
+                              className="ml-auto h-9 w-28 text-right tabular-nums"
                             />
                             <div className="flex items-center gap-2 text-[10px]">
                               <span
@@ -668,15 +914,9 @@ export default function HoursAndPayTab({
                               </span>
                               <button
                                 type="button"
-                                className="text-primary hover:underline inline-flex items-center gap-1"
-                                onClick={() =>
-                                  setFixedPay((s) => {
-                                    const next = { ...s };
-                                    delete next[emp.id];
-                                    return next;
-                                  })
-                                }
-                                title="Back to hours × rate (saves on the next change)"
+                                className="inline-flex items-center gap-1 text-primary hover:underline"
+                                onClick={() => setRowFixed(v.emp.id, null)}
+                                title="Back to hours × rate"
                               >
                                 <Undo2 className="h-3 w-3" /> Hourly
                               </button>
@@ -684,21 +924,20 @@ export default function HoursAndPayTab({
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1">
-                            <span className="tabular-nums font-semibold">
-                              {fmtMoney(grossPay)}
+                            <span className="font-semibold tabular-nums">
+                              {fmtMoney(v.grossPay)}
                             </span>
                             <Button
                               size="icon"
                               variant="ghost"
                               className="h-7 w-7 text-muted-foreground"
                               onClick={() =>
-                                setFixedPay((s) => ({
-                                  ...s,
-                                  [emp.id]:
-                                    grossPay > 0 ? grossPay.toFixed(2) : "",
-                                }))
+                                setRowFixed(
+                                  v.emp.id,
+                                  v.grossPay > 0 ? v.grossPay.toFixed(2) : "",
+                                )
                               }
-                              aria-label={`Set a flat pay amount for ${emp.fullName}`}
+                              aria-label={`Set a flat pay amount for ${v.emp.fullName}`}
                               title="Set pay: a flat dollar amount for this week instead of hours × rate"
                             >
                               <DollarSign className="h-3.5 w-3.5" />
@@ -707,23 +946,37 @@ export default function HoursAndPayTab({
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {saving[emp.id] ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground inline" />
-                        ) : row.entry &&
-                          !isScheduleOnlyEntry(row.entry, clockHours) ? (
-                          <span className="text-xs text-success inline-flex items-center gap-1">
-                            <Check className="h-3 w-3" /> Saved
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        )}
+                        <RowStatus
+                          empId={v.emp.id}
+                          dirty={v.dirty}
+                          isSaved={v.isSaved}
+                          scheduled={v.scheduled}
+                        />
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
+              {rows.length > 0 && (
+                <TableFooter>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell className="sticky left-0 z-10 bg-card font-semibold">
+                      Totals
+                    </TableCell>
+                    <TableCell />
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {totals.scheduledTotal.toFixed(1)} h
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {totals.hoursTotal.toFixed(1)} h
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {fmtMoney(totals.grossTotal)}
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+              )}
             </Table>
           </div>
         </CardContent>
@@ -734,10 +987,42 @@ export default function HoursAndPayTab({
         sub="this week's pay split by role — live from the hours above, so it always matches the table"
       />
 
-      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Download className="h-3 w-3" /> Saved hours, rates and gross are kept
         permanently. Use the History tab to look back any number of weeks.
       </p>
+
+      {/* ---------- Commit bar: appears only when there's unsaved work ---------- */}
+      {dirtyIds.length > 0 && (
+        <div className="sticky bottom-4 z-20 px-2">
+          <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-card/95 px-4 py-3 shadow-[0_8px_30px_-8px_rgb(16_24_40/0.3)] backdrop-blur">
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+              {dirtyIds.length} unsaved change{dirtyIds.length === 1 ? "" : "s"}
+            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDiscard}
+                disabled={batchProgress !== null}
+              >
+                Discard
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveAll}
+                disabled={batchProgress !== null}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {batchProgress
+                  ? `Saving ${batchProgress.done}/${batchProgress.total}…`
+                  : "Save changes"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

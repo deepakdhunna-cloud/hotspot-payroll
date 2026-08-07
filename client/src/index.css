@@ -266,14 +266,6 @@
     border-color: oklch(1 0 0 / 0.06);
   }
 
-  /* Softer row rules: tables separate by whisper, not by wire. */
-  tbody tr {
-    border-color: oklch(0.93 0.005 255);
-  }
-  .dark tbody tr {
-    border-color: oklch(1 0 0 / 0.06);
-  }
-
   /* Keyboard focus is always visible — including the ink top bar. */
   .topbar-link:focus-visible {
     outline: 2px solid var(--brand-red-bright);
@@ -505,6 +497,80 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  /* ---------- Semantic deltas: one voice for up/down everywhere ----------
+     Good/bad mirror the chip text colors so numbers and chips agree.       */
+  .delta-good {
+    color: oklch(0.4 0.11 160);
+  }
+  .dark .delta-good {
+    color: oklch(0.8 0.12 160);
+  }
+  .delta-bad {
+    color: oklch(0.44 0.18 27);
+  }
+  .dark .delta-bad {
+    color: oklch(0.8 0.15 27);
+  }
+
+  /* Scheduled-shift pill — chart-1 family, used by the schedule board. */
+  .pill-sched {
+    background: color-mix(in oklab, var(--chart-1) 9%, transparent);
+    border: 1px solid color-mix(in oklab, var(--chart-1) 24%, transparent);
+    color: oklch(0.4 0.11 258);
+    border-radius: 0.5rem;
+  }
+  .dark .pill-sched {
+    color: oklch(0.76 0.09 255);
+  }
+
+  /* ---------- Kiosk punch flash: state gradients from the token hues ----
+     in = success green, out = chart-1 blue, error = signal red.           */
+  .kiosk-flash-in {
+    background-image: linear-gradient(135deg, oklch(0.52 0.13 160 / 0.97), oklch(0.43 0.12 162 / 0.97));
+  }
+  .kiosk-flash-out {
+    background-image: linear-gradient(135deg, oklch(0.51 0.13 255 / 0.97), oklch(0.42 0.12 258 / 0.97));
+  }
+  .kiosk-flash-error {
+    background-image: linear-gradient(135deg, oklch(0.54 0.21 27 / 0.97), oklch(0.45 0.19 27 / 0.97));
+  }
+  .kiosk-flash-pop {
+    animation: kiosk-flash 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @keyframes kiosk-flash {
+    from {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  /* Wrong-PIN shake (login + kiosk keypads). */
+  .animate-shake {
+    animation: shake 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-8px);
+    }
+    40% {
+      transform: translateX(8px);
+    }
+    60% {
+      transform: translateX(-6px);
+    }
+    80% {
+      transform: translateX(4px);
     }
   }
 

@@ -34,6 +34,11 @@ import {
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { BrandMark } from "./BrandMark";
+import { StoreSelect } from "./StoreSelect";
+import {
+  StoreScopeProvider,
+  useStoreScope,
+} from "@/contexts/StoreScopeContext";
 import { trpc } from "@/lib/trpc";
 
 type MenuItem = {
@@ -65,7 +70,31 @@ export default function DashboardLayout({
   if (!user) {
     return <PinKeypad />;
   }
-  return <DashboardLayoutContent>{children}</DashboardLayoutContent>;
+  return (
+    <StoreScopeProvider>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+    </StoreScopeProvider>
+  );
+}
+
+/**
+ * The one store filter, living in the chrome so it follows the manager
+ * across pages. Single-store logins see nothing extra — their store is
+ * already in the account chip.
+ */
+function TopbarStoreScope({ className }: { className?: string }) {
+  const { scope, setScope, stores, isAdmin } = useStoreScope();
+  if (!isAdmin && stores.length <= 1) return null;
+  return (
+    <StoreSelect
+      tone="ink"
+      stores={stores}
+      isAdmin={isAdmin}
+      value={scope}
+      onChange={setScope}
+      className={className}
+    />
+  );
 }
 
 function NavLinks({
@@ -189,6 +218,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           />
 
           <div className="ml-auto flex items-center gap-2">
+            {!isCfo && <TopbarStoreScope className="hidden md:flex w-40" />}
             {!isCfo && <AttentionBell onNavigate={() => setLocation("/")} />}
             {!isCfo && (
               <button
@@ -261,13 +291,31 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Small screens: nav as a scrollable second row */}
-        <NavLinks
-          items={menuItems}
-          isPathActive={isPathActive}
-          onNavigate={setLocation}
-          className="flex md:hidden items-center overflow-x-auto border-t border-white/10 [&>.topbar-link]:h-11 [&>.topbar-link]:shrink-0"
-        />
+        {/* Small screens: nav as a scrollable second row. The right edge
+            fades out so it's obvious more sections are a swipe away, and
+            the store scope sits pinned at the end of the row. */}
+        <div className="flex md:hidden items-center border-t border-white/10">
+          <div className="relative min-w-0 flex-1">
+            <NavLinks
+              items={menuItems}
+              isPathActive={isPathActive}
+              onNavigate={setLocation}
+              className="flex items-center overflow-x-auto [&>.topbar-link]:h-11 [&>.topbar-link]:shrink-0"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 w-8"
+              style={{
+                background: "linear-gradient(to left, var(--ink), transparent)",
+              }}
+            />
+          </div>
+          {!isCfo && (
+            <div className="shrink-0 px-2">
+              <TopbarStoreScope className="w-36" />
+            </div>
+          )}
+        </div>
         {/* The brand thread: a signal-red hairline closing the chrome */}
         <div
           aria-hidden="true"
