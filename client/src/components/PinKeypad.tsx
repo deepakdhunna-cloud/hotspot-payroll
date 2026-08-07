@@ -98,10 +98,7 @@ export default function PinKeypad() {
           <span className="speed-lines mb-5 block" aria-hidden="true">
             <i />
           </span>
-          <h2
-            className="text-[2.6rem] leading-[1.02] font-bold text-white"
-            style={{ fontFamily: "var(--font-display)", letterSpacing: "0.005em" }}
-          >
+          <h2 className="font-display text-[2.6rem] leading-[1.02] font-bold tracking-[0.005em] text-white">
             Payroll, schedules &amp; the time clock.
             <br />
             <span className="text-white/60">Your whole operation, one place.</span>
@@ -129,10 +126,7 @@ export default function PinKeypad() {
             <span className="eyebrow flex items-center gap-2">
               <Lock className="h-3 w-3" /> Secure access
             </span>
-            <h1
-              className="text-[1.75rem] leading-none font-semibold"
-              style={{ fontFamily: "var(--font-display)", letterSpacing: "0.01em" }}
-            >
+            <h1 className="font-display text-[1.75rem] leading-none font-semibold tracking-[0.01em]">
               Enter your PIN
             </h1>
             <p className="text-sm text-muted-foreground max-w-xs">
@@ -194,16 +188,6 @@ export default function PinKeypad() {
       </div>
       </div>
 
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-8px); }
-          40% { transform: translateX(8px); }
-          60% { transform: translateX(-6px); }
-          80% { transform: translateX(4px); }
-        }
-        .animate-shake { animation: shake 0.45s cubic-bezier(0.23, 1, 0.32, 1); }
-      `}</style>
     </div>
   );
 }

@@ -37,10 +37,10 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InitialsBadge } from "@/components/InitialsBadge";
-import { StoreSelect } from "@/components/StoreSelect";
+import { useStoreScope } from "@/contexts/StoreScopeContext";
 
 export default function Employees() {
-  const [storeFilter, setStoreFilter] = useState<string>("all");
+  const { scope: storeFilter } = useStoreScope();
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -183,12 +183,6 @@ export default function Employees() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <StoreSelect
-                stores={stores}
-                isAdmin={!!scopeQ.data?.isAdmin}
-                value={storeFilter}
-                onChange={setStoreFilter}
-              />
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="h-9 w-[180px] bg-card shadow-sm">
                   <SelectValue placeholder="All roles" />

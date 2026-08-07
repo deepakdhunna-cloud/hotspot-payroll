@@ -314,10 +314,7 @@ export default function PunchesTab({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-1.5">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground opacity-0">
-              .
-            </Label>
+          <div className="flex items-end">
             <Button onClick={() => setAddOpen(true)}>
               <Plus className="h-4 w-4 mr-2" /> Add punch
             </Button>
@@ -418,7 +415,7 @@ export default function PunchesTab({
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-red-600 hover:text-red-700"
+                          className="h-8 w-8 text-destructive hover:text-destructive/80"
                           onClick={() => setDeleteId(p.id)}
                           aria-label="Delete punch"
                         >

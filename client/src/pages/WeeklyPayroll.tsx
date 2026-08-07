@@ -9,14 +9,13 @@
  * the dashboard CTA and the alias from /time-clock can land on the right tab.
  */
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { trpc } from "@/lib/trpc";
 import {
   currentPayPeriodStart,
   fromDateInput,
   startOfPayWeek,
 } from "@/lib/payweek";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
-import { StoreSelect } from "@/components/StoreSelect";
+import { useStoreScope } from "@/contexts/StoreScopeContext";
 import {
   ClipboardList,
   Clock,
@@ -58,20 +57,23 @@ export default function WeeklyPayroll() {
   }, [location]);
 
   const [weekStart, setWeekStart] = useState<Date>(readWeekFromQuery);
-  // "all" is safe for single-store managers too: the server scopes queries to
-  // their store, and StoreSelect renders a static badge instead of a picker.
-  const [storeFilter, setStoreFilter] = useState<string>("all");
+  // Store scope lives in the top bar and follows the manager across pages.
+  const { scope: storeFilter } = useStoreScope();
 
-  const scopeQ = trpc.meta.myScope.useQuery();
-  const stores = scopeQ.data?.stores ?? [];
-  const isAdmin = scopeQ.data?.isAdmin ?? false;
+  // The browser Back button undoes a tab switch (switchTab pushes real
+  // history entries), so re-read the tab whenever history pops.
+  useEffect(() => {
+    const onPop = () => setTab(readTabFromQuery());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const switchTab = (next: TabKey) => {
     setTab(next);
     // Reflect the tab in the URL so deep links + refresh keep the same view.
     const url = new URL(window.location.href);
     url.searchParams.set("tab", next);
-    window.history.replaceState({}, "", url.toString());
+    window.history.pushState({}, "", url.toString());
   };
 
   return (
@@ -81,17 +83,11 @@ export default function WeeklyPayroll() {
         icon={<ClipboardList className="h-5 w-5" />}
         title="Payroll & time clock"
         description="Thursday–Wednesday pay period. Hours auto-fill from the kiosk. Saved entries are kept permanently."
-        actions={<>
-          {tab !== "history" && (
+        actions={
+          tab !== "history" ? (
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
-          )}
-          <StoreSelect
-            stores={stores}
-            isAdmin={isAdmin}
-            value={storeFilter}
-            onChange={setStoreFilter}
-          />
-        </>}
+          ) : undefined
+        }
       />
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)}>
