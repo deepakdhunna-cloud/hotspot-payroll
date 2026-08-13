@@ -46,7 +46,14 @@ import {
   CheckCircle2,
   Clock,
   LayoutDashboard,
+  LogOut,
+  Pencil,
 } from "lucide-react";
+import {
+  ClockOutDialog,
+  FixTimeDialog,
+  type QuickPunch,
+} from "@/components/PunchQuickActions";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 
@@ -90,6 +97,16 @@ export default function Home() {
   };
   const employees = data?.employees ?? [];
   const clockedIn = data?.clockedInNow ?? [];
+  // One-tap punch fixes from the live list.
+  const [clockOutFor, setClockOutFor] = useState<QuickPunch | null>(null);
+  const [fixTimeFor, setFixTimeFor] = useState<QuickPunch | null>(null);
+  const asQuickPunch = (c: (typeof clockedIn)[number]): QuickPunch => ({
+    id: c.punchId,
+    employeeName: c.fullName,
+    clockInAt: c.clockInAt,
+    clockOutAt: null,
+    shiftEndLabel: c.shiftEndLabel,
+  });
 
   const isLiveWeek = weekStart.getTime() === inProgressPayWeekStart().getTime();
 
@@ -354,17 +371,42 @@ export default function Home() {
                               </span>
                             </span>
                           </div>
-                          <span
-                            className={`text-xs tabular-nums shrink-0 ${
-                              long ? "chip-warn" : "text-muted-foreground"
-                            }`}
-                          >
-                            {long ? <AlertTriangle className="h-3 w-3" /> : null}
-                            {fmtDuration(hrs)} · since{" "}
-                            {new Date(c.clockInAt).toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            <span
+                              className={`text-xs tabular-nums ${
+                                long ? "chip-warn" : "text-muted-foreground"
+                              }`}
+                            >
+                              {long ? <AlertTriangle className="h-3 w-3" /> : null}
+                              {fmtDuration(hrs)} · since{" "}
+                              {new Date(c.clockInAt).toLocaleTimeString("en-US", {
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground"
+                              onClick={() => setFixTimeFor(asQuickPunch(c))}
+                              aria-label={`Fix ${c.fullName}'s clock-in time`}
+                              title="Fix clock-in time"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={long ? "default" : "outline"}
+                              className={`h-7 px-2.5 text-xs ${long ? "" : "bg-card"}`}
+                              onClick={() => setClockOutFor(asQuickPunch(c))}
+                              title={
+                                long
+                                  ? "Looks forgotten — clock them out"
+                                  : "Clock this person out"
+                              }
+                            >
+                              <LogOut className="mr-1 h-3 w-3" /> Clock out
+                            </Button>
                           </span>
                         </li>
                       );
@@ -620,6 +662,15 @@ export default function Home() {
           </div>
         </CardContent>
       </Card>
+
+      <ClockOutDialog
+        punch={clockOutFor}
+        onOpenChange={(o) => !o && setClockOutFor(null)}
+      />
+      <FixTimeDialog
+        punch={fixTimeFor}
+        onOpenChange={(o) => !o && setFixTimeFor(null)}
+      />
     </div>
   );
 }

@@ -1267,6 +1267,27 @@ export const appRouter = router({
             earliestOpenByEmp.set(p.employeeId, p);
           }
         }
+        // Attach the scheduled end printed on that person's shift for the day
+        // they clocked in — it powers the dashboard's one-tap "clock out at
+        // scheduled end" suggestion for forgotten punches. Day matching is
+        // UTC-based like the rest of the schedule tables; evening clock-ins
+        // that roll past the UTC midnight also check the previous UTC day.
+        const dayKeyUTC = (d: Date | string) => {
+          const t = new Date(d);
+          return Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
+        };
+        const shiftEndFor = (employeeId: number, clockInAt: Date | string) => {
+          const inDay = dayKeyUTC(clockInAt);
+          const prevDay = inDay - 86_400_000;
+          let fallback: string | null = null;
+          for (const s of shifts) {
+            if (s.employeeId !== employeeId || !s.endLabel) continue;
+            const d = dayKeyUTC(s.shiftDate);
+            if (d === inDay) return s.endLabel;
+            if (d === prevDay) fallback = s.endLabel;
+          }
+          return fallback;
+        };
         const clockedInNow = Array.from(earliestOpenByEmp.values()).map(p => ({
           punchId: p.id,
           employeeId: p.employeeId,
@@ -1274,6 +1295,7 @@ export const appRouter = router({
           role: empById.get(p.employeeId)!.role,
           storeLocation: p.storeLocation,
           clockInAt: p.clockInAt,
+          shiftEndLabel: shiftEndFor(p.employeeId, p.clockInAt),
         }));
         for (const p of clockedInNow) {
           if (byStore[p.storeLocation])
