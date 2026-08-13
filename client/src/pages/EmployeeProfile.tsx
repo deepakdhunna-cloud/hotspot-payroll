@@ -32,6 +32,11 @@ import { fmtDateTime, fmtDuration } from "@/lib/payweek";
 import { StatCard } from "@/components/StatCard";
 import { PageHeader } from "@/components/PageHeader";
 import { InitialsBadge } from "@/components/InitialsBadge";
+import {
+  ClockOutDialog,
+  FixTimeDialog,
+  type QuickPunch,
+} from "@/components/PunchQuickActions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   AlertDialog,
@@ -54,6 +59,7 @@ import {
   DollarSign,
   Clock,
   Briefcase,
+  LogOut,
   Timer,
   Trash2,
   KeyRound,
@@ -256,6 +262,7 @@ export default function EmployeeProfile() {
           <PunchHistoryCard
             isLoading={punchesQ.isLoading}
             punches={(punchesQ.data ?? []) as any[]}
+            employeeName={emp.fullName}
           />
 
           {/* Destructive action lives at the end of the page, away from the
@@ -415,6 +422,7 @@ function ClockCodeCard({
 function PunchHistoryCard({
   isLoading,
   punches,
+  employeeName,
 }: {
   isLoading: boolean;
   punches: Array<{
@@ -425,7 +433,17 @@ function PunchHistoryCard({
     source: "kiosk" | "manual";
     note: string | null;
   }>;
+  employeeName: string;
 }) {
+  // One-tap fixes, same dialogs the dashboard uses.
+  const [clockOutFor, setClockOutFor] = useState<QuickPunch | null>(null);
+  const [fixTimeFor, setFixTimeFor] = useState<QuickPunch | null>(null);
+  const asQuickPunch = (p: (typeof punches)[number]): QuickPunch => ({
+    id: p.id,
+    employeeName,
+    clockInAt: p.clockInAt,
+    clockOutAt: p.clockOutAt,
+  });
   return (
     <Card className="surface-card border-0 rise-in">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -449,13 +467,16 @@ function PunchHistoryCard({
                 <TableHead className="text-right">Duration</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Note</TableHead>
+                <TableHead className="w-[110px] text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading && (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center py-8 text-sm text-muted-foreground"
                   >
                     Loading punches…
@@ -465,7 +486,7 @@ function PunchHistoryCard({
               {!isLoading && punches.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center py-8 text-sm text-muted-foreground"
                   >
                     No punches yet.
@@ -501,12 +522,45 @@ function PunchHistoryCard({
                   <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">
                     {p.note ?? "—"}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <span className="inline-flex items-center gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-muted-foreground"
+                        onClick={() => setFixTimeFor(asQuickPunch(p))}
+                        aria-label="Fix this punch's times"
+                        title="Fix times"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {!p.clockOutAt ? (
+                        <Button
+                          size="sm"
+                          className="h-7 px-2.5 text-xs"
+                          onClick={() => setClockOutFor(asQuickPunch(p))}
+                          title="Clock out from here"
+                        >
+                          <LogOut className="mr-1 h-3 w-3" /> Clock out
+                        </Button>
+                      ) : null}
+                    </span>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
       </CardContent>
+
+      <ClockOutDialog
+        punch={clockOutFor}
+        onOpenChange={(o) => !o && setClockOutFor(null)}
+      />
+      <FixTimeDialog
+        punch={fixTimeFor}
+        onOpenChange={(o) => !o && setFixTimeFor(null)}
+      />
     </Card>
   );
 }
