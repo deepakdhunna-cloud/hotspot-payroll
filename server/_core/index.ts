@@ -11,6 +11,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ensureDefaultPins } from "./pinAuth";
 import { serveStatic, setupVite } from "./vite";
+import { buildPortalFeed, hasPortalFeedAccess } from "../portalFeed";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -76,6 +77,30 @@ async function startServer() {
   setInterval(runSweep, 5 * 60_000);
   // CSRF guard for mutating API requests (see server/csrf.ts + its tests).
   app.use("/api", csrfOriginGuard);
+  // Authenticated portal snapshot. This remains independent of the web UI:
+  // an unavailable portal can never block clock-ins, payroll, or the Dashboard.
+  app.get("/api/portal-feed", async (req, res) => {
+    if (!process.env.PORTAL_FEED_TOKEN) {
+      res.status(503).json({ error: "Portal feed is not configured" });
+      return;
+    }
+    if (!hasPortalFeedAccess(req.header("authorization"), process.env.PORTAL_FEED_TOKEN)) {
+      res.setHeader("WWW-Authenticate", "Bearer");
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    try {
+      const feed = await buildPortalFeed();
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+      res.json(feed);
+    } catch (error) {
+      console.error("[PortalFeed] Unable to build feed", error);
+      res.status(503).json({ error: "Portal feed is temporarily unavailable" });
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",
