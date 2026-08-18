@@ -65,6 +65,7 @@ import {
   sweepAutoClockOut,
 } from "./autoClockOut";
 import { hashClockCode, verifyClockCode } from "./_core/clockAuth";
+import { dashboardScheduleWeeks } from "./dashboardScheduleWeeks";
 import {
   ROLES,
   STORES,
@@ -1020,14 +1021,19 @@ export const appRouter = router({
         // byStore needs concrete keys, so an unfiltered admin view expands to all stores.
         const storesFilter = resolveStores(scope, input?.store) ?? [...STORES];
 
-        const [employees, entries, clockHours, openPunches, shifts] =
-          await Promise.all([
-            listEmployees({ stores: storesFilter }),
-            getPayrollByWeek(week, storesFilter),
-            hoursWorkedForWeekBulk(week, weekEnd, storesFilter),
-            listOpenPunches(storesFilter),
-            getShiftsForWeek(week, storesFilter),
-          ]);
+        const [employees, entries, clockHours, openPunches] = await Promise.all([
+          listEmployees({ stores: storesFilter }),
+          getPayrollByWeek(week, storesFilter),
+          hoursWorkedForWeekBulk(week, weekEnd, storesFilter),
+          listOpenPunches(storesFilter),
+        ]);
+        const shifts = (
+          await Promise.all(
+            dashboardScheduleWeeks(week, openPunches).map((scheduleWeek) =>
+              getShiftsForWeek(scheduleWeek, storesFilter),
+            ),
+          )
+        ).flat();
 
         const byStore: Record<
           string,

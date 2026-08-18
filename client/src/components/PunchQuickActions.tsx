@@ -103,7 +103,7 @@ export function ClockOutDialog({
     if (d.getTime() > Date.now()) return null;
     return d;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [punch?.id]);
+  }, [punch?.id, punch?.clockInAt, punch?.shiftEndLabel]);
 
   useEffect(() => {
     if (!punch) return;
