@@ -10,6 +10,8 @@ import DashboardLayout from "./components/DashboardLayout";
 // just stream in on demand (Core Web Vitals: smaller LCP/INP budgets).
 import { Suspense, lazy, useEffect } from "react";
 import { useLocation } from "wouter";
+import { getKioskStore, kioskPath } from "./lib/kioskLock";
+import type { Store } from "../../shared/hotspot";
 
 /**
  * A tab left open across a deploy will request page chunks that no longer
@@ -72,8 +74,22 @@ function TimeClockRedirect() {
   return null;
 }
 
+function LockedKioskRedirect({ store }: { store: Store }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation(kioskPath(store), { replace: true });
+  }, [store, setLocation]);
+  return <PageFallback />;
+}
+
 function Router() {
   const [location] = useLocation();
+  const lockedKioskStore = getKioskStore();
+  // A store tablet remains in its kiosk after the first setup. Typing or
+  // following a manager route inside that browser returns it to its clock.
+  if (lockedKioskStore && !(location === "/clock" || location.startsWith("/clock/"))) {
+    return <LockedKioskRedirect store={lockedKioskStore} />;
+  }
   // The /clock kiosk runs full-screen on store tablets — no sidebar, no PIN gate.
   if (location === "/clock" || location.startsWith("/clock/")) {
     return (

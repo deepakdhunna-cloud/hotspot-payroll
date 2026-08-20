@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { fmtDuration } from "@/lib/payweek";
+import { getKioskStore, kioskPath, lockKioskToStore } from "@/lib/kioskLock";
 
 /**
  * Public kiosk page. Behaves in two ways:
@@ -72,7 +73,8 @@ type FlashState =
 export default function ClockKiosk() {
   const [, params] = useRoute<{ store?: string }>("/clock/:store");
   const [, navigate] = useLocation();
-  const initialStore = decodeStoreFromUrl(params?.store);
+  const routeStore = decodeStoreFromUrl(params?.store);
+  const initialStore = getKioskStore() ?? routeStore;
 
   const scopeQ = trpc.meta.myScope.useQuery(undefined, {
     retry: false,
@@ -85,11 +87,19 @@ export default function ClockKiosk() {
 
   const [store, setStore] = useState<Store | null>(initialStore);
   useEffect(() => {
-    if (!store && sessionStore && isStore(sessionStore)) {
-      setStore(sessionStore as Store);
-      navigate(`/clock/${encodeURIComponent(sessionStore)}`, { replace: true });
+    const lockedStore = getKioskStore();
+    if (lockedStore) {
+      if (store !== lockedStore) setStore(lockedStore);
+      if (routeStore !== lockedStore) navigate(kioskPath(lockedStore), { replace: true });
+      return;
     }
-  }, [sessionStore, store, navigate]);
+
+    const selectedStore = store ?? (sessionStore && isStore(sessionStore) ? sessionStore : null);
+    if (!selectedStore) return;
+    lockKioskToStore(selectedStore);
+    if (store !== selectedStore) setStore(selectedStore);
+    if (routeStore !== selectedStore) navigate(kioskPath(selectedStore), { replace: true });
+  }, [sessionStore, store, routeStore, navigate]);
 
   // Trap browser-back so the counter tablet can't navigate into the app.
   useEffect(() => {
@@ -189,8 +199,9 @@ export default function ClockKiosk() {
                 <button
                   key={s}
                   onClick={() => {
+                    lockKioskToStore(s);
                     setStore(s);
-                    navigate(`/clock/${encodeURIComponent(s)}`);
+                    navigate(kioskPath(s));
                   }}
                   className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-6 text-left transition-all hover:border-[var(--brand-red-bright)] hover:bg-white/10"
                 >
@@ -243,20 +254,7 @@ export default function ClockKiosk() {
               <div className="font-semibold text-white">{store}</div>
             </div>
           </div>
-          {sessionStore ? (
-            <span className="text-[10px] uppercase tracking-[0.18em] text-white/40">Locked</span>
-          ) : (
-            <button
-              onClick={() => {
-                setStore(null);
-                setCode("");
-                navigate("/clock");
-              }}
-              className="text-xs font-medium text-white/50 underline-offset-2 hover:text-white hover:underline"
-            >
-              Change store
-            </button>
-          )}
+          <span className="text-[10px] uppercase tracking-[0.18em] text-white/40">Store locked</span>
         </div>
       </div>
 
