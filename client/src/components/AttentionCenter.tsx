@@ -51,7 +51,9 @@ function pendingFor(createdAt: Date | string) {
 }
 
 /** Deep link that routes each kind of task to its fix. */
-function fixHref(item: Item): { href: string; label: string } | null {
+function fixHref(
+  item: Item,
+): { href: string; label: string; newTab?: boolean } | null {
   switch (item.kind) {
     case "long_punch":
       return { href: "/payroll?tab=punches", label: "Open punches" };
@@ -72,11 +74,14 @@ function fixHref(item: Item): { href: string; label: string } | null {
     case "missing_schedule":
       return { href: "/schedule-import", label: "Import schedule" };
     case "missing_feed":
+      // The kiosk is a full-screen page with no way back — never navigate
+      // the manager's own tab into it.
       return {
         href: item.storeLocation
           ? `/clock/${encodeURIComponent(item.storeLocation)}`
           : "/clock",
         label: "Open kiosk",
+        newTab: true,
       };
     case "missing_codes":
       return { href: "/employees", label: "Set codes" };
@@ -277,16 +282,33 @@ export function AttentionCenter({ className }: { className?: string }) {
                       </Button>
                     ) : null}
                     {fix ? (
-                      <Link href={fix.href}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                      fix.newTab ? (
+                        <a
+                          href={fix.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
                         >
-                          {fix.label}
-                          <ArrowUpRight className="h-3 w-3 ml-1" />
-                        </Button>
-                      </Link>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                          >
+                            {fix.label}
+                            <ArrowUpRight className="h-3 w-3 ml-1" />
+                          </Button>
+                        </a>
+                      ) : (
+                        <Link href={fix.href}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                          >
+                            {fix.label}
+                            <ArrowUpRight className="h-3 w-3 ml-1" />
+                          </Button>
+                        </Link>
+                      )
                     ) : null}
                   </div>
                 </div>

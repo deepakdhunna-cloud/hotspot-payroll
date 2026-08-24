@@ -4,16 +4,17 @@ import { trpc } from "@/lib/trpc";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { fmtDuration } from "@/lib/payweek";
-import { getKioskStore, kioskPath, lockKioskToStore } from "@/lib/kioskLock";
+import { clearKioskLock, getKioskStore, kioskPath, lockKioskToStore } from "@/lib/kioskLock";
 
 /**
  * Public kiosk page. Behaves in two ways:
  *  - If launched from a logged-in manager session, the store is detected from
  *    the session scope and the picker is skipped entirely.
  *  - Otherwise (cold tablet, CEO, or no session) it falls back to a manual
- *    store picker. We intentionally do NOT render any link back into the app:
- *    this tab is meant to live on the counter, and the only way "out" is to
- *    close the tab.
+ *    store picker. Signed-OUT browsers (the counter tablets) get no link
+ *    back into the app — the only way "out" is closing the tab. A signed-in
+ *    session sees an explicit exit that also releases the tablet lock,
+ *    because a person's browser must never be trapped here.
  *
  * After every punch the kiosk shows the employee's week so far — hours worked
  * against hours scheduled — and flags over-clocked time on the spot.
@@ -94,9 +95,12 @@ export default function ClockKiosk() {
       return;
     }
 
+    // Select the store from the session or URL, but do NOT persist the
+    // tablet lock here — merely opening a kiosk link must never lock a
+    // manager's own browser. The lock is set only by the explicit store
+    // picker tap below (tablet setup).
     const selectedStore = store ?? (sessionStore && isStore(sessionStore) ? sessionStore : null);
     if (!selectedStore) return;
-    lockKioskToStore(selectedStore);
     if (store !== selectedStore) setStore(selectedStore);
     if (routeStore !== selectedStore) navigate(kioskPath(selectedStore), { replace: true });
   }, [sessionStore, store, routeStore, navigate]);
@@ -177,9 +181,26 @@ export default function ClockKiosk() {
 
   const dots = useMemo(() => Array.from({ length: 4 }, (_, i) => i < code.length), [code]);
 
+  // Store tablets are never signed in, so this appears only for a
+  // manager/CEO/CFO browsing the kiosk in their own browser — it releases
+  // the tablet lock (their browser is not a tablet) and returns them to
+  // the dashboard. Tablets keep the sealed, no-way-out experience.
+  const exitToDashboard = scopeQ.data ? (
+    <button
+      onClick={() => {
+        clearKioskLock();
+        navigate("/");
+      }}
+      className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/40 px-3.5 py-2 text-xs font-semibold text-white/75 backdrop-blur transition-colors hover:text-white hover:border-white/40"
+    >
+      Exit kiosk → dashboard
+    </button>
+  ) : null;
+
   if (!store) {
     return (
       <div className="ink-panel min-h-screen">
+        {exitToDashboard}
         <div className="container max-w-5xl pt-12 pb-16">
           <div className="flex flex-col items-center text-center">
             <BrandMark size="lg" tone="ink" />
@@ -235,6 +256,7 @@ export default function ClockKiosk() {
 
   return (
     <div className="ink-panel relative min-h-screen overflow-hidden">
+      {exitToDashboard}
       {/* Header */}
       <div className="container max-w-3xl pt-8">
         <div className="flex items-center justify-between">

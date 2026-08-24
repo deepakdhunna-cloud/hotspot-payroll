@@ -10,7 +10,8 @@ import DashboardLayout from "./components/DashboardLayout";
 // just stream in on demand (Core Web Vitals: smaller LCP/INP budgets).
 import { Suspense, lazy, useEffect } from "react";
 import { useLocation } from "wouter";
-import { getKioskStore, kioskPath } from "./lib/kioskLock";
+import { clearKioskLock, getKioskStore, kioskPath } from "./lib/kioskLock";
+import { trpc } from "@/lib/trpc";
 import type { Store } from "../../shared/hotspot";
 
 /**
@@ -74,11 +75,31 @@ function TimeClockRedirect() {
   return null;
 }
 
+/**
+ * A browser holding the tablet lock gets returned to its kiosk — but only
+ * if it really is a tablet. Store tablets are never signed in, so a live
+ * session means this is a PERSON's browser that picked up the lock (e.g.
+ * while setting tablets up): release it and continue to the dashboard
+ * instead of trapping them. `?exit` in the URL is the same escape for a
+ * signed-out browser.
+ */
 function LockedKioskRedirect({ store }: { store: Store }) {
   const [, setLocation] = useLocation();
+  const meQ = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
   useEffect(() => {
-    setLocation(kioskPath(store), { replace: true });
-  }, [store, setLocation]);
+    const wantsExit = new URLSearchParams(window.location.search).has("exit");
+    if (wantsExit || meQ.data) {
+      clearKioskLock();
+      setLocation("/", { replace: true });
+      return;
+    }
+    if (!meQ.isLoading) {
+      setLocation(kioskPath(store), { replace: true });
+    }
+  }, [meQ.isLoading, meQ.data, store, setLocation]);
   return <PageFallback />;
 }
 

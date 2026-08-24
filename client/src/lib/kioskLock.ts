@@ -28,6 +28,19 @@ export function lockKioskToStore(store: Store): void {
   }
 }
 
+/**
+ * Releases the tablet lock — used when the browser turns out to be a
+ * PERSON's (a signed-in session, or the explicit ?exit escape), not a
+ * counter tablet.
+ */
+export function clearKioskLock(): void {
+  try {
+    window.localStorage.removeItem(KIOSK_STORE_KEY);
+  } catch {
+    // Nothing to release if storage is unavailable.
+  }
+}
+
 export function kioskPath(store: Store): string {
   return `/clock/${encodeURIComponent(store)}`;
 }
