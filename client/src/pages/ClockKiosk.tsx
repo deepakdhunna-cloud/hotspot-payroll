@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 import { fmtDuration } from "@/lib/payweek";
-import { getKioskStore, kioskPath, lockKioskToStore } from "@/lib/kioskLock";
+import { getKioskStore, kioskPath, lockKioskToStore, markKioskTab } from "@/lib/kioskLock";
 
 /**
  * Public kiosk page. Behaves in two ways:
@@ -105,7 +105,16 @@ export default function ClockKiosk() {
     if (routeStore !== selectedStore) navigate(kioskPath(selectedStore), { replace: true });
   }, [sessionStore, store, routeStore, navigate]);
 
+  // Seal this TAB as a kiosk: the router bounces every non-kiosk route
+  // (back button included) straight back to the clock from here on.
+  useEffect(() => {
+    if (store) markKioskTab(store);
+  }, [store]);
+
   // Trap browser-back so the counter tablet can't navigate into the app.
+  // Belt to the router seal's braces — a fast double-back can beat this
+  // history trick alone, but the router check above catches whatever
+  // slips through.
   useEffect(() => {
     const sentinel = () => window.history.pushState({ kiosk: true }, "");
     sentinel();

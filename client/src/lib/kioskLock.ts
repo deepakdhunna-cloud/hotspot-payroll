@@ -44,3 +44,37 @@ export function clearKioskLock(): void {
 export function kioskPath(store: Store): string {
   return `/clock/${encodeURIComponent(store)}`;
 }
+
+const KIOSK_TAB_KEY = "hotspot-kiosk-tab";
+
+/**
+ * Per-TAB kiosk seal (sessionStorage, dies with the tab): once a tab has
+ * rendered the kiosk, every route it visits — back button included — snaps
+ * back to the clock. History tricks can't beat a router-level check, and
+ * being per-tab it can never capture the rest of someone's browser.
+ */
+export function markKioskTab(store: Store): void {
+  try {
+    window.sessionStorage.setItem(KIOSK_TAB_KEY, store);
+  } catch {
+    // Sealed-down webviews may forbid sessionStorage; the history trap
+    // and the localStorage lock still apply.
+  }
+}
+
+export function getKioskTabStore(): Store | null {
+  try {
+    const value = window.sessionStorage.getItem(KIOSK_TAB_KEY);
+    return isStore(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearKioskTab(): void {
+  try {
+    window.sessionStorage.removeItem(KIOSK_TAB_KEY);
+  } catch {
+    // Nothing to release.
+  }
+}

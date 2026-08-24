@@ -10,7 +10,13 @@ import DashboardLayout from "./components/DashboardLayout";
 // just stream in on demand (Core Web Vitals: smaller LCP/INP budgets).
 import { Suspense, lazy, useEffect } from "react";
 import { useLocation } from "wouter";
-import { clearKioskLock, getKioskStore, kioskPath } from "./lib/kioskLock";
+import {
+  clearKioskLock,
+  clearKioskTab,
+  getKioskStore,
+  getKioskTabStore,
+  kioskPath,
+} from "./lib/kioskLock";
 import { trpc } from "@/lib/trpc";
 import type { Store } from "../../shared/hotspot";
 
@@ -93,6 +99,7 @@ function LockedKioskRedirect({ store }: { store: Store }) {
     const wantsExit = new URLSearchParams(window.location.search).has("exit");
     if (wantsExit || meQ.data) {
       clearKioskLock();
+      clearKioskTab();
       setLocation("/", { replace: true });
       return;
     }
@@ -103,12 +110,39 @@ function LockedKioskRedirect({ store }: { store: Store }) {
   return <PageFallback />;
 }
 
+/**
+ * A tab that has shown the kiosk is a kiosk tab, full stop: back button,
+ * typed URLs and links all return to the clock. No session exemption — the
+ * owner's rule is that the kiosk offers no way back for anyone; the only
+ * exits are closing the tab or the deliberate ?exit escape.
+ */
+function KioskTabReturn({ store }: { store: Store }) {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("exit")) {
+      clearKioskTab();
+      clearKioskLock();
+      setLocation("/", { replace: true });
+      return;
+    }
+    setLocation(kioskPath(store), { replace: true });
+  }, [store, setLocation]);
+  return <PageFallback />;
+}
+
 function Router() {
   const [location] = useLocation();
+  const onKioskRoute =
+    location === "/clock" || location.startsWith("/clock/");
+  // This TAB has rendered the kiosk — it stays a kiosk, whatever the route.
+  const kioskTabStore = getKioskTabStore();
+  if (kioskTabStore && !onKioskRoute) {
+    return <KioskTabReturn store={kioskTabStore} />;
+  }
   const lockedKioskStore = getKioskStore();
   // A store tablet remains in its kiosk after the first setup. Typing or
   // following a manager route inside that browser returns it to its clock.
-  if (lockedKioskStore && !(location === "/clock" || location.startsWith("/clock/"))) {
+  if (lockedKioskStore && !onKioskRoute) {
     return <LockedKioskRedirect store={lockedKioskStore} />;
   }
   // The /clock kiosk runs full-screen on store tablets — no sidebar, no PIN gate.
