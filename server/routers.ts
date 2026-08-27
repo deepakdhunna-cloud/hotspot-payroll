@@ -98,6 +98,7 @@ import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
 import { rankNameMatches } from "./nameMatch";
 import { extractPdfText, extractSheetText, isSheetMime } from "./scheduleText";
 import { syncAttention } from "./attention";
+import { getPortalSyncStatus, pushPortalSnapshot } from "./portalSync";
 
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
@@ -997,6 +998,27 @@ export const appRouter = router({
         const closedNow = input.hours > 0 ? await sweepAutoClockOut() : 0;
         return { hours: input.hours || null, closedNow };
       }),
+  }),
+
+  /**
+   * Live portal relay controls. CEO-only: the status names the destination
+   * host and carries raw failure text, neither of which is a manager's
+   * business. The token itself never appears in any response.
+   */
+  portal: router({
+    status: adminProcedure.query(() => getPortalSyncStatus()),
+
+    syncNow: adminProcedure.mutation(async ({ ctx }) => {
+      const result = await pushPortalSnapshot("manual");
+      void logAudit({
+        actorScope: ctx.session.scope,
+        action: "portal.syncNow",
+        entityType: "portal",
+        detail: JSON.stringify({ ok: result.ok, error: result.error ?? null }),
+        ip: requestIp(ctx.req),
+      });
+      return result;
+    }),
   }),
 
   dashboard: router({

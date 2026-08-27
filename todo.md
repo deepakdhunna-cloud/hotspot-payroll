@@ -152,3 +152,12 @@
 - [x] Rewrite every page's description so it's detailed but ≤140 chars
 - [x] Loading + empty states reviewed on every page (consistent skeletons + empty-row messages; mutation buttons show pending text)
 - [x] Run all tests (48/48 passing), save checkpoint
+
+## v10 — Live portal relay (site → portal push)
+- [x] Diagnosed the silent portal: the only integration was the pull-only `/api/portal-feed`, which answers 503 until `PORTAL_FEED_TOKEN` is set — that configuration lived on the old Manus hosting and did not survive the move; nothing in the site ever pushed outward
+- [x] `server/portalSync.ts` — outbound relay: POSTs the full snapshot to `PORTAL_SYNC_URL` (with `Bearer PORTAL_SYNC_TOKEN`) at boot, seconds after every data change (debounced, single-flight, 20s timeout), and on a safety-net interval (`PORTAL_SYNC_INTERVAL_SECONDS`, default 60s); failures only mark status and can never block clock-ins or payroll
+- [x] Change triggers wired in `server/_core/index.ts`: every successful tRPC mutation (kiosk punches included) plus auto clock-out sweep closures
+- [x] CEO-only `portal.status` + `portal.syncNow` procedures — redacted destination (no query string, no token), last delivery, exact failure text, record counts; manual syncs land in the audit log
+- [x] Executive view → new **Live portal** tab: relay state chip, last-error panel, destination/cadence/auth facts, Sync now button, pull-feed token state
+- [x] README: "Portal integration" section — push + pull env vars, payload contract, troubleshooting
+- [x] Tests: 15 new portal-sync tests (config validation, secret redaction, bearer header, failure/recovery tracking, single-flight, debounce) — 154/154 passing; tsc + production build clean

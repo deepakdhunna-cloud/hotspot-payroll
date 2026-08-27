@@ -28,6 +28,48 @@ Payroll, scheduling and time clock for the four Hotspot Market stores.
 Store isolation is enforced server-side on every procedure: a store PIN can
 only ever read or write its own store's data; the CEO PIN sees everything.
 
+## Portal integration (this site is the system of record)
+
+This website hosts and owns all payroll data. An external portal can receive
+that data two ways — both carry the exact same JSON snapshot built by
+`server/portalFeed.ts` (employees without clock-code hashes, payroll entries,
+time punches, schedule shifts; never PINs, hashes, or audit records):
+
+### 1. Live relay — the site PUSHES to the portal (recommended)
+
+Configured entirely by environment variables on **this site's** hosting:
+
+| Variable | Meaning |
+| --- | --- |
+| `PORTAL_SYNC_URL` | The portal's ingest endpoint. The relay is OFF until this is set. |
+| `PORTAL_SYNC_TOKEN` | Optional shared secret, sent as `Authorization: Bearer …`. |
+| `PORTAL_SYNC_INTERVAL_SECONDS` | Safety-net cadence (default 60, clamped 15–3600). |
+
+When on, the site POSTs the full snapshot to `PORTAL_SYNC_URL`:
+once at boot, within seconds of **every** data change (any successful
+mutation — kiosk punches included — plus auto clock-out closures), and on the
+fixed interval as a safety net. Requests carry `Content-Type:
+application/json` and `X-Hotspot-Schema-Version`. The portal must answer 2xx;
+anything else is recorded as a failure. Pushes are debounced, single-flight,
+time-boxed at 20s, and can never block or crash the site.
+
+**Where to look when the portal shows nothing:** Executive view → **Live
+portal** tab (CEO login). It shows whether the relay is configured, the last
+delivery time, the exact error of the last failed push, and a **Sync now**
+button. Implementation: `server/portalSync.ts` (+ tests).
+
+### 2. Pull feed — the portal FETCHES from this site
+
+`GET /api/portal-feed` with header `Authorization: Bearer $PORTAL_FEED_TOKEN`.
+Returns 503 `Portal feed is not configured` until `PORTAL_FEED_TOKEN` is set
+in this site's environment, and 401 on a wrong/missing token. Set the same
+token on the portal's fetcher.
+
+> After the move off Manus, these env vars must be re-set on the new hosting —
+> they do not travel with the code. If the portal reports nothing, the almost
+> certain cause is that `PORTAL_SYNC_URL` (push) or `PORTAL_FEED_TOKEN` (pull)
+> is simply not set where the site now runs.
+
 ---
 
 # Web App Template (tRPC + Manus Auth + Database)
