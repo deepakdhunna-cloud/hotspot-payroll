@@ -1008,6 +1008,20 @@ export const appRouter = router({
   portal: router({
     status: adminProcedure.query(() => getPortalSyncStatus()),
 
+    /**
+     * Ready-to-open portal link for the CEO. This is the ONE place the
+     * portal key leaves the server, and only into a CEO session — sharing
+     * the link IS granting portal access, which is the CEO's call to make.
+     */
+    portalLink: adminProcedure.query(() => {
+      const token = process.env.PORTAL_FEED_TOKEN?.trim();
+      if (!token) return { configured: false as const, url: null };
+      return {
+        configured: true as const,
+        url: `/portal?key=${encodeURIComponent(token)}`,
+      };
+    }),
+
     syncNow: adminProcedure.mutation(async ({ ctx }) => {
       const result = await pushPortalSnapshot("manual");
       void logAudit({

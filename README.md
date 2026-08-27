@@ -30,10 +30,22 @@ only ever read or write its own store's data; the CEO PIN sees everything.
 
 ## Portal integration (this site is the system of record)
 
-This website hosts and owns all payroll data. An external portal can receive
-that data two ways — both carry the exact same JSON snapshot built by
-`server/portalFeed.ts` (employees without clock-code hashes, payroll entries,
-time punches, schedule shifts; never PINs, hashes, or audit records):
+This website hosts and owns all payroll data, and serves the live portal
+itself:
+
+### 0. The built-in live portal — `/portal?key=…`
+
+A standalone, shareable, read-only dashboard (who's on the clock, week hours
+and labor per store, per-store feed freshness) that refreshes every 30
+seconds. Gated by the same `PORTAL_FEED_TOKEN`; the CEO gets a ready-made
+link via Executive view → **Live portal** → **Open portal**. No pay rates,
+phone numbers, or personal details appear on it. Implementation:
+`server/portalPage.ts` (+ tests).
+
+Beyond that, an external system can receive the data two ways — both carry
+the exact same JSON snapshot built by `server/portalFeed.ts` (employees
+without clock-code hashes, payroll entries, time punches, schedule shifts;
+never PINs, hashes, or audit records):
 
 ### 1. Live relay — the site PUSHES to the portal (recommended)
 
