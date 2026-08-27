@@ -41,6 +41,8 @@ import {
   CheckCircle2,
   Clock,
   History,
+  RefreshCw,
+  Satellite,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -375,6 +377,7 @@ export default function CeoView() {
           <TabsTrigger value="payroll">Payroll detail</TabsTrigger>
           <TabsTrigger value="managers">Access &amp; PINs</TabsTrigger>
           <TabsTrigger value="activity">Activity log</TabsTrigger>
+          <TabsTrigger value="portal">Live portal</TabsTrigger>
         </TabsList>
 
         <TabsContent value="payroll">
@@ -490,6 +493,10 @@ export default function CeoView() {
 
         <TabsContent value="activity">
           <ActivityPanel />
+        </TabsContent>
+
+        <TabsContent value="portal">
+          <LivePortalPanel />
         </TabsContent>
       </Tabs>
     </div>
@@ -644,6 +651,7 @@ function ActivityPanel() {
     "clock.deletePunch": "Deleted punch",
     "clock.punch_failed": "Failed kiosk code attempt",
     "ceo.updatePin": "Rotated a PIN",
+    "portal.syncNow": "Pushed snapshot to portal",
   };
 
   return (
@@ -719,5 +727,212 @@ function ActivityPanel() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Live portal relay — shows whether this site is actually delivering its
+ * data to the portal, why not when it isn't, and a button to push right
+ * now. The site is the system of record; the portal only receives.
+ */
+function LivePortalPanel() {
+  const statusQ = trpc.portal.status.useQuery(undefined, {
+    refetchInterval: 15_000,
+  });
+  const utils = trpc.useUtils();
+  const syncNow = trpc.portal.syncNow.useMutation({
+    onSuccess: (r) => {
+      if (r.ok) {
+        toast.success(`Snapshot delivered to the portal (${r.durationMs} ms)`);
+      } else {
+        toast.error(r.error ?? "Push failed");
+      }
+      utils.portal.status.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const s = statusQ.data;
+
+  const sinceLabel = (iso?: string) => {
+    if (!iso) return "never";
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 60_000) return "moments ago";
+    if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} min ago`;
+    if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} h ago`;
+    return `${Math.floor(ms / 86_400_000)} d ago`;
+  };
+
+  const relayChip = !s ? null : !s.configured ? (
+    <span className="chip-warn">
+      <AlertTriangle className="h-3 w-3" /> off — nothing is being sent
+    </span>
+  ) : s.lastError ? (
+    <span className="chip-warn">
+      <AlertTriangle className="h-3 w-3" /> failing ({s.consecutiveFailures}×)
+    </span>
+  ) : s.lastSuccessAt ? (
+    <span className="chip-good">
+      <CheckCircle2 className="h-3 w-3" /> delivering
+    </span>
+  ) : (
+    <span className="chip-neutral">waiting for first push</span>
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card className="surface-card border-0">
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="section-title flex items-center gap-2">
+              <Satellite className="h-5 w-5" /> Live relay to the portal
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              This website is the system of record. When the relay is on, it
+              pushes the full snapshot (employees, payroll, punches, schedules)
+              to the portal seconds after every change, plus on a fixed cadence
+              as a safety net.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {relayChip}
+            <Button
+              size="sm"
+              onClick={() => syncNow.mutate()}
+              disabled={syncNow.isPending || !s?.configured}
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5 mr-1.5", syncNow.isPending && "animate-spin")}
+              />
+              {syncNow.isPending ? "Pushing…" : "Sync now"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {statusQ.isLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : !s ? (
+            <p className="text-sm text-muted-foreground">
+              Could not load relay status.
+            </p>
+          ) : !s.configured ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm space-y-2">
+              {s.configError ? (
+                <p className="font-medium text-destructive">{s.configError}</p>
+              ) : (
+                <p className="font-medium">The relay is not configured.</p>
+              )}
+              <p className="text-muted-foreground">
+                Set{" "}
+                <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
+                  PORTAL_SYNC_URL
+                </code>{" "}
+                (the portal&apos;s ingest address) and{" "}
+                <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
+                  PORTAL_SYNC_TOKEN
+                </code>{" "}
+                (shared secret) in this site&apos;s hosting environment, then
+                restart it. Until then the portal receives nothing from this
+                site.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {s.lastError && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                  <p className="font-medium flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    Last push failed
+                  </p>
+                  <p className="text-muted-foreground mt-1 break-words">{s.lastError}</p>
+                </div>
+              )}
+              <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+                <div>
+                  <div className="kpi-label">Destination</div>
+                  <div className="font-mono text-xs mt-1 break-all">{s.target}</div>
+                </div>
+                <div>
+                  <div className="kpi-label">Cadence</div>
+                  <div className="mt-1">
+                    every {s.intervalSeconds}s + instantly after changes
+                  </div>
+                </div>
+                <div>
+                  <div className="kpi-label">Authentication</div>
+                  <div className="mt-1">
+                    {s.hasToken ? "Bearer token set" : "no token (open endpoint)"}
+                  </div>
+                </div>
+                <div>
+                  <div className="kpi-label">Last delivered</div>
+                  <div className="mt-1">
+                    {s.lastSuccessAt ? (
+                      <>
+                        {sinceLabel(s.lastSuccessAt)}
+                        <span className="text-xs text-muted-foreground ml-1.5">
+                          ({fmtDateTime(new Date(s.lastSuccessAt))})
+                        </span>
+                      </>
+                    ) : (
+                      "never since this server started"
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="kpi-label">Last attempt</div>
+                  <div className="mt-1">
+                    {sinceLabel(s.lastAttemptAt)}
+                    {typeof s.lastDurationMs === "number" && s.lastAttemptAt && (
+                      <span className="text-xs text-muted-foreground ml-1.5">
+                        ({s.lastDurationMs} ms)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="kpi-label">Records in last delivery</div>
+                  <div className="mt-1">
+                    {s.lastCounts
+                      ? `${s.lastCounts.employees} employees · ${s.lastCounts.payrollEntries} payroll · ${s.lastCounts.timePunches} punches · ${s.lastCounts.scheduleShifts} shifts`
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="surface-card border-0">
+        <CardHeader>
+          <CardTitle className="section-title text-base">
+            Pull feed (the portal fetches from this site)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            The same snapshot is also served at{" "}
+            <code className="font-mono">/api/portal-feed</code> for portals that
+            poll instead of listen. It answers only with a valid{" "}
+            <code className="font-mono">Authorization: Bearer</code> token.
+          </p>
+        </CardHeader>
+        <CardContent className="text-sm">
+          {s?.pullFeedTokenSet ? (
+            <span className="chip-good">
+              <CheckCircle2 className="h-3 w-3" /> token set — the portal can pull
+            </span>
+          ) : (
+            <div className="space-y-1.5">
+              <span className="chip-neutral">off</span>
+              <p className="text-xs text-muted-foreground">
+                <code className="font-mono">PORTAL_FEED_TOKEN</code> is not set in
+                this site&apos;s environment, so every pull request is refused
+                (HTTP 503). Set it if the portal fetches data itself.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

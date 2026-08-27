@@ -12,6 +12,7 @@ import { createContext } from "./context";
 import { ensureDefaultPins } from "./pinAuth";
 import { serveStatic, setupVite } from "./vite";
 import { buildPortalFeed, hasPortalFeedAccess } from "../portalFeed";
+import { schedulePortalPush, startPortalSync } from "../portalSync";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -70,11 +71,19 @@ async function startServer() {
   const runSweep = () =>
     sweepAutoClockOut()
       .then((n) => {
-        if (n > 0) console.log(`[AutoClockOut] closed ${n} over-limit punch(es)`);
+        if (n > 0) {
+          console.log(`[AutoClockOut] closed ${n} over-limit punch(es)`);
+          // The sweep changed punch data with no request attached — nudge
+          // the portal relay so the portal never shows a stale open shift.
+          schedulePortalPush("change");
+        }
       })
       .catch((err) => console.error("[AutoClockOut] sweep failed:", err));
   runSweep();
   setInterval(runSweep, 5 * 60_000);
+  // Live portal relay (push). Off unless PORTAL_SYNC_URL is configured;
+  // status is visible to the CEO under Executive view → Live portal.
+  startPortalSync();
   // CSRF guard for mutating API requests (see server/csrf.ts + its tests).
   app.use("/api", csrfOriginGuard);
   // Authenticated portal snapshot. This remains independent of the web UI:
@@ -101,6 +110,17 @@ async function startServer() {
     }
   });
 
+  // Every tRPC mutation is a POST (queries are GETs), so a successful POST
+  // means payroll data may have changed: nudge the debounced portal relay.
+  // Attached before the tRPC handler so the finish listener always exists.
+  app.use("/api/trpc", (req, res, next) => {
+    if (req.method === "POST") {
+      res.on("finish", () => {
+        if (res.statusCode < 400) schedulePortalPush("change");
+      });
+    }
+    next();
+  });
   // tRPC API
   app.use(
     "/api/trpc",
