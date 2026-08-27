@@ -161,3 +161,12 @@
 - [x] Executive view → new **Live portal** tab: relay state chip, last-error panel, destination/cadence/auth facts, Sync now button, pull-feed token state
 - [x] README: "Portal integration" section — push + pull env vars, payload contract, troubleshooting
 - [x] Tests: 15 new portal-sync tests (config validation, secret redaction, bearer header, failure/recovery tracking, single-flight, debounce) — 154/154 passing; tsc + production build clean
+
+## v11 — The portal itself, served by the site
+- [x] Established the real topology: hotspotpayroll.com IS this repo on Railway (auto-deploys from main) with PORTAL_FEED_TOKEN already set; no separate portal codebase exists anywhere in the account
+- [x] `server/portalPage.ts` — standalone read-only live portal at `/portal?key=…`: on-the-clock lists with durations, week hours + labor per store, per-store feed freshness (silent >24h flagged), totals strip; self-contained HTML, auto-refresh 30s, mobile-friendly
+- [x] Access: same PORTAL_FEED_TOKEN, timing-safe compare; wrong/no key → styled access page; unset token → styled "not configured" page; no-store, noindex, no-referrer headers on every portal response
+- [x] Data discipline: aggregates only — no pay rates, phones, clock-code hashes, or PINs in the portal payload (test-enforced)
+- [x] `portal.portalLink` (CEO-only) + **Open portal** button in Executive view → Live portal
+- [x] Untracked `.project-config.json` (Manus-era secrets in a public repo — flagged to owner for rotation)
+- [x] Tests: 5 new (key gate, per-store aggregation, silent-store flag, leak guard, page headers) — 159/159 passing; tsc + build clean; route smoke (401/401/200 + headers) and Playwright visual check on desktop + mobile

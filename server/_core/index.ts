@@ -13,6 +13,13 @@ import { ensureDefaultPins } from "./pinAuth";
 import { serveStatic, setupVite } from "./vite";
 import { buildPortalFeed, hasPortalFeedAccess } from "../portalFeed";
 import { schedulePortalPush, startPortalSync } from "../portalSync";
+import {
+  buildPortalSummary,
+  portalPageAllowed,
+  renderPortalAccessPage,
+  renderPortalDashboardPage,
+  renderPortalUnconfiguredPage,
+} from "../portalPage";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -107,6 +114,49 @@ async function startServer() {
     } catch (error) {
       console.error("[PortalFeed] Unable to build feed", error);
       res.status(503).json({ error: "Portal feed is temporarily unavailable" });
+    }
+  });
+
+  // The live portal itself — a standalone, key-gated, read-only dashboard
+  // served by this site (see server/portalPage.ts). Registered before the
+  // Vite/static catch-all so /portal never falls through to the app shell.
+  const portalHeaders = (res: import("express").Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+    // The access key rides in the query string — never leak it via Referer.
+    res.setHeader("Referrer-Policy", "no-referrer");
+  };
+  app.get("/portal", (req, res) => {
+    portalHeaders(res);
+    const token = process.env.PORTAL_FEED_TOKEN;
+    if (!token) {
+      res.status(503).send(renderPortalUnconfiguredPage());
+      return;
+    }
+    const key = typeof req.query.key === "string" ? req.query.key : undefined;
+    if (!portalPageAllowed(key, token)) {
+      res.status(401).send(renderPortalAccessPage());
+      return;
+    }
+    res.send(renderPortalDashboardPage());
+  });
+  app.get("/portal/data", async (req, res) => {
+    portalHeaders(res);
+    const token = process.env.PORTAL_FEED_TOKEN;
+    if (!token) {
+      res.status(503).json({ error: "Portal is not configured" });
+      return;
+    }
+    const key = typeof req.query.key === "string" ? req.query.key : undefined;
+    if (!portalPageAllowed(key, token)) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    try {
+      res.json(await buildPortalSummary());
+    } catch (error) {
+      console.error("[Portal] Unable to build summary", error);
+      res.status(503).json({ error: "Portal data is temporarily unavailable" });
     }
   });
 

@@ -739,6 +739,7 @@ function LivePortalPanel() {
   const statusQ = trpc.portal.status.useQuery(undefined, {
     refetchInterval: 15_000,
   });
+  const linkQ = trpc.portal.portalLink.useQuery();
   const utils = trpc.useUtils();
   const syncNow = trpc.portal.syncNow.useMutation({
     onSuccess: (r) => {
@@ -905,32 +906,56 @@ function LivePortalPanel() {
       </Card>
 
       <Card className="surface-card border-0">
-        <CardHeader>
-          <CardTitle className="section-title text-base">
-            Pull feed (the portal fetches from this site)
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">
-            The same snapshot is also served at{" "}
-            <code className="font-mono">/api/portal-feed</code> for portals that
-            poll instead of listen. It answers only with a valid{" "}
-            <code className="font-mono">Authorization: Bearer</code> token.
-          </p>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="section-title text-base">
+              The portal page — hosted right here
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              A standalone, read-only live dashboard at{" "}
+              <code className="font-mono">/portal</code>: who&apos;s on the
+              clock, week hours and labor per store, refreshed every 30
+              seconds. The link carries its own access key — anyone you send
+              it to can watch, and nothing more. No pay rates or personal
+              details appear on it.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            disabled={!linkQ.data?.configured}
+            onClick={() => {
+              if (linkQ.data?.url)
+                window.open(linkQ.data.url, "_blank", "noopener,noreferrer");
+            }}
+          >
+            <Satellite className="h-3.5 w-3.5 mr-1.5" /> Open portal
+          </Button>
         </CardHeader>
-        <CardContent className="text-sm">
+        <CardContent className="text-sm space-y-3">
           {s?.pullFeedTokenSet ? (
             <span className="chip-good">
-              <CheckCircle2 className="h-3 w-3" /> token set — the portal can pull
+              <CheckCircle2 className="h-3 w-3" /> on — portal page and pull feed
+              are unlocked
             </span>
           ) : (
             <div className="space-y-1.5">
               <span className="chip-neutral">off</span>
               <p className="text-xs text-muted-foreground">
-                <code className="font-mono">PORTAL_FEED_TOKEN</code> is not set in
-                this site&apos;s environment, so every pull request is refused
-                (HTTP 503). Set it if the portal fetches data itself.
+                <code className="font-mono">PORTAL_FEED_TOKEN</code> is not set
+                in this site&apos;s environment, so the portal page and the
+                pull feed at <code className="font-mono">/api/portal-feed</code>{" "}
+                are refused until it is.
               </p>
             </div>
           )}
+          <p className="text-xs text-muted-foreground">
+            Integrations can also pull the full raw snapshot from{" "}
+            <code className="font-mono">/api/portal-feed</code> with{" "}
+            <code className="font-mono">Authorization: Bearer</code> and the
+            same token.
+          </p>
         </CardContent>
       </Card>
     </div>
