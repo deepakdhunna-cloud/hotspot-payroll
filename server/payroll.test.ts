@@ -11,11 +11,12 @@ import {
 } from "../shared/hotspot";
 
 describe("Hotspot constants", () => {
-  it("has exactly the four expected stores", () => {
+  it("has exactly the five expected stores", () => {
     expect([...STORES]).toEqual([
       "Hotspot Market 11",
       "Hotspot Market 13",
       "Hotspot Market 14",
+      "Hotspot Market 17",
       "Hotspot Travel Center",
     ]);
   });

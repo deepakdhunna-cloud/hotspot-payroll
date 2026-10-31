@@ -1,6 +1,6 @@
 # Hotspot Market Payroll
 
-Payroll, scheduling and time clock for the four Hotspot Market stores.
+Payroll, scheduling and time clock for the five Hotspot Market stores.
 
 ## What's inside
 
