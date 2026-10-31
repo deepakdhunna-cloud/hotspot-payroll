@@ -170,3 +170,10 @@
 - [x] `portal.portalLink` (CEO-only) + **Open portal** button in Executive view → Live portal
 - [x] Untracked `.project-config.json` (Manus-era secrets in a public repo — flagged to owner for rotation)
 - [x] Tests: 5 new (key gate, per-store aggregation, silent-store flag, leak guard, page headers) — 159/159 passing; tsc + build clean; route smoke (401/401/200 + headers) and Playwright visual check on desktop + mobile
+
+## v12 — Fifth store: Hotspot Market 17
+- [x] Added "Hotspot Market 17" to STORES (shared/hotspot.ts) — flows into kiosk picker, dashboards, CEO/CFO views, payroll, schedule import, portal page, zod validation and PIN scopes automatically
+- [x] Default manager PIN 1717 seeded on deploy (DEFAULT_PINS); ensureDefaultPins now seeds by missing scope, not row count, so stores added later always get their PIN
+- [x] Store abbreviation "HM 17", card gradient (pink), CFO chart color (chart-4 inserted so existing stores keep their colors)
+- [x] Comments/docs updated off the hardcoded "four"; README says five
+- [x] Tests updated (store list, ALL_SCOPES length 7, portal storeCount 5) — 159/159 passing; tsc + build clean; kiosk picker visually verified with the new store

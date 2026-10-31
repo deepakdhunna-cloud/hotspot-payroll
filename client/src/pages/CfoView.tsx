@@ -38,6 +38,8 @@ const STORE_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
   "var(--chart-3)",
+  // Market 17 sits at index 3 so Travel Center keeps its original color.
+  "var(--chart-4)",
   "var(--chart-5)",
 ];
 const UP = "var(--success)";

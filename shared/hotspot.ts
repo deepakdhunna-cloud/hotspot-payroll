@@ -5,6 +5,7 @@ export const STORES = [
   "Hotspot Market 11",
   "Hotspot Market 13",
   "Hotspot Market 14",
+  "Hotspot Market 17",
   "Hotspot Travel Center",
 ] as const;
 

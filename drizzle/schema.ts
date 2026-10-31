@@ -52,7 +52,7 @@ export type InsertManagerStore = typeof managerStores.$inferInsert;
 
 /**
  * Employee profile. payRate is hourly rate in USD.
- * storeLocation is one of the four Hotspot Market stores.
+ * storeLocation is one of the Hotspot stores (see STORES in shared/hotspot.ts).
  */
 export const employees = mysqlTable(
   "employees",
@@ -153,7 +153,7 @@ export type InsertPayrollEntry = typeof payrollEntries.$inferInsert;
 
 /**
  * PIN codes for the simple keypad sign-in.
- * scope = 'ceo' OR one of the four store names.
+ * scope = 'ceo' OR one of the store names (see STORES in shared/hotspot.ts).
  * pinHash = sha256(pin + scope) — never store raw PINs.
  */
 export const pinCodes = mysqlTable(

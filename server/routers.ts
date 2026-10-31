@@ -1818,7 +1818,7 @@ export const appRouter = router({
     }),
 
     /**
-     * Update a PIN (CEO master, or any of the four store PINs).
+     * Update a PIN (CEO master, or any store PIN).
      * Rejects a PIN that already belongs to a different scope — sign-in
      * matches a PIN against every scope, so duplicates would be ambiguous.
      * Rotating a PIN also revokes all sessions issued before the rotation.

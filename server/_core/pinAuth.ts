@@ -34,6 +34,7 @@ const DEFAULT_PINS: Record<PinScope, string> = {
   "Hotspot Market 11": "1111",
   "Hotspot Market 13": "1313",
   "Hotspot Market 14": "1414",
+  "Hotspot Market 17": "1717",
   "Hotspot Travel Center": "7777",
 };
 
@@ -132,10 +133,12 @@ export async function ensureDefaultPins(): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const existing = await db.select().from(pinCodes);
-  if (existing.length >= ALL_SCOPES.length) return;
+  // Seed by MISSING SCOPE, never by row count: when a store is added later
+  // (e.g. Hotspot Market 17), its PIN must be created even though rows exist.
   const haveScopes = new Set(existing.map((r) => r.scope));
-  for (const scope of ALL_SCOPES) {
-    if (haveScopes.has(scope)) continue;
+  const missing = ALL_SCOPES.filter((scope) => !haveScopes.has(scope));
+  if (missing.length === 0) return;
+  for (const scope of missing) {
     await db.insert(pinCodes).values({
       scope,
       pinHash: await hashPinScrypt(DEFAULT_PINS[scope], scope),

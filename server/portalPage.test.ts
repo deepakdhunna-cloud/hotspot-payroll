@@ -157,7 +157,7 @@ describe("portal summary", () => {
     expect(summary.totals.weekHours).toBe(22);
     expect(summary.totals.weekLaborCost).toBe(262 + 8 * 14);
     expect(summary.totals.storesReporting).toBe(1);
-    expect(summary.totals.storeCount).toBe(4);
+    expect(summary.totals.storeCount).toBe(5);
   });
 
   it("never leaks pay rates, phones, or hashes", async () => {
