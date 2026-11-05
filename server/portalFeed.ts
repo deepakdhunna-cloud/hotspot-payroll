@@ -1,13 +1,17 @@
 import { timingSafeEqual } from "node:crypto";
 import {
+  appSettings,
+  attentionItems,
+  auditLog,
   employees,
   payrollEntries,
+  scheduleImports,
   scheduleShifts,
   timePunches,
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
-export const PORTAL_FEED_SCHEMA_VERSION = "1.0";
+export const PORTAL_FEED_SCHEMA_VERSION = "1.1";
 
 /** Returns a bearer token only when the Authorization format is unambiguous. */
 export function extractBearerToken(authorization: string | undefined): string | undefined {
@@ -44,21 +48,34 @@ export function exportEmployee(
 }
 
 /**
- * A point-in-time full snapshot for an authenticated portal. The snapshot
- * includes operational payroll data, but excludes authentication data,
- * clock-code hashes, and internal audit records.
+ * A point-in-time full snapshot for an authenticated portal: every
+ * operational record since day one, so any single response is enough to
+ * mirror the site. Excludes authentication data and clock-code hashes; the
+ * audit log (large, append-only) only when asked for.
  */
-export async function buildPortalFeed() {
+export async function buildPortalFeed(opts: { includeAudit?: boolean } = {}) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
 
-  const [allEmployees, allPayrollEntries, allPunches, allScheduleShifts] =
-    await Promise.all([
-      db.select().from(employees),
-      db.select().from(payrollEntries),
-      db.select().from(timePunches),
-      db.select().from(scheduleShifts),
-    ]);
+  const [
+    allEmployees,
+    allPayrollEntries,
+    allPunches,
+    allScheduleShifts,
+    allScheduleImports,
+    allAttentionItems,
+    allAppSettings,
+    allAuditLog,
+  ] = await Promise.all([
+    db.select().from(employees),
+    db.select().from(payrollEntries),
+    db.select().from(timePunches),
+    db.select().from(scheduleShifts),
+    db.select().from(scheduleImports),
+    db.select().from(attentionItems),
+    db.select().from(appSettings),
+    opts.includeAudit ? db.select().from(auditLog) : Promise.resolve(null),
+  ]);
 
   return {
     schemaVersion: PORTAL_FEED_SCHEMA_VERSION,
@@ -67,5 +84,9 @@ export async function buildPortalFeed() {
     payrollEntries: allPayrollEntries,
     timePunches: allPunches,
     scheduleShifts: allScheduleShifts,
+    scheduleImports: allScheduleImports,
+    attentionItems: allAttentionItems,
+    appSettings: allAppSettings,
+    ...(allAuditLog ? { auditLog: allAuditLog } : {}),
   };
 }

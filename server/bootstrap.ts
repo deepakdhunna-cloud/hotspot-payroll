@@ -34,6 +34,8 @@ const COPY_TABLES = [
   "schedule_shifts",
   "schedule_imports",
   "audit_log",
+  "attention_items",
+  "app_settings",
 ];
 
 export async function runBootstrap(): Promise<void> {

@@ -31,7 +31,15 @@ only ever read or write its own store's data; the CEO PIN sees everything.
 ## Portal integration (this site is the system of record)
 
 This website hosts and owns all payroll data, and serves the live portal
-itself:
+itself.
+
+**Moving the site and all its data into another system?** Executive view →
+**Live portal** → **Download everything** exports every row since day one
+(JSON, CSV, MySQL) with a step-by-step guide. The guide is also in
+[docs/PORTAL_MIGRATION.md](docs/PORTAL_MIGRATION.md) and covers loading the
+history, keeping it live from the feed below, and moving the website itself
+with `COPY_FROM_DATABASE_URL` / `TOPUP_FROM_DATABASE_URL`. Implementation:
+`server/fullExport.ts`, `server/fullExportRoute.ts` (+ tests).
 
 ### 0. The built-in live portal — `/portal?key=…`
 
@@ -43,9 +51,10 @@ phone numbers, or personal details appear on it. Implementation:
 `server/portalPage.ts` (+ tests).
 
 Beyond that, an external system can receive the data two ways — both carry
-the exact same JSON snapshot built by `server/portalFeed.ts` (employees
-without clock-code hashes, payroll entries, time punches, schedule shifts;
-never PINs, hashes, or audit records):
+the exact same JSON snapshot built by `server/portalFeed.ts` (schema 1.1:
+employees without clock-code hashes, payroll entries, time punches, schedule
+shifts, schedule imports, attention items, app settings; the audit log only
+on `?include=audit`; never PINs or hashes):
 
 ### 1. Live relay — the site PUSHES to the portal (recommended)
 
@@ -75,7 +84,9 @@ button. Implementation: `server/portalSync.ts` (+ tests).
 `GET /api/portal-feed` with header `Authorization: Bearer $PORTAL_FEED_TOKEN`.
 Returns 503 `Portal feed is not configured` until `PORTAL_FEED_TOKEN` is set
 in this site's environment, and 401 on a wrong/missing token. Set the same
-token on the portal's fetcher.
+token on the portal's fetcher (the CEO can copy it from Executive view →
+Live portal → **Show key**). Responses are gzip-compressed when the request
+sends `Accept-Encoding: gzip`.
 
 > After the move off Manus, these env vars must be re-set on the new hosting —
 > they do not travel with the code. If the portal reports nothing, the almost

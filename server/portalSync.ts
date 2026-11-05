@@ -211,12 +211,11 @@ async function runPush(
   let counts: Record<string, number>;
   try {
     const feed = await deps.buildFeed();
-    counts = {
-      employees: feed.employees.length,
-      payrollEntries: feed.payrollEntries.length,
-      timePunches: feed.timePunches.length,
-      scheduleShifts: feed.scheduleShifts.length,
-    };
+    counts = Object.fromEntries(
+      Object.entries(feed)
+        .filter(([, v]) => Array.isArray(v))
+        .map(([k, v]) => [k, (v as unknown[]).length]),
+    );
     body = JSON.stringify(feed);
   } catch (error) {
     return fail(

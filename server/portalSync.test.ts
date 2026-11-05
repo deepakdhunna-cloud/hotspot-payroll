@@ -8,6 +8,7 @@ import {
   redactPortalUrl,
   schedulePortalPush,
 } from "./portalSync";
+import { PORTAL_FEED_SCHEMA_VERSION } from "./portalFeed";
 
 const FEED = {
   schemaVersion: "1.0",
@@ -134,7 +135,7 @@ describe("pushing a snapshot", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer relay-token");
     expect(headers["Content-Type"]).toBe("application/json");
-    expect(headers["X-Hotspot-Schema-Version"]).toBe("1.0");
+    expect(headers["X-Hotspot-Schema-Version"]).toBe(PORTAL_FEED_SCHEMA_VERSION);
     expect(JSON.parse(init.body as string).employees).toHaveLength(2);
 
     const status = getPortalSyncStatus();
