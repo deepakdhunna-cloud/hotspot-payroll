@@ -52,13 +52,21 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+
+const CEO_TABS = ["payroll", "managers", "activity", "portal"];
 
 export default function CeoView() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
+  // ?tab=portal opens straight onto the Move-to-portal card (a link the CEO can bookmark).
+  const [tab, setTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return requested && CEO_TABS.includes(requested) ? requested : "payroll";
+  });
+  const [scrollToPortal, setScrollToPortal] = useState(() => tab === "portal");
   const { scope: storeFilter, setScope: setStoreFilter } = useStoreScope();
 
   const optionsQ = trpc.meta.options.useQuery(undefined, { enabled: !!isAdmin });
@@ -75,6 +83,23 @@ export default function CeoView() {
     },
     { enabled: !!isAdmin, refetchInterval: 5 * 60_000 },
   );
+
+  // Scroll only once the cards above have loaded, or they push the target down.
+  const pageLoading = ceoQ.isLoading || trendQ.isLoading;
+  useEffect(() => {
+    if (!scrollToPortal || tab !== "portal" || pageLoading) return;
+    const timer = setTimeout(() => {
+      document
+        .getElementById("move-to-portal")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrollToPortal(false);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [scrollToPortal, tab, pageLoading]);
+  const openMoveToPortal = () => {
+    setTab("portal");
+    setScrollToPortal(true);
+  };
 
   const stores = optionsQ.data?.stores ?? [];
   const data = ceoQ.data;
@@ -175,6 +200,9 @@ export default function CeoView() {
         }
         actions={
           <>
+            <Button size="sm" variant="outline" onClick={openMoveToPortal}>
+              <Download className="h-3.5 w-3.5 mr-1.5" /> Move to your portal
+            </Button>
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
           </>
         }
@@ -378,8 +406,9 @@ export default function CeoView() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="payroll" className="space-y-4">
-        <TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        {/* Two by two on phones: in one row the last tab ran off the screen. */}
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:h-9 sm:w-fit">
           <TabsTrigger value="payroll">Payroll detail</TabsTrigger>
           <TabsTrigger value="managers">Access &amp; PINs</TabsTrigger>
           <TabsTrigger value="activity">Activity log</TabsTrigger>
@@ -1022,7 +1051,7 @@ function MoveToPortalCard() {
   };
 
   return (
-    <Card className="surface-card border-0">
+    <Card id="move-to-portal" className="surface-card border-0 scroll-mt-28">
       <CardHeader>
         <CardTitle className="section-title flex items-center gap-2">
           <Database className="h-5 w-5" /> Move everything to your own portal
