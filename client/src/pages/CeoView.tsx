@@ -35,11 +35,17 @@ import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
 import { inProgressPayWeekStart, fmtDateTime } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertTriangle,
   Building2,
   CheckCircle2,
   Clock,
+  Copy,
+  Database,
+  Download,
+  Eye,
+  EyeOff,
   History,
   RefreshCw,
   Satellite,
@@ -652,6 +658,7 @@ function ActivityPanel() {
     "clock.punch_failed": "Failed kiosk code attempt",
     "ceo.updatePin": "Rotated a PIN",
     "portal.syncNow": "Pushed snapshot to portal",
+    "export.full": "Downloaded full data export",
   };
 
   return (
@@ -782,6 +789,7 @@ function LivePortalPanel() {
 
   return (
     <div className="space-y-4">
+      <MoveToPortalCard />
       <Card className="surface-card border-0">
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
@@ -959,5 +967,157 @@ function LivePortalPanel() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Everything needed to move the site into the CEO's own portal: the full
+ * history as files, the live feed for whatever comes after, and the code.
+ */
+function MoveToPortalCard() {
+  const [withCredentials, setWithCredentials] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const accessQ = trpc.portal.feedAccess.useQuery(undefined, { enabled: revealed });
+  const token = accessQ.data?.token ?? null;
+  const feedUrl = `${window.location.origin}/api/portal-feed`;
+
+  const copy = async (text: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${what} copied`);
+    } catch {
+      toast.error("Couldn't copy. Select it and copy it by hand.");
+    }
+  };
+
+  const downloadEverything = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(
+        `/api/export/full${withCredentials ? "?credentials=1" : ""}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      const name =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ??
+        "hotspot-payroll-export.zip";
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast.success("Downloaded. It holds personal data, so keep it somewhere private.");
+    } catch (e) {
+      toast.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Card className="surface-card border-0">
+      <CardHeader>
+        <CardTitle className="section-title flex items-center gap-2">
+          <Database className="h-5 w-5" /> Move everything to your own portal
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Three pieces: every record from day one, a live connection for
+          everything entered after that, and the website itself.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-5 text-sm">
+        <section className="space-y-2">
+          <div className="font-medium">1 · All history: download everything</div>
+          <p className="text-xs text-muted-foreground">
+            One .zip with every employee, punch, payroll week, schedule, alert
+            and activity-log entry, as JSON, spreadsheet (CSV) and MySQL files,
+            plus a step-by-step guide. Each download is recorded in the
+            activity log.
+          </p>
+          <label className="flex items-start gap-2 text-xs cursor-pointer">
+            <Checkbox
+              checked={withCredentials}
+              onCheckedChange={(v) => setWithCredentials(v === true)}
+              className="mt-0.5"
+            />
+            <span>
+              Include sign-in PINs and employee clock codes. Only needed if your
+              portal will run sign-in and the time clock itself.{" "}
+              <span className="font-medium text-destructive">
+                The clock-code data can be turned back into each employee&apos;s
+                code, so treat the file like a list of codes.
+              </span>
+            </span>
+          </label>
+          <Button size="sm" onClick={downloadEverything} disabled={downloading}>
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+            {downloading ? "Preparing…" : "Download everything (.zip)"}
+          </Button>
+        </section>
+
+        <section className="space-y-2">
+          <div className="font-medium">2 · New data, live: connect your portal</div>
+          <p className="text-xs text-muted-foreground">
+            Your portal asks this address for data and sends the key in an{" "}
+            <code className="font-mono">Authorization: Bearer</code> header.
+            Every answer is the complete, current data: everything in the
+            download plus whatever was entered since. Checking every 1–5
+            minutes keeps the portal live.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="font-mono text-xs bg-muted px-2 py-1 rounded break-all">
+              {feedUrl}
+            </code>
+            <Button size="sm" variant="outline" onClick={() => copy(feedUrl, "Feed address")}>
+              <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="font-mono text-xs bg-muted px-2 py-1 rounded break-all">
+              {!revealed
+                ? "••••••••••••••••"
+                : accessQ.isLoading
+                  ? "loading…"
+                  : (token ?? "not set. Add PORTAL_FEED_TOKEN on Railway.")}
+            </code>
+            <Button size="sm" variant="outline" onClick={() => setRevealed((r) => !r)}>
+              {revealed ? (
+                <EyeOff className="h-3.5 w-3.5 mr-1.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {revealed ? "Hide key" : "Show key"}
+            </Button>
+            {revealed && token && (
+              <Button size="sm" variant="outline" onClick={() => copy(token, "Access key")}>
+                <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy key
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Would you rather this site send the data to your portal? Set{" "}
+            <code className="font-mono">PORTAL_SYNC_URL</code> on Railway. The
+            relay card below shows whether it&apos;s delivering.
+          </p>
+        </section>
+
+        <section className="space-y-1">
+          <div className="font-medium">3 · The website itself</div>
+          <p className="text-xs text-muted-foreground">
+            The code lives in GitHub at{" "}
+            <code className="font-mono">deepakdhunna-cloud/hotspot-payroll</code>.
+            The guide in the download explains running it inside your portal
+            and copying the whole database across in one step.
+          </p>
+        </section>
+      </CardContent>
+    </Card>
   );
 }

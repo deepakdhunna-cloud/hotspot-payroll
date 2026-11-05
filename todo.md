@@ -177,3 +177,15 @@
 - [x] Store abbreviation "HM 17", card gradient (pink), CFO chart color (chart-4 inserted so existing stores keep their colors)
 - [x] Comments/docs updated off the hardcoded "four"; README says five
 - [x] Tests updated (store list, ALL_SCOPES length 7, portal storeCount 5) — 159/159 passing; tsc + build clean; kiosk picker visually verified with the new store
+
+## v13 — Move everything into the owner's portal
+- [x] `server/fullExport.ts` + `GET /api/export/full` (CEO session only; 401 signed-out, 403 managers/CFO): one ZIP with every row since day one — README guide, manifest (counts, migrations, live-feed address), json/ + csv/ per table, mysql/schema.sql + mysql/data.sql. All reads in one transaction for a consistent snapshot; every download audit-logged
+- [x] Credentials (PIN hashes, clock-code hashes) only on explicit opt-in — clock-code hashes are unsalted sha256 over 4 digits, i.e. effectively the codes
+- [x] data.sql: REPLACE INTO (re-runnable, exported rows win over seeded defaults), `SET NAMES utf8mb4` + UTC session, batched; CSVs RFC 4180 with BOM and spreadsheet-formula guard
+- [x] Live feed schema 1.1: + scheduleImports, attentionItems, appSettings; auditLog on `?include=audit`; gzip responses
+- [x] bootstrap COPY_TABLES += attention_items, app_settings so a database-to-database move carries every table
+- [x] CEO Executive view → Live portal: "Move everything to your own portal" card — Download everything (+ credentials checkbox), feed address + Show/Copy key, where the code lives; `portal.feedAccess` (admin only)
+- [x] docs/PORTAL_MIGRATION.md (also the README inside every download): load history, keep it live, move the website, table reference, security
+- [x] Verified end to end on MariaDB 10.11 with the production build: export → schema.sql + data.sql into an empty DB → all 11 tables row-for-row identical (also through a latin1-default client); data.sql re-run idempotent; COPY_FROM_DATABASE_URL copy of all 11 tables identical; feed gzip/keys/no hashes; CEO UI download + activity log in Chromium
+- [x] Large histories never freeze the site: formatting runs in 2,000-row slices and the ZIP streams 1 MB deflate slices, yielding between each (40k punches: longest event-loop pause 91 ms vs 1.4 s in one pass)
+- [x] Tests: 14 new (contents, credentials gate, exact values, SQL/CSV escaping, sliced JSON = JSON.stringify, manifest, responsiveness, route 401/403/200) — 173/173 passing; tsc + build clean

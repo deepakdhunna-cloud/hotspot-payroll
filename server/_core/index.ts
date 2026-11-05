@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { csrfOriginGuard } from "../csrf";
@@ -11,6 +13,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ensureDefaultPins } from "./pinAuth";
 import { serveStatic, setupVite } from "./vite";
+import { handleFullExport } from "../fullExportRoute";
 import { buildPortalFeed, hasPortalFeedAccess } from "../portalFeed";
 import { schedulePortalPush, startPortalSync } from "../portalSync";
 import {
@@ -20,6 +23,8 @@ import {
   renderPortalDashboardPage,
   renderPortalUnconfiguredPage,
 } from "../portalPage";
+
+const gzipAsync = promisify(gzip);
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -107,10 +112,18 @@ async function startServer() {
     }
 
     try {
-      const feed = await buildPortalFeed();
+      const feed = await buildPortalFeed({ includeAudit: req.query.include === "audit" });
+      const body = JSON.stringify(feed);
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-      res.json(feed);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Vary", "Accept-Encoding");
+      if (/\bgzip\b/.test(req.header("accept-encoding") ?? "")) {
+        res.setHeader("Content-Encoding", "gzip");
+        res.send(await gzipAsync(body));
+      } else {
+        res.send(body);
+      }
     } catch (error) {
       console.error("[PortalFeed] Unable to build feed", error);
       res.status(503).json({ error: "Portal feed is temporarily unavailable" });
@@ -159,6 +172,10 @@ async function startServer() {
       res.status(503).json({ error: "Portal data is temporarily unavailable" });
     }
   });
+
+  // Full data export for moving the site into another system — every row
+  // since day one as a ZIP. CEO session only (see server/fullExportRoute.ts).
+  app.get("/api/export/full", (req, res) => handleFullExport(req, res));
 
   // Every tRPC mutation is a POST (queries are GETs), so a successful POST
   // means payroll data may have changed: nudge the debounced portal relay.

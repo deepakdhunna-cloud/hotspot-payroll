@@ -1022,6 +1022,12 @@ export const appRouter = router({
       };
     }),
 
+    /** The live feed's path and key, for wiring the CEO's own portal to it. */
+    feedAccess: adminProcedure.query(() => {
+      const token = process.env.PORTAL_FEED_TOKEN?.trim() || null;
+      return { configured: !!token, path: "/api/portal-feed", token };
+    }),
+
     syncNow: adminProcedure.mutation(async ({ ctx }) => {
       const result = await pushPortalSnapshot("manual");
       void logAudit({
