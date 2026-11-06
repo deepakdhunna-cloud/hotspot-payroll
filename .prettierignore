@@ -33,3 +33,6 @@ pnpm-lock.yaml
 # OS files
 .DS_Store
 Thumbs.db
+
+# Vendored agent skill, kept byte-identical with upstream (benjitaylor/skills)
+.claude/skills/stageshow/
