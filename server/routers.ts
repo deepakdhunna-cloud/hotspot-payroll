@@ -30,6 +30,7 @@ import {
   findEmployeesWithClockCodes,
   findOpenPunch,
   findOverlappingPunch,
+  getPayrollEntry,
   findOpenPunches,
   getEmployeeById,
   getEmployeePayrollHistory,
@@ -137,6 +138,29 @@ export function isPayrollOfRecord(e: {
 }): boolean {
   if (e.notes === SCHEDULE_ONLY_NOTE) return false;
   return Number(e.hoursWorked) > 0 || Number(e.grossPay) > 0;
+}
+
+/**
+ * The active roster plus any FORMER employee among `activityIds` (people
+ * with a saved entry or clocked time in the week being shown), limited to
+ * `stores`, sorted by name. Former rows keep `active: 0` so screens can
+ * label them.
+ */
+async function withFormerEmployeesForWeek<
+  T extends { id: number; fullName: string; storeLocation: string },
+>(activeEmployees: T[], activityIds: number[], stores?: string[]) {
+  const activeIds = new Set(activeEmployees.map(e => e.id));
+  const formerIds = Array.from(new Set(activityIds)).filter(
+    id => !activeIds.has(id)
+  );
+  const former = formerIds.length
+    ? ((await getEmployeesByIds(formerIds)) as unknown as T[]).filter(
+        e => !stores || stores.includes(e.storeLocation)
+      )
+    : [];
+  return [...activeEmployees, ...former].sort((a, b) =>
+    a.fullName.localeCompare(b.fullName)
+  );
 }
 
 /** Punch times may run this far ahead of the server clock (device skew). */
@@ -786,20 +810,10 @@ export const appRouter = router({
         // re-opening an old week must show everyone who was paid in it:
         // former employees appear for any week where they have a saved
         // entry or clocked time (flagged inactive for the grid).
-        const activeIds = new Set(activeEmployees.map(e => e.id));
-        const formerIds = Array.from(
-          new Set([
-            ...entries.map(e => e.employeeId),
-            ...Array.from(clocked.keys()),
-          ])
-        ).filter(id => !activeIds.has(id));
-        const former = formerIds.length
-          ? (await getEmployeesByIds(formerIds)).filter(
-              e => !stores || stores.includes(e.storeLocation as Store)
-            )
-          : [];
-        const employees = [...activeEmployees, ...former].sort((a, b) =>
-          a.fullName.localeCompare(b.fullName)
+        const employees = await withFormerEmployeesForWeek(
+          activeEmployees,
+          [...entries.map(e => e.employeeId), ...Array.from(clocked.keys())],
+          stores
         );
 
         return {
@@ -840,11 +854,21 @@ export const appRouter = router({
         ) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
+        const week = getWeekStart(input.weekStart);
+        // What the grid shows is what gets saved: a week already saved keeps
+        // its own rate unless a new one is typed (an override). Fresh rows
+        // and placeholders price at the profile rate.
+        const existingEntry = await getPayrollEntry(emp.id, week);
+        const savedRate =
+          existingEntry && isPayrollOfRecord(existingEntry)
+            ? Number(existingEntry.payRateSnapshot)
+            : undefined;
         const payRate =
           input.payRateOverride !== undefined
             ? input.payRateOverride
-            : Number(emp.payRate);
-        const week = getWeekStart(input.weekStart);
+            : savedRate !== undefined && Number.isFinite(savedRate)
+              ? savedRate
+              : Number(emp.payRate);
         // A rate typed for the week being paid (the last closed week or the
         // live one) becomes the profile rate for future weeks. Correcting an
         // OLDER week only reprices that week — it must never roll the
@@ -1830,7 +1854,7 @@ export const appRouter = router({
         const week = getWeekStart(input.weekStart);
         const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
         const stores = input.store ? [input.store] : [...STORES];
-        const [employees, entries, clockHours, openPunches, shifts] =
+        const [activeEmployees, entries, clockHours, openPunches, shifts] =
           await Promise.all([
             listEmployees({ stores }),
             getPayrollByWeek(week, stores),
@@ -1838,6 +1862,13 @@ export const appRouter = router({
             listOpenPunches(stores),
             getShiftsForWeek(week, stores),
           ]);
+        // Same rule as payroll.week: someone deactivated mid-week still
+        // belongs to the weeks they were paid or clocked time in.
+        const employees = await withFormerEmployeesForWeek(
+          activeEmployees,
+          [...entries.map(e => e.employeeId), ...Array.from(clockHours.keys())],
+          stores
+        );
         // Same scheduled-hours fallback as the manager dashboard, so both
         // views (and the kiosk) always agree on over-clock status.
         const shiftHoursByEmp = new Map<number, number>();

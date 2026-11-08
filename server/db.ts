@@ -236,6 +236,23 @@ export async function upsertPayrollEntry(data: InsertPayrollEntry) {
   return Number((result as any)[0]?.insertId ?? (result as any).insertId ?? 0);
 }
 
+/** One employee's payroll entry for one week, if it exists. */
+export async function getPayrollEntry(employeeId: number, weekStart: Date) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(payrollEntries)
+    .where(
+      and(
+        eq(payrollEntries.employeeId, employeeId),
+        eq(payrollEntries.weekStart, weekStart),
+      ),
+    )
+    .limit(1);
+  return rows[0];
+}
+
 export async function getPayrollByWeek(weekStart: Date, stores?: string[]) {
   const db = await getDb();
   if (!db) return [];
