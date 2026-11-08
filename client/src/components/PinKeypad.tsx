@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Delete, Lock, ShieldCheck } from "lucide-react";
+import { ArrowRight, Delete } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -90,62 +90,31 @@ export default function PinKeypad() {
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
-    <div className="ink-panel min-h-screen grid lg:grid-cols-[1.15fr_1fr]">
-      {/* Brand statement panel — first impression, desktop only */}
-      <div className="hidden lg:flex flex-col justify-between p-12 xl:p-16 border-r border-white/10">
-        <BrandMark size="lg" tone="ink" className="self-start" />
-        <div className="max-w-md">
-          <span className="speed-lines mb-5 block" aria-hidden="true">
-            <i />
-          </span>
-          <h2 className="font-display text-[2.6rem] leading-[1.02] font-bold tracking-[0.005em] text-white">
-            Payroll, schedules &amp; the time clock.
-            <br />
-            <span className="text-white/60">Your whole operation, one place.</span>
-          </h2>
-          <p className="mt-5 text-sm text-white/55 leading-relaxed">
-            Live labor costs, imported schedules, and a kiosk your team taps in
-            and out of — everything a pay week needs, Thursday to Wednesday.
-          </p>
-        </div>
-        <p className="text-[11px] text-white/40 flex items-center gap-1.5">
-          <ShieldCheck className="h-3 w-3" /> Hotspot Market · Payroll &amp; Time Clock
-        </p>
-      </div>
+    <div className="ink-panel min-h-svh flex items-center justify-center p-4">
+      <div className="w-full max-w-[22rem] flex flex-col items-center gap-8">
+        <BrandMark size="lg" tone="ink" />
 
-      <div className="flex items-center justify-center p-4">
-      <div className="w-full max-w-sm flex flex-col items-center gap-7">
-        <div className="lg:hidden">
-          <BrandMark size="lg" tone="ink" />
-        </div>
-
-        {/* Floating paper card — the keypad lives on a warm surface that
-            pops against the ink backdrop. */}
-        <div className="w-full rounded-3xl bg-card text-card-foreground p-7 shadow-[0_1px_2px_rgb(0_0_0/0.3),0_24px_60px_-24px_rgb(0_0_0/0.7)]">
-          <div className="flex flex-col items-center gap-2 text-center">
-            <span className="eyebrow flex items-center gap-2">
-              <Lock className="h-3 w-3" /> Secure access
-            </span>
-            <h1 className="font-display text-[1.75rem] leading-none font-semibold tracking-[0.01em]">
-              Enter your PIN
-            </h1>
-            <p className="text-sm text-muted-foreground max-w-xs">
-              Use your store PIN, or the CEO master PIN for full access.
+        <div className="w-full rounded-2xl bg-card text-card-foreground p-6 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]">
+          <div className="flex flex-col items-center gap-1 text-center">
+            <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
+            <p className="text-sm text-muted-foreground">
+              Enter your store PIN, or the CEO PIN.
             </p>
           </div>
 
           {/* PIN dots */}
           <div
             className={`flex items-center justify-center gap-3 my-6 ${shake ? "animate-shake" : ""}`}
+            role="status"
             style={{ minHeight: 24 }}
             aria-label={`${pin.length} digits entered`}
           >
             {Array.from({ length: dotCount }).map((_, i) => (
               <div
                 key={i}
-                className={`h-3.5 w-3.5 rounded-full border-2 transition-all duration-150 ${
+                className={`h-3 w-3 rounded-full border-2 transition-all duration-150 ${
                   pin.length > i
-                    ? "bg-primary border-primary scale-110"
+                    ? "bg-foreground border-foreground scale-110"
                     : "border-muted-foreground/30"
                 }`}
               />
@@ -175,19 +144,17 @@ export default function PinKeypad() {
               onClick={submit}
               disabled={!canSubmit}
               aria-label="Sign in"
-              className="h-16 text-lg font-semibold rounded-xl"
+              className="h-14 text-lg font-semibold rounded-xl"
             >
               {verify.isPending ? "…" : <ArrowRight className="h-6 w-6" />}
             </Button>
           </div>
         </div>
 
-        <p className="lg:hidden text-[11px] text-white/50 text-center flex items-center gap-1.5">
-          <ShieldCheck className="h-3 w-3" /> Hotspot Market &middot; Payroll &amp; Time Clock
+        <p className="text-xs text-white/45 text-center">
+          Hotspot Market · Payroll &amp; time clock
         </p>
       </div>
-      </div>
-
     </div>
   );
 }
@@ -210,7 +177,7 @@ function KeypadKey({
       variant={variant === "ghost" ? "ghost" : "secondary"}
       onClick={onClick}
       disabled={disabled}
-      className="h-16 text-2xl font-semibold tabular-nums rounded-xl"
+      className="h-14 text-2xl font-medium tabular-nums rounded-xl"
       {...rest}
     >
       {children}

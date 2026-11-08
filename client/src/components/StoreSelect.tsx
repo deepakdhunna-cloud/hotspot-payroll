@@ -36,9 +36,9 @@ export function StoreSelect({
     return (
       <span
         className={cn(
-          "inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium",
+          "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium",
           tone === "ink"
-            ? "border-white/15 bg-white/5 text-white/85"
+            ? "border-white/10 bg-white/[0.06] text-white/85"
             : "border-border bg-card shadow-sm",
           className,
         )}
@@ -58,9 +58,9 @@ export function StoreSelect({
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger
         className={cn(
-          "h-9 w-44",
+          "h-8 w-44 text-sm",
           tone === "ink"
-            ? "border-white/15 bg-white/10 text-white shadow-none hover:border-white/30 [&_svg]:text-white/60"
+            ? "border-white/10 bg-white/[0.08] text-white shadow-none hover:bg-white/[0.12] [&_svg]:text-white/60"
             : "bg-card shadow-sm",
           className,
         )}
@@ -71,7 +71,7 @@ export function StoreSelect({
         <SelectItem value="all">{isAdmin ? "All stores" : "All my stores"}</SelectItem>
         {stores.map((s) => (
           <SelectItem key={s} value={s}>
-            {s}
+            {tone === "ink" ? (STORE_ABBR[s] ?? s) : s}
           </SelectItem>
         ))}
       </SelectContent>

@@ -28,7 +28,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
-import { BarChart3, Landmark, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "wouter";
 
@@ -317,10 +317,8 @@ export default function CfoView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="CFO portal"
-        title="Labor cost & payroll analytics"
-        description="Aggregated financials for the last five closed pay weeks (Thu – Wed). Read-only — no personal data, no operational controls."
-        icon={<Landmark />}
+        title="Finance"
+        description="Labor cost for the last five closed pay weeks (Thursday to Wednesday). Read-only."
       />
 
       {m ? (
@@ -385,14 +383,12 @@ export default function CfoView() {
 
       <Card className="surface-card border-0">
         <CardHeader className="pb-2">
-          <CardTitle className="section-title flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            Weekly payroll — last 5 closed weeks
+          <CardTitle className="section-title">
+            Weekly payroll, last 5 closed weeks
           </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Stacked by store; the exact total sits on every bar and the
-            movement vs the prior week sits under it. The dashed bar is the
-            current week's live projection.
+          <p className="text-sm text-muted-foreground">
+            Stacked by store, with the change from the week before under each bar.
+            The dashed bar is this week&apos;s projection.
           </p>
         </CardHeader>
         <CardContent>
@@ -472,7 +468,7 @@ export default function CfoView() {
                         <TableCell className="font-medium">
                           {fmtWeekRange(new Date(w.weekStart))}
                           {w.estimated ? (
-                            <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <span className="ml-2 text-xs text-muted-foreground">
                               est.
                             </span>
                           ) : null}
@@ -551,12 +547,10 @@ export default function CfoView() {
           <Card className="surface-card border-0">
             <CardHeader>
               <CardTitle className="section-title">Store economics</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Last closed week ({fmtWeekRange(new Date(m.last.weekStart))}),
-                with each store's 5-week average for context. The feed column
-                shows whether the store's time clock is actually sending data
-                to this site — a silent store reads $0 here, not because it
-                spent nothing, but because it isn't feeding.
+              <p className="text-sm text-muted-foreground">
+                Last closed week ({fmtWeekRange(new Date(m.last.weekStart))}) beside
+                each store&apos;s 5-week average. A store whose time clock isn&apos;t
+                sending data reads $0.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -664,7 +658,7 @@ export default function CfoView() {
               items={(cfoQ.data?.latestWeekPeople ?? []).filter(
                 p => p.hours > 0 || p.gross > 0,
               )}
-              sub={`last closed week (${fmtWeekRange(new Date(m.last.weekStart))}) — where the payroll dollars go by role`}
+              sub={`Last closed week, ${fmtWeekRange(new Date(m.last.weekStart))}`}
             />
             <Card className="surface-card border-0">
               <CardHeader className="pb-2">
@@ -690,8 +684,8 @@ export default function CfoView() {
                   <span className="font-semibold">{fmtMoney(m.last.estNet)}</span>
                 </p>
                 <p className="text-xs text-muted-foreground pt-1">
-                  Model estimates for planning only — actual withholding comes
-                  from your payroll processor.
+                  Estimates for planning. Actual withholding comes from your payroll
+                  processor.
                 </p>
               </CardContent>
             </Card>
@@ -700,10 +694,8 @@ export default function CfoView() {
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        Data governance: this portal shows aggregated payroll financials only.
-        Employee personal details, individual pay rates, punch records and
-        operational alerts are deliberately excluded from both the page and
-        the API behind it.
+        Totals only. Personal details, individual pay rates and punches are never
+        sent to this page.
       </p>
     </div>
   );

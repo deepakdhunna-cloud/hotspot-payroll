@@ -1,9 +1,8 @@
 /**
- * App chrome v3: a slim ink top bar carries the brand, the horizontal nav
- * (signal-red underline marks the active section) and the account chip.
- * Content sits on a porcelain canvas in a centered column so tables get
- * their full width. On small screens the nav becomes a second scrollable
- * row — every section stays one tap away.
+ * App chrome v4: a slim, flat ink top bar carries the brand, the section nav
+ * and the account chip. Content sits in a centered column on a quiet canvas.
+ * On phones the sections move to a bottom tab bar, so every one of them is
+ * a thumb-tap away and none is ever scrolled off-screen.
  */
 import React from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -20,6 +19,7 @@ import {
 import {
   Bell,
   Building2,
+  CalendarDays,
   ChevronDown,
   ClipboardList,
   Clock,
@@ -28,7 +28,6 @@ import {
   LayoutDashboard,
   LogOut,
   ShieldCheck,
-  Upload,
   Users,
 } from "lucide-react";
 import { useLocation } from "wouter";
@@ -44,17 +43,28 @@ import { trpc } from "@/lib/trpc";
 type MenuItem = {
   icon: typeof LayoutDashboard;
   label: string;
+  /** Label under the icon in the phone tab bar. */
+  short: string;
   path: string;
   adminOnly?: boolean;
+  /** Left out of the phone tab bar (reachable from the account menu). */
+  desktopOnly?: boolean;
 };
 
 const baseMenuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Users, label: "Employees", path: "/employees" },
-  { icon: ClipboardList, label: "Payroll", path: "/payroll" },
-  { icon: Upload, label: "Schedule", path: "/schedule-import" },
-  { icon: ShieldCheck, label: "CEO", path: "/ceo", adminOnly: true },
-  { icon: Landmark, label: "CFO", path: "/cfo", adminOnly: true },
+  { icon: LayoutDashboard, label: "Dashboard", short: "Home", path: "/" },
+  { icon: Users, label: "Employees", short: "Team", path: "/employees" },
+  { icon: ClipboardList, label: "Payroll", short: "Payroll", path: "/payroll" },
+  { icon: CalendarDays, label: "Schedule", short: "Schedule", path: "/schedule-import" },
+  { icon: ShieldCheck, label: "Executive", short: "Executive", path: "/ceo", adminOnly: true },
+  {
+    icon: Landmark,
+    label: "Finance",
+    short: "Finance",
+    path: "/cfo",
+    adminOnly: true,
+    desktopOnly: true,
+  },
 ];
 
 export default function DashboardLayout({
@@ -138,7 +148,7 @@ function AttentionBell({ onNavigate }: { onNavigate: () => void }) {
   return (
     <button
       onClick={onNavigate}
-      className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 text-white/80 hover:text-white hover:border-white/30 transition-colors"
+      className="relative flex h-8 w-8 items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/[0.08] transition-colors"
       title={
         count > 0
           ? `${count} item${count === 1 ? "" : "s"} need attention — open the attention center`
@@ -148,11 +158,44 @@ function AttentionBell({ onNavigate }: { onNavigate: () => void }) {
     >
       <Bell className="h-4 w-4" />
       {count > 0 ? (
-        <span className="absolute -top-1.5 -right-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold tabular-nums text-white ring-2 ring-[var(--ink)]">
+        <span className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-white ring-2 ring-[var(--ink)]">
           {count > 9 ? "9+" : count}
         </span>
       ) : null}
     </button>
+  );
+}
+
+/** Phone-only bottom tab bar. */
+function TabBar({
+  items,
+  isPathActive,
+  onNavigate,
+}: {
+  items: MenuItem[];
+  isPathActive: (path: string) => boolean;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <nav className="tabbar" aria-label="Sections">
+      <div className="flex">
+        {items.map(item => {
+          const active = isPathActive(item.path);
+          return (
+            <button
+              key={item.path}
+              data-active={active}
+              onClick={() => onNavigate(item.path)}
+              className="tabbar-link"
+              aria-current={active ? "page" : undefined}
+            >
+              <item.icon className="h-5 w-5" />
+              {item.short}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -186,6 +229,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const menuItems = isCfo
     ? baseMenuItems.filter(item => item.path === "/cfo")
     : baseMenuItems.filter(item => !item.adminOnly || isAdmin);
+  // The CFO portal is a single page: no tab bar.
+  const showTabBar = !isCfo;
   // Highlight nested routes too (/employees/12 keeps Employees active).
   const isPathActive = (path: string) =>
     path === "/"
@@ -200,32 +245,34 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <header className="ink-panel sticky top-0 z-50 border-b border-white/10">
+      <header className="topbar sticky top-0 z-50 border-b border-white/[0.06]">
         <div className="flex h-14 items-center gap-2 px-4 lg:px-6">
           <button
-            onClick={() => setLocation("/")}
+            onClick={() => setLocation(roleHome)}
             className="shrink-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Go to dashboard"
           >
-            <BrandMark size="sm" tone="ink" />
+            <BrandMark size="sm" tone="ink" className="h-8" />
           </button>
 
-          <NavLinks
-            items={menuItems}
-            isPathActive={isPathActive}
-            onNavigate={setLocation}
-            className="hidden md:flex items-center ml-4"
-          />
+          {menuItems.length > 1 ? (
+            <NavLinks
+              items={menuItems}
+              isPathActive={isPathActive}
+              onNavigate={setLocation}
+              className="hidden md:flex items-center gap-0.5 ml-5"
+            />
+          ) : null}
 
-          <div className="ml-auto flex items-center gap-2">
-            {!isCfo && <TopbarStoreScope className="hidden md:flex w-40" />}
+          <div className="ml-auto flex items-center gap-1.5">
+            {!isCfo && <TopbarStoreScope className="w-36 md:w-40" />}
             {!isCfo && <AttentionBell onNavigate={() => setLocation("/")} />}
             {!isCfo && (
               <button
                 onClick={() =>
                   window.open("/clock", "_blank", "noopener,noreferrer")
                 }
-                className="hidden sm:flex items-center gap-1.5 h-9 rounded-lg border border-white/15 px-3 text-xs font-medium text-white/80 hover:text-white hover:border-white/30 transition-colors"
+                className="hidden md:flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium text-white/70 hover:text-white hover:bg-white/[0.08] transition-colors"
                 title="Open the punch-in kiosk in a new tab"
               >
                 <Clock className="h-3.5 w-3.5" />
@@ -236,21 +283,21 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-8 w-8 border border-white/20 shrink-0">
-                    <AvatarFallback className="text-xs font-semibold bg-primary text-primary-foreground">
+                <button className="flex items-center gap-2 rounded-md pl-1 pr-1.5 py-1 hover:bg-white/[0.08] transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Avatar className="h-7 w-7 shrink-0">
+                    <AvatarFallback className="text-[11px] font-semibold bg-white/[0.14] text-white">
                       {isAdmin ? "C" : isCfo ? "F" : (displayName[0]?.toUpperCase() ?? "M")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="hidden lg:block min-w-0 max-w-40">
-                    <p className="text-xs font-semibold text-white truncate leading-tight">
+                    <p className="text-xs font-medium text-white truncate leading-tight">
                       {displayName}
                     </p>
-                    <p className="text-[10px] text-white/55 truncate leading-tight mt-0.5">
+                    <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
                       {isAdmin || isCfo ? "All stores" : (user?.store ?? "—")}
                     </p>
                   </div>
-                  <ChevronDown className="hidden lg:block h-3.5 w-3.5 text-white/50" />
+                  <ChevronDown className="hidden lg:block h-3.5 w-3.5 text-white/40" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
@@ -259,7 +306,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   <p className="text-xs text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
                     {isAdmin || isCfo ? (
                       <>
-                        <ShieldCheck className="h-3 w-3 text-primary" /> All stores
+                        <ShieldCheck className="h-3 w-3" /> All stores
                         {isCfo ? " · read-only" : ""}
                       </>
                     ) : (
@@ -270,15 +317,26 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   </p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() =>
-                    window.open("/clock", "_blank", "noopener,noreferrer")
-                  }
-                  className="cursor-pointer sm:hidden"
-                >
-                  <Clock className="mr-2 h-4 w-4" />
-                  <span>Time clock kiosk</span>
-                </DropdownMenuItem>
+                {isAdmin ? (
+                  <DropdownMenuItem
+                    onClick={() => setLocation("/cfo")}
+                    className="cursor-pointer md:hidden"
+                  >
+                    <Landmark className="mr-2 h-4 w-4" />
+                    <span>Finance</span>
+                  </DropdownMenuItem>
+                ) : null}
+                {!isCfo ? (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      window.open("/clock", "_blank", "noopener,noreferrer")
+                    }
+                    className="cursor-pointer md:hidden"
+                  >
+                    <Clock className="mr-2 h-4 w-4" />
+                    <span>Open time clock kiosk</span>
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
@@ -290,45 +348,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             </DropdownMenu>
           </div>
         </div>
-
-        {/* Small screens: nav as a scrollable second row. The right edge
-            fades out so it's obvious more sections are a swipe away, and
-            the store scope sits pinned at the end of the row. */}
-        <div className="flex md:hidden items-center border-t border-white/10">
-          <div className="relative min-w-0 flex-1">
-            <NavLinks
-              items={menuItems}
-              isPathActive={isPathActive}
-              onNavigate={setLocation}
-              className="flex items-center overflow-x-auto [&>.topbar-link]:h-11 [&>.topbar-link]:shrink-0"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-0 w-8"
-              style={{
-                background: "linear-gradient(to left, var(--ink), transparent)",
-              }}
-            />
-          </div>
-          {!isCfo && (
-            <div className="shrink-0 px-2">
-              <TopbarStoreScope className="w-36" />
-            </div>
-          )}
-        </div>
-        {/* The brand thread: a signal-red hairline closing the chrome */}
-        <div
-          aria-hidden="true"
-          className="h-[2.5px] w-full"
-          style={{
-            background:
-              "linear-gradient(90deg, var(--brand-red-bright), var(--brand-red) 45%, oklch(0.54 0.21 27 / 0.15) 100%)",
-          }}
-        />
       </header>
 
       <main id="main-content" className="flex-1">
-        <div className="mx-auto w-full max-w-[1180px] px-4 md:px-6 py-6 md:py-8">
+        <div
+          className={`mx-auto w-full max-w-[1180px] px-4 md:px-6 pt-6 md:pt-8 ${
+            showTabBar ? "pb-24 md:pb-10" : "pb-10"
+          }`}
+        >
           {roleBlocked ? (
             <div
               className="flex items-center justify-center py-24"
@@ -342,6 +369,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </main>
+
+      {showTabBar ? (
+        <TabBar
+          items={menuItems.filter(item => !item.desktopOnly)}
+          isPathActive={isPathActive}
+          onNavigate={setLocation}
+        />
+      ) : null}
     </div>
   );
 }

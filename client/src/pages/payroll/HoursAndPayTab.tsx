@@ -31,7 +31,6 @@ import {
   Check,
   Clock,
   DollarSign,
-  Download,
   FileSpreadsheet,
   Loader2,
   Pencil,
@@ -571,33 +570,38 @@ export default function HoursAndPayTab({
       <span className="text-xs text-muted-foreground">—</span>
     );
 
+  // Only label stores when the grid spans more than one.
+  const multiStore = new Set(rows.map((r) => r.employee.storeLocation)).size > 1;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 md:space-y-6">
       <KpiBand className="grid-cols-2 xl:grid-cols-3">
         <KpiCell
           hero
-          label="Projected gross"
+          label="Gross pay"
           value={<Money value={totals.grossTotal} />}
-          sub="adds up the rows below as you type"
+          sub={`week of ${fmtWeekRange(weekStart)}`}
         />
         <KpiCell
-          label="Hours entered"
-          value={`${totals.hoursTotal.toFixed(1)} h`}
-          sub={`for the week of ${fmtWeekRange(weekStart)}`}
+          label="Hours"
+          value={totals.hoursTotal.toFixed(1)}
+          sub="entered for the week"
         />
         <KpiCell
           label="Saved"
-          value={`${savedCount}/${rows.length}`}
+          value={`${savedCount} of ${rows.length}`}
           sub={
             dirtyIds.length > 0
-              ? `${dirtyIds.length} row${dirtyIds.length === 1 ? "" : "s"} edited — unsaved`
-              : "rows saved so far this week"
+              ? `${dirtyIds.length} edited, not saved`
+              : savedCount === rows.length && rows.length > 0
+                ? "everyone is saved"
+                : "people saved"
           }
         />
       </KpiBand>
 
-      <Card className="surface-card border-0">
-        <CardHeader className="flex flex-row items-center justify-between">
+      <Card className="surface-card border-0 gap-0 py-0">
+        <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-3">
           <CardTitle className="section-title">Hours worked</CardTitle>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -608,7 +612,7 @@ export default function HoursAndPayTab({
               title="Download this week as an .xlsx spreadsheet (opens in Google Sheets)"
             >
               <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Export .xlsx
+              Export
             </Button>
           </div>
         </CardHeader>
@@ -646,7 +650,9 @@ export default function HoursAndPayTab({
                     <div>
                       <div className="font-medium">{v.emp.fullName}</div>
                       <div className="text-xs text-muted-foreground">
-                        {STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation} ·{" "}
+                        {multiStore
+                          ? `${STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation} · `
+                          : ""}
                         {v.scheduled.toFixed(1)}h scheduled
                       </div>
                     </div>
@@ -659,7 +665,7 @@ export default function HoursAndPayTab({
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <span className="text-xs font-medium text-muted-foreground">
                         Pay rate
                       </span>
                       <Input
@@ -675,7 +681,7 @@ export default function HoursAndPayTab({
                       />
                     </label>
                     <label className="block">
-                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <span className="text-xs font-medium text-muted-foreground">
                         Hours
                       </span>
                       {v.showReadOnlyClock ? (
@@ -783,8 +789,11 @@ export default function HoursAndPayTab({
                     >
                       <TableCell className="sticky left-0 z-10 bg-card font-medium">
                         <div>{v.emp.fullName}</div>
-                        <div className="text-[11px] font-normal text-muted-foreground">
-                          {STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation}
+                        <div className="text-xs font-normal text-muted-foreground">
+                          {v.emp.role}
+                          {multiStore
+                            ? ` · ${STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation}`
+                            : ""}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -960,7 +969,7 @@ export default function HoursAndPayTab({
               {rows.length > 0 && (
                 <TableFooter>
                   <TableRow className="hover:bg-transparent">
-                    <TableCell className="sticky left-0 z-10 bg-card font-semibold">
+                    <TableCell className="sticky left-0 z-10 bg-muted font-semibold">
                       Totals
                     </TableCell>
                     <TableCell />
@@ -982,20 +991,12 @@ export default function HoursAndPayTab({
         </CardContent>
       </Card>
 
-      <PositionBreakdown
-        items={positionItems}
-        sub="this week's pay split by role — live from the hours above, so it always matches the table"
-      />
-
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Download className="h-3 w-3" /> Saved hours, rates and gross are kept
-        permanently. Use the History tab to look back any number of weeks.
-      </p>
+      <PositionBreakdown items={positionItems} />
 
       {/* ---------- Commit bar: appears only when there's unsaved work ---------- */}
       {dirtyIds.length > 0 && (
-        <div className="sticky bottom-4 z-20 px-2">
-          <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-card/95 px-4 py-3 shadow-[0_8px_30px_-8px_rgb(16_24_40/0.3)] backdrop-blur">
+        <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-4 z-40 px-2">
+          <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3 rounded-2xl border border-border bg-card/95 px-4 py-3 shadow-[0_8px_30px_-8px_rgb(16_24_40/0.3)] backdrop-blur">
             <span className="flex items-center gap-2 text-sm font-medium">
               <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
               {dirtyIds.length} unsaved change{dirtyIds.length === 1 ? "" : "s"}

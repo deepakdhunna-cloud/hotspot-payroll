@@ -61,7 +61,6 @@ import {
   Pencil,
   Plus,
   ScanSearch,
-  Sparkles,
   Trash2,
   Upload,
   UserPlus,
@@ -153,6 +152,7 @@ export default function ScheduleImport() {
   const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
   const [schedStore, setSchedStore] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
+  const [showUpload, setShowUpload] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [rows, setRows] = useState<ParsedRow[] | null>(null);
   const [importId, setImportId] = useState<number | null>(null);
@@ -264,6 +264,7 @@ export default function ScheduleImport() {
       setFile(null);
       setImportId(null);
       setParsedWeek(null);
+      setShowUpload(false);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -414,13 +415,30 @@ export default function ScheduleImport() {
     );
   };
 
+  const weekShifts = scheduleWeekQ.data?.shifts ?? [];
+  const hasSchedule = weekShifts.length > 0;
+  const weekPeople = new Set(weekShifts.map((s: { employeeId: number }) => s.employeeId)).size;
+  const weekHours = weekShifts.reduce(
+    (a: number, s: { hours: number | string }) => a + Number(s.hours),
+    0,
+  );
+  // The uploader is the page's empty state. Once a week has a schedule, it
+  // steps aside for the schedule itself until someone asks to replace it.
+  const uploadOpen =
+    !scheduleWeekQ.isLoading &&
+    (!hasSchedule || showUpload || !!file || !!rows || parseM.isPending);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 md:space-y-6">
       <PageHeader
-        eyebrow="Schedule"
-        icon={<Upload className="h-5 w-5" />}
-        title="Import the week's schedule"
-        description="Drop the Homebase PDF, a spreadsheet, or a photo — even a handwritten grid. Shifts are read day by day, hours totalled, and every name is checked against your roster."
+        title="Schedule"
+        description={
+          scheduleWeekQ.isLoading
+            ? fmtWeekRange(weekStart)
+            : hasSchedule
+              ? `${fmtWeekRange(weekStart)} · ${weekPeople} ${weekPeople === 1 ? "person" : "people"} · ${weekHours.toFixed(1)} hours`
+              : `${fmtWeekRange(weekStart)} · no schedule yet`
+        }
         actions={
           <>
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
@@ -438,13 +456,35 @@ export default function ScheduleImport() {
                 </SelectContent>
               </Select>
             ) : null}
+            {hasSchedule && !uploadOpen ? (
+              <Button variant="outline" onClick={() => setShowUpload(true)}>
+                <Upload className="h-4 w-4 mr-2" /> Replace schedule
+              </Button>
+            ) : null}
           </>
         }
       />
 
-      {/* Step 1 — upload (the page's hero until a file is parsed) */}
-      <Card className="surface-card border-0">
-        <CardContent className="p-6">
+      {/* Step 1 — upload (the page's hero when the week has no schedule) */}
+      {uploadOpen ? (
+      <Card className="surface-card border-0 gap-0 py-0">
+        {hasSchedule ? (
+          <div className="flex items-center justify-between px-4 sm:px-6 pt-4">
+            <p className="section-title">Replace this week&apos;s schedule</p>
+            {!file && !rows && !parseM.isPending ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground"
+                onClick={() => setShowUpload(false)}
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        <CardContent className="p-4 sm:p-6">
           {parseM.isPending ? (
             <ParseProgress />
           ) : (
@@ -457,10 +497,10 @@ export default function ScheduleImport() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={onDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer p-10 text-center ${
+                className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer px-6 py-10 text-center ${
                   dragOver
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/60 hover:bg-accent/40"
+                    ? "border-foreground/40 bg-muted"
+                    : "border-border hover:border-foreground/30 hover:bg-muted/50"
                 }`}
               >
                 <input
@@ -472,23 +512,24 @@ export default function ScheduleImport() {
                 />
                 {!file ? (
                   <div className="flex flex-col items-center gap-3">
-                    <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Upload className="h-6 w-6 text-primary" />
+                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                      <Upload className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <p className="font-medium">Drop your Homebase schedule here</p>
+                      <p className="font-medium">
+                        Drop the schedule for {fmtWeekRange(weekStart)}, or tap to choose a file
+                      </p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        PDF · photo (even handwritten) · spreadsheet (.xlsx/.csv) &nbsp;·&nbsp; up to 8MB &nbsp;·&nbsp; week of{" "}
-                        {fmtWeekRange(weekStart)}
+                        Homebase PDF, a spreadsheet, or a photo (even handwritten) · up to 8MB
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-center gap-3">
                     {file.type === "application/pdf" ? (
-                      <FileText className="h-8 w-8 text-primary" />
+                      <FileText className="h-8 w-8 text-muted-foreground" />
                     ) : (
-                      <FileImage className="h-8 w-8 text-primary" />
+                      <FileImage className="h-8 w-8 text-muted-foreground" />
                     )}
                     <div className="text-left">
                       <p className="font-medium">{file.name}</p>
@@ -512,15 +553,21 @@ export default function ScheduleImport() {
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-3 mt-4">
-                <p className="text-xs text-muted-foreground">
+              <div className="flex flex-col-reverse gap-3 mt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
                   {stores.length > 1 && !effectiveStore
                     ? "Pick which store this schedule is for so new names land in the right place."
-                    : effectiveStore
-                      ? `New names will be added to ${effectiveStore}.`
-                      : ""}
+                    : !hasSchedule && !file
+                      ? "We read every shift, total the hours, and match each name to your team. You review before anything is saved."
+                      : effectiveStore
+                        ? `New names will be added to ${effectiveStore}.`
+                        : ""}
                 </p>
-                <Button onClick={startParse} disabled={!file || parseM.isPending}>
+                <Button
+                  onClick={startParse}
+                  disabled={!file || parseM.isPending}
+                  className="shrink-0"
+                >
                   <ScanSearch className="h-4 w-4 mr-2" />
                   Read schedule
                 </Button>
@@ -529,15 +576,16 @@ export default function ScheduleImport() {
           )}
         </CardContent>
       </Card>
+      ) : null}
 
       {/* Results */}
       {rows && (
         <div ref={resultsRef} className="space-y-6 scroll-mt-20">
           {/* Wrong-week guard: the file's printed dates vs the selected week */}
           {weekWarning && (
-            <Card className="surface-card border-0 border-l-4 border-l-primary rise-in">
+            <Card className="surface-card border-0 border-l-4 border-l-warning rise-in">
               <CardContent className="p-4 flex flex-wrap items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-primary shrink-0" />
+                <AlertCircle className="h-5 w-5 text-warning shrink-0" />
                 <div className="flex-1 min-w-60">
                   <p className="text-sm font-semibold">
                     {weekWarning.printedWeekStart
@@ -687,19 +735,19 @@ export default function ScheduleImport() {
                     </div>
                     {rows[i].suggestions.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold mr-0.5">
+                        <span className="text-xs font-medium text-muted-foreground mr-0.5">
                           Same person?
                         </span>
                         {rows[i].suggestions.map((s) => (
                           <button
                             key={s.employeeId}
                             onClick={() => linkSuggestion(i, s)}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
                             title={`${s.fullName} · ${s.storeLocation} · ${s.score}% name match`}
                           >
                             <Link2 className="h-3 w-3" />
                             {s.fullName}
-                            <span className="text-primary/60 tabular-nums">{s.score}%</span>
+                            <span className="text-muted-foreground tabular-nums">{s.score}%</span>
                           </button>
                         ))}
                       </div>
@@ -714,7 +762,7 @@ export default function ScheduleImport() {
                       onClick={quickAddAll}
                       disabled={quickCreateM.isPending || !effectiveStore}
                     >
-                      <Sparkles className="h-4 w-4 mr-1.5 text-primary" />
+                      <UserPlus className="h-4 w-4 mr-1.5" />
                       {quickCreateM.isPending
                         ? "Adding…"
                         : `Add all ${unmatchedIndices.length} as new to ${effectiveStore || "store"}`}
@@ -863,7 +911,8 @@ export default function ScheduleImport() {
         </div>
       )}
 
-      {/* The committed schedule — always visible, editable, original file a click away */}
+      {/* The committed schedule — editable, original file a click away */}
+      {hasSchedule || scheduleWeekQ.isLoading ? (
       <WeekScheduleBoard
         weekStart={weekStart}
         shifts={(scheduleWeekQ.data?.shifts ?? []) as BoardShift[]}
@@ -872,39 +921,16 @@ export default function ScheduleImport() {
         employees={employeesList}
         onMoved={setWeekStart}
       />
+      ) : null}
 
-      {/* How it works + import history */}
-      {!rows && !parseM.isPending && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="surface-card border-0">
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              <p className="section-title text-foreground mb-3">How this works</p>
-              <ol className="list-decimal list-inside space-y-1.5">
-                <li>Grab the schedule in any form — Homebase PDF export, a spreadsheet (.xlsx/.csv from Google Sheets or Excel), or a clear photo of a printed or handwritten grid.</li>
-                <li>
-                  Drop the file above and click{" "}
-                  <span className="text-foreground font-medium">Read schedule</span> — every
-                  shift is read day by day and hours are totalled per person.
-                </li>
-                <li>
-                  Every name is scanned against your roster: close spellings get one-click
-                  linking, real newcomers can be added on the spot.
-                </li>
-                <li>
-                  Commit: scheduled hours flow to the dashboard, payroll and the kiosk's daily
-                  shift hints.
-                </li>
-              </ol>
-            </CardContent>
-          </Card>
-
-          <Card className="surface-card border-0">
-            <CardHeader className="pb-3">
-              <CardTitle className="section-title flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" /> Recent imports
-              </CardTitle>
+      {/* Import history: where the original files live */}
+      {!rows && !parseM.isPending && (importsQ.data ?? []).length > 0 && (
+        <div>
+          <Card className="surface-card border-0 gap-0 py-0">
+            <CardHeader className="px-4 sm:px-5 pt-4 pb-1">
+              <CardTitle className="section-title">Recent uploads</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 sm:px-5 pb-3">
               {importsQ.isLoading ? (
                 <p className="text-sm text-muted-foreground py-3 text-center">Loading…</p>
               ) : (importsQ.data ?? []).length === 0 ? (
@@ -1097,17 +1123,14 @@ function WeekScheduleBoard({
   const addable = employees.filter((e) => !scheduledIds.has(e.id));
 
   return (
-    <Card className="surface-card border-0 rise-in">
-      <CardHeader className="pb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+    <Card className="surface-card border-0 gap-0 py-0">
+      <CardHeader className="px-4 sm:px-5 pt-4 pb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <CardTitle className="section-title flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-            Schedule on file · {fmtWeekRange(weekStart)}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-1.5">
+          <CardTitle className="section-title">Week of {fmtWeekRange(weekStart)}</CardTitle>
+          <p className="text-sm text-muted-foreground mt-0.5">
             {shifts.length > 0
-              ? `${byEmployee.size} people · ${weekTotal.toFixed(1)} hours committed. Click a row's pencil to edit — changes flow to payroll and the dashboards.`
-              : "What's committed for this week will show here — who works which day, with per-day coverage."}
+              ? "Tap a pencil to change someone's shifts. Changes flow to payroll and the dashboard."
+              : "Who works which day, with per-day coverage."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1120,7 +1143,7 @@ function WeekScheduleBoard({
               }
               title={`Open the original upload (${sourceImport.filename})`}
             >
-              <ExternalLink className="h-4 w-4 mr-1.5" /> View uploaded schedule
+              <ExternalLink className="h-4 w-4 mr-1.5" /> Original file
             </Button>
           ) : null}
           {shifts.length > 0 ? (
@@ -1137,9 +1160,9 @@ function WeekScheduleBoard({
             <ConfirmDialog
               trigger={
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
+                  className="text-muted-foreground hover:bg-destructive/5 hover:text-destructive"
                   title="Remove this week's committed schedule (wrong week uploaded, etc.)"
                 >
                   <Trash2 className="h-4 w-4 mr-1.5" /> Delete week
@@ -1161,8 +1184,8 @@ function WeekScheduleBoard({
                 if (emp) setEditFor({ id: emp.id, name: emp.fullName });
               }}
             >
-              <SelectTrigger className="h-8 w-44 text-xs bg-card">
-                <SelectValue placeholder="+ Add person to week" />
+              <SelectTrigger className="h-8 w-40 text-sm bg-card">
+                <SelectValue placeholder="+ Add person" />
               </SelectTrigger>
               <SelectContent>
                 {addable.map((e) => (
@@ -1195,16 +1218,15 @@ function WeekScheduleBoard({
                     return (
                       <TableHead
                         key={d.toISOString()}
-                        className={`text-center min-w-[96px] ${isToday ? "bg-primary/5" : ""}`}
+                        className={`text-center min-w-[96px] ${isToday ? "bg-muted text-foreground" : ""}`}
                       >
                         <span className="block leading-tight">
                           {shortDayLabel(d).split(" ")[0]}
                         </span>
                         <span
-                          className={`block text-[15px] leading-tight font-bold tabular-nums normal-case tracking-normal ${
-                            isToday ? "text-primary" : "text-foreground"
+                          className={`block text-[15px] leading-tight font-semibold tabular-nums ${
+                            isToday ? "text-foreground" : "text-foreground/80"
                           }`}
-                          style={{ fontFamily: "var(--font-display)" }}
                         >
                           {d.getUTCDate()}
                         </span>
@@ -1232,7 +1254,7 @@ function WeekScheduleBoard({
                         return (
                           <TableCell
                             key={d.toISOString()}
-                            className={`text-center ${isToday ? "bg-primary/[0.03]" : ""}`}
+                            className={`text-center ${isToday ? "bg-muted/50" : ""}`}
                           >
                             {cell.length === 0 ? (
                               <span className="text-muted-foreground/30">·</span>
@@ -1275,7 +1297,7 @@ function WeekScheduleBoard({
                     </TableRow>
                   ))}
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableCell className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <TableCell className="text-xs font-medium text-muted-foreground">
                     Coverage
                   </TableCell>
                   {dayTotals.map((t, i) => {
@@ -1476,7 +1498,7 @@ function EditWeekDialog({
 
         <div className="px-6 pt-4 pb-2">
           {/* Column voice — labels once, not per row */}
-          <div className="grid grid-cols-[7.5rem_1fr_1fr_5rem_2rem] gap-2 px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="grid grid-cols-[7.5rem_1fr_1fr_5rem_2rem] gap-2 px-1 pb-1.5 text-xs font-medium text-muted-foreground">
             <span>Day</span>
             <span>Start</span>
             <span>End</span>
