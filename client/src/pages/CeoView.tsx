@@ -50,7 +50,6 @@ import {
   RefreshCw,
   Satellite,
   ShieldCheck,
-  Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -507,14 +506,12 @@ function ManagersPanel() {
   });
 
   return (
-    <Card className="surface-card border-0">
-      <CardHeader>
-        <CardTitle className="section-title flex items-center gap-2">
-          <Users className="h-5 w-5" /> Access PINs
-        </CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          One PIN per store plus the CEO master PIN. Rotating a PIN immediately signs out every
-          device that used the old one — rotate anytime a device is lost or a manager leaves.
+    <Card className="surface-card border-0 gap-0 py-0">
+      <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
+        <CardTitle className="section-title">Access PINs</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Changing a PIN signs out every device that used the old one. Do it when a device
+          is lost or a manager leaves.
         </p>
       </CardHeader>
       <CardContent className="px-0">
@@ -570,7 +567,7 @@ function PinRow({
       <TableCell className="font-medium">
         <span className="flex items-center gap-2">
           {scope === "ceo" ? (
-            <ShieldCheck className="h-4 w-4 text-primary" />
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
           ) : (
             <Building2 className="h-4 w-4 text-muted-foreground" />
           )}
@@ -578,7 +575,11 @@ function PinRow({
         </span>
       </TableCell>
       <TableCell>
-        <Badge variant={isSet ? "default" : "secondary"}>{isSet ? "Active" : "Not set"}</Badge>
+        {isSet ? (
+          <span className="chip-good">Active</span>
+        ) : (
+          <span className="chip-warn">Not set</span>
+        )}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {updatedAt ? new Date(updatedAt).toLocaleString() : "—"}
@@ -590,13 +591,15 @@ function PinRow({
             inputMode="numeric"
             pattern="\d*"
             maxLength={8}
-            placeholder="New PIN (4–8 digits)"
+            placeholder="New PIN"
+            aria-label={`New PIN for ${label}, 4 to 8 digits`}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, ""))}
-            className="h-9 w-44 text-center text-sm tabular-nums tracking-widest"
+            className="h-8 w-32 text-center text-sm tabular-nums tracking-widest"
           />
           <Button
             size="sm"
+            variant={valid ? "default" : "outline"}
             disabled={!valid || saving}
             onClick={() => {
               onSave(pin);
@@ -683,8 +686,10 @@ function ActivityPanel() {
                     <TableCell className="text-sm font-medium whitespace-nowrap">
                       {e.actorScope === "ceo" ? (
                         <span className="flex items-center gap-1">
-                          <ShieldCheck className="h-3.5 w-3.5 text-primary" /> CEO
+                          <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" /> CEO
                         </span>
+                      ) : e.actorScope === "cfo" ? (
+                        "CFO"
                       ) : (
                         (STORE_ABBR[e.actorScope] ?? e.actorScope)
                       )}
