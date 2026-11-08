@@ -11,7 +11,7 @@ const buttonVariants = cva(
       variant: {
         default: "btn-primary bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "btn-primary bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+          "btn-danger text-white focus-visible:ring-destructive/20",
         outline:
           "btn-raised border bg-transparent shadow-xs hover:bg-accent dark:bg-transparent dark:border-input dark:hover:bg-input/50",
         secondary:
@@ -21,6 +21,9 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         // Secondary action tinted in its section's hue (set with .hue-*).
         soft: "btn-raised btn-soft shadow-xs",
+        // The fix for one item in a list of many: clearly an action, quieter
+        // than the page's single primary button.
+        tint: "btn-tint font-semibold",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

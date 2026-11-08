@@ -5,7 +5,7 @@
  * been saved, and the selected week highlighted. Clicking a bar drives the
  * dashboard to that week — older payroll is always one click away.
  */
-import { fmtMoney, fmtWeekRange } from "@/lib/format";
+import { fmtHours, fmtHoursLabel, fmtMoney, fmtWeekRange } from "@/lib/format";
 import { inProgressPayWeekStart } from "@/lib/payweek";
 import { cn } from "@/lib/utils";
 
@@ -32,57 +32,63 @@ export function WeekTrend({
   // One scale for clocked bars AND scheduled notches, so they compare.
   const max = Math.max(
     1,
-    ...weeks.map((w) => Math.max(w.clockHours, w.scheduledHours)),
+    ...weeks.map(w => Math.max(w.clockHours, w.scheduledHours))
   );
-  const hasSchedule = weeks.some((w) => w.scheduledHours > 0);
-  const hasSaved = weeks.some((w) => w.savedGross > 0);
+  const hasSchedule = weeks.some(w => w.scheduledHours > 0);
+  const hasSaved = weeks.some(w => w.savedGross > 0);
 
   return (
     <div>
-      <div className="flex items-end gap-1.5 h-24">
-        {weeks.map((w) => {
+      <div className="flex items-end gap-1 sm:gap-1.5 h-[6.5rem] sm:h-24">
+        {weeks.map(w => {
           const ws = new Date(w.weekStart);
           const isSelected = ws.getTime() === selected.getTime();
           const isLive = ws.getTime() === live;
           const h = Math.max(
             w.clockHours > 0 ? 8 : 3,
-            (w.clockHours / max) * BAR_AREA,
+            (w.clockHours / max) * BAR_AREA
           );
           const schedH =
             w.scheduledHours > 0 ? (w.scheduledHours / max) * BAR_AREA : null;
+          // "Oct 30" — the same short date every other screen uses.
           const label = ws.toLocaleDateString("en-US", {
-            month: "numeric",
+            month: "short",
             day: "numeric",
             timeZone: "UTC",
           });
+          const facts = `${fmtHoursLabel(w.clockHours)} clocked${
+            w.scheduledHours > 0
+              ? ` of ${fmtHoursLabel(w.scheduledHours)} scheduled`
+              : ""
+          }, ${
+            w.savedGross > 0
+              ? `${fmtMoney(w.savedGross)} payroll saved`
+              : isLive
+                ? "week in progress"
+                : "payroll not saved"
+          }`;
           return (
             <button
               key={ws.toISOString()}
+              type="button"
               onClick={() => onSelect(ws)}
-              title={`${fmtWeekRange(ws)} — ${w.clockHours.toFixed(1)}h clocked${
-                w.scheduledHours > 0
-                  ? ` of ${w.scheduledHours.toFixed(1)}h scheduled`
-                  : ""
-              }${
-                w.savedGross > 0
-                  ? ` · ${fmtMoney(w.savedGross)} payroll saved`
-                  : " · payroll not saved"
-              }`}
+              title={`${fmtWeekRange(ws)}: ${facts}`}
               className={cn(
-                "group flex flex-col items-center justify-end gap-1 flex-1 h-full rounded-md px-0.5 pt-1 transition-colors",
-                isSelected ? "bg-muted" : "hover:bg-muted/60",
+                "group flex flex-col items-center justify-end gap-1 flex-1 min-w-0 h-full rounded-md px-0.5 pt-1 transition-colors",
+                isSelected ? "bg-muted" : "hover:bg-muted/60"
               )}
-              aria-label={`Week of ${fmtWeekRange(ws)}`}
+              aria-pressed={isSelected}
+              aria-label={`${isLive ? "This week, " : ""}${fmtWeekRange(ws)}: ${facts}`}
             >
               <span
                 className={cn(
                   "text-[10px] tabular-nums leading-none",
                   isSelected
                     ? "text-foreground font-semibold"
-                    : "text-muted-foreground",
+                    : "text-muted-foreground"
                 )}
               >
-                {w.clockHours > 0 ? w.clockHours.toFixed(0) : ""}
+                {w.clockHours > 0 ? fmtHours(w.clockHours, 0) : ""}
               </span>
               <div
                 className="relative w-full max-w-8 flex items-end"
@@ -114,23 +120,24 @@ export function WeekTrend({
                   />
                 ) : null}
               </div>
-              <span className="flex items-center gap-1 leading-none">
+              {/* Phones stack the saved dot under the date so neighbours never collide. */}
+              <span className="flex flex-col items-center gap-0.5 leading-none sm:flex-row sm:gap-1">
                 <span
                   className={cn(
-                    "text-[10px] tabular-nums",
+                    "text-[10px] tabular-nums whitespace-nowrap",
                     isSelected
                       ? "text-foreground font-semibold"
-                      : "text-muted-foreground",
+                      : "text-muted-foreground"
                   )}
                 >
-                  {isLive ? "now" : label}
+                  {isLive ? "Now" : label}
                 </span>
                 <span
+                  aria-hidden="true"
                   className={cn(
-                    "h-1.5 w-1.5 rounded-full",
-                    w.savedGross > 0 ? "bg-success" : "bg-transparent",
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    w.savedGross > 0 ? "bg-success" : "bg-transparent"
                   )}
-                  title={w.savedGross > 0 ? "Payroll saved" : undefined}
                 />
               </span>
             </button>
@@ -144,7 +151,7 @@ export function WeekTrend({
               className="inline-block h-2 w-2.5 rounded-[2px]"
               style={{ background: "var(--chart-1)" }}
             />
-            hours clocked
+            Hours clocked
           </span>
           {hasSchedule && (
             <span className="inline-flex items-center gap-1">
@@ -152,13 +159,13 @@ export function WeekTrend({
                 className="inline-block h-[2px] w-3 rounded-full"
                 style={{ background: "oklch(0.35 0.02 255)" }}
               />
-              scheduled level
+              Scheduled level
             </span>
           )}
           {hasSaved && (
             <span className="inline-flex items-center gap-1">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
-              payroll saved
+              Payroll saved
             </span>
           )}
         </p>

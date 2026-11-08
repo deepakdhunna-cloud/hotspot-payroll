@@ -16,7 +16,7 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import { STORES } from "@shared/hotspot";
-import { getWeekStart } from "@shared/hotspot";
+import { payWeekBounds, payWeekOf } from "@shared/hotspot";
 import { FEED_SILENCE_HOURS } from "./attention";
 import {
   hoursWorkedForWeekBulk,
@@ -75,15 +75,17 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export async function buildPortalSummary(
   now: Date = new Date(),
 ): Promise<PortalSummary> {
-  const weekStart = getWeekStart(now);
-  const weekEnd = new Date(weekStart.getTime() + 7 * 86_400_000);
+  // The live pay week in store-local time, bounded by its real store-time
+  // instants so evening shifts count in the week they were worked.
+  const weekStart = payWeekOf(now);
+  const { start: weekStartAt, end: weekEnd } = payWeekBounds(weekStart);
   const lookbackStart = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 
   const [employees, openPunches, weekHoursByEmployee, recentPunches] =
     await Promise.all([
       listEmployees({ activeOnly: true }),
       listOpenPunches(),
-      hoursWorkedForWeekBulk(weekStart, weekEnd, undefined, now),
+      hoursWorkedForWeekBulk(weekStartAt, weekEnd, undefined, now),
       listPunchesInRange(lookbackStart, now),
     ]);
 

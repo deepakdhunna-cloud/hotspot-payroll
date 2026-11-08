@@ -2,9 +2,6 @@ import { STORES } from "@shared/hotspot";
 export const fmtMoney = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export const fmtHours = (n: number) =>
-  `${Number(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} h`;
-
 export const fmtDate = (d: Date | string) => {
   const date = typeof d === "string" ? new Date(d) : d;
   return date.toLocaleDateString("en-US", {
@@ -27,14 +24,6 @@ export const fmtWeekRange = (weekStart: Date | string) => {
   return `${start.toLocaleDateString("en-US", opt)} – ${end.toLocaleDateString("en-US", opt)}`;
 };
 
-export const STORE_COLORS: Record<string, string> = {
-  "Hotspot Market 11": "from-red-500/30 to-red-500/5",
-  "Hotspot Market 13": "from-orange-500/30 to-orange-500/5",
-  "Hotspot Market 14": "from-amber-500/30 to-amber-500/5",
-  "Hotspot Market 17": "from-pink-500/30 to-pink-500/5",
-  "Hotspot Travel Center": "from-rose-500/30 to-rose-500/5",
-};
-
 /**
  * Each store keeps one color everywhere (store cards, chart stacks, chips),
  * matching the order the Finance chart has always used.
@@ -52,3 +41,21 @@ export const STORE_ABBR: Record<string, string> = {
   "Hotspot Travel Center": "Travel",
 };
 
+
+/**
+ * Hours as a plain number with thousands separators ("1,695.0"). Callers add
+ * the unit ("h") where a column header doesn't already say it.
+ */
+export function fmtHours(hours: number, digits = 1): string {
+  const n = Number.isFinite(hours) ? hours : 0;
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+/** Hours with the unit, for prose and chips where no header says "hours":
+ * "38.5 h" (no-break space, so the unit never wraps away from the number). */
+export function fmtHoursLabel(hours: number, digits = 1): string {
+  return `${fmtHours(hours, digits)} h`;
+}

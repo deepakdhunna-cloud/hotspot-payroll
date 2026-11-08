@@ -22,11 +22,15 @@ import {
   createManualPunch,
   createScheduleImport,
   deactivateEmployee,
+  reactivateEmployee,
   deleteEmployee,
   deletePunch,
+  clearWeekScheduleForEmployees,
   deleteWeekSchedule,
   findEmployeesWithClockCodes,
   findOpenPunch,
+  findOverlappingPunch,
+  getPayrollEntry,
   findOpenPunches,
   getEmployeeById,
   getEmployeePayrollHistory,
@@ -49,6 +53,7 @@ import {
   markImportCommitted,
   openPunch,
   replaceWeekShifts,
+  setPayrollScheduledHours,
   setAppSetting,
   setClockCodeHash,
   updateEmployee,
@@ -76,9 +81,12 @@ import {
   computeGrossPay,
   parseTimeLabelToMinutes,
   estimateWithholding,
-  getCurrentPayPeriodStart,
+  BUSINESS_TIME_ZONE,
   getWeekStart,
+  lastClosedPayWeek,
   overclockStatus,
+  payWeekBounds,
+  payWeekOf,
   parseLooseDateNearAnchor,
   resolveScheduleDay,
 } from "@shared/hotspot";
@@ -116,6 +124,96 @@ const FIXED_PAY_NOTE = "fixed-pay";
  * them from clock punches instead of treating them as a saved 0.
  */
 const SCHEDULE_ONLY_NOTE = "schedule-only";
+
+/**
+ * Is this payroll entry a week that was actually paid? Excludes the
+ * schedule-only placeholders a schedule commit creates (and legacy
+ * placeholders from before that marker existed: 0 hours, $0, no note).
+ * History, totals and "weeks paid" count only these.
+ */
+export function isPayrollOfRecord(e: {
+  notes: string | null;
+  hoursWorked: string | number;
+  grossPay: string | number;
+}): boolean {
+  if (e.notes === SCHEDULE_ONLY_NOTE) return false;
+  return Number(e.hoursWorked) > 0 || Number(e.grossPay) > 0;
+}
+
+/**
+ * The active roster plus any FORMER employee among `activityIds` (people
+ * with a saved entry or clocked time in the week being shown), limited to
+ * `stores`, sorted by name. Former rows keep `active: 0` so screens can
+ * label them.
+ */
+async function withFormerEmployeesForWeek<
+  T extends { id: number; fullName: string; storeLocation: string },
+>(activeEmployees: T[], activityIds: number[], stores?: string[]) {
+  const activeIds = new Set(activeEmployees.map(e => e.id));
+  const formerIds = Array.from(new Set(activityIds)).filter(
+    id => !activeIds.has(id)
+  );
+  const former = formerIds.length
+    ? ((await getEmployeesByIds(formerIds)) as unknown as T[]).filter(
+        e => !stores || stores.includes(e.storeLocation)
+      )
+    : [];
+  return [...activeEmployees, ...former].sort((a, b) =>
+    a.fullName.localeCompare(b.fullName)
+  );
+}
+
+/** Punch times may run this far ahead of the server clock (device skew). */
+const PUNCH_FUTURE_TOLERANCE_MS = 2 * 60_000;
+/**
+ * A second kiosk tap by the same person inside this window is treated as a
+ * repeat of the first (a double press, or Enter after auto-submit) — it must
+ * never clock them straight back out into a 0-minute punch.
+ */
+const KIOSK_REPEAT_WINDOW_MS = 60_000;
+
+/** "Nov 4, 9:02 AM" in store time — for server messages about punches. */
+function fmtStoreTime(d: Date | string): string {
+  return new Date(d).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: BUSINESS_TIME_ZONE,
+  });
+}
+
+/** Reject punch times in the future (beyond a small clock-skew allowance). */
+function assertNotFuture(at: Date | null | undefined, what: string) {
+  if (at && at.getTime() > Date.now() + PUNCH_FUTURE_TOLERANCE_MS) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `${what} can't be in the future.`,
+    });
+  }
+}
+
+/**
+ * Refuse a punch that overlaps another punch for the same person — the
+ * auto-filled weekly hours would count that time twice.
+ */
+async function assertNoOverlap(
+  employeeId: number,
+  fullName: string,
+  inAt: Date,
+  outAt: Date | null,
+  excludeId?: number
+) {
+  const clash = await findOverlappingPunch(employeeId, inAt, outAt, excludeId);
+  if (!clash) return;
+  const span = clash.clockOutAt
+    ? `${fmtStoreTime(clash.clockInAt)} – ${fmtStoreTime(clash.clockOutAt)}`
+    : `${fmtStoreTime(clash.clockInAt)} (still on the clock)`;
+  throw new TRPCError({
+    code: "CONFLICT",
+    message: `${fullName} already has a punch ${span} that overlaps this one. Edit that punch instead.`,
+  });
+}
 
 function getScope(session: PinSession) {
   if (session.role === "admin") {
@@ -249,11 +347,22 @@ export const appRouter = router({
 
   employees: router({
     list: protectedProcedure
-      .input(z.object({ store: StoreEnum.optional() }).optional())
+      .input(
+        z
+          .object({
+            store: StoreEnum.optional(),
+            /** Also return deactivated (former) employees. */
+            includeInactive: z.boolean().optional(),
+          })
+          .optional(),
+      )
       .query(async ({ ctx, input }) => {
         const scope = getScope(ctx.session);
         const targetStores = resolveStores(scope, input?.store);
-        return listEmployees({ stores: targetStores });
+        return listEmployees({
+          stores: targetStores,
+          activeOnly: !input?.includeInactive,
+        });
       }),
 
     get: protectedProcedure
@@ -561,6 +670,34 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    /** Undo a deactivation (same store scoping and audit trail). */
+    reactivate: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        const emp = await getEmployeeById(input.id);
+        if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
+        const scope = getScope(ctx.session);
+        if (
+          !scope.isAdmin &&
+          !scope.stores.includes(emp.storeLocation as Store)
+        ) {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        await reactivateEmployee(input.id);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "employees.reactivate",
+          entityType: "employee",
+          entityId: input.id,
+          detail: JSON.stringify({
+            fullName: emp.fullName,
+            store: emp.storeLocation,
+          }),
+          ip: requestIp(ctx.req),
+        });
+        return { success: true };
+      }),
+
     /**
      * Permanently delete an employee plus their payroll history, punches and
      * scheduled shifts (single transaction). A full JSON snapshot of the
@@ -645,7 +782,10 @@ export const appRouter = router({
         ) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        return getEmployeePayrollHistory(input.id);
+        // Placeholders (schedule-only, or $0 / 0 h) aren't paid weeks.
+        return (await getEmployeePayrollHistory(input.id)).filter(
+          isPayrollOfRecord
+        );
       }),
   }),
 
@@ -657,10 +797,24 @@ export const appRouter = router({
         const week = getWeekStart(input.weekStart);
         const stores = resolveStores(scope, input.store);
 
-        const employees = await listEmployees({ stores });
-        const entries = await getPayrollByWeek(week, stores);
+        const bounds = payWeekBounds(week);
+        const [activeEmployees, entries, clocked] = await Promise.all([
+          listEmployees({ stores }),
+          getPayrollByWeek(week, stores),
+          hoursWorkedForWeekBulk(bounds.start, bounds.end, stores),
+        ]);
         const entryByEmp = new Map<number, (typeof entries)[number]>();
         for (const e of entries) entryByEmp.set(e.employeeId, e);
+
+        // Someone deactivated mid-week still has a final week to pay, and
+        // re-opening an old week must show everyone who was paid in it:
+        // former employees appear for any week where they have a saved
+        // entry or clocked time (flagged inactive for the grid).
+        const employees = await withFormerEmployeesForWeek(
+          activeEmployees,
+          [...entries.map(e => e.employeeId), ...Array.from(clocked.keys())],
+          stores
+        );
 
         return {
           weekStart: week,
@@ -700,22 +854,40 @@ export const appRouter = router({
         ) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
+        const week = getWeekStart(input.weekStart);
+        // What the grid shows is what gets saved: a week already saved keeps
+        // its own rate unless a new one is typed (an override). Fresh rows
+        // and placeholders price at the profile rate.
+        const existingEntry = await getPayrollEntry(emp.id, week);
+        const savedRate =
+          existingEntry && isPayrollOfRecord(existingEntry)
+            ? Number(existingEntry.payRateSnapshot)
+            : undefined;
         const payRate =
           input.payRateOverride !== undefined
             ? input.payRateOverride
-            : Number(emp.payRate);
-        // Persist any rate change back to the employee profile for future weeks.
+            : savedRate !== undefined && Number.isFinite(savedRate)
+              ? savedRate
+              : Number(emp.payRate);
+        // A rate typed for the week being paid (the last closed week or the
+        // live one) becomes the profile rate for future weeks. Correcting an
+        // OLDER week only reprices that week — it must never roll the
+        // profile back to an old rate.
+        const isCurrentWeek =
+          week.getTime() >= lastClosedPayWeek(new Date()).getTime();
+        let profileRateUpdated = false;
         if (
           input.payRateOverride !== undefined &&
-          input.payRateOverride !== Number(emp.payRate)
+          input.payRateOverride !== Number(emp.payRate) &&
+          isCurrentWeek
         ) {
           await updateEmployee(emp.id, { payRate: String(payRate) });
+          profileRateUpdated = true;
         }
         const isFixed = input.fixedGross !== undefined;
         const { regularPay, grossPay } = isFixed
           ? { regularPay: input.fixedGross!, grossPay: input.fixedGross! }
           : computeGrossPay(input.hoursWorked, payRate);
-        const week = getWeekStart(input.weekStart);
 
         const id = await upsertPayrollEntry({
           employeeId: emp.id,
@@ -741,10 +913,11 @@ export const appRouter = router({
             payRate,
             grossPay: Number(grossPay.toFixed(2)),
             fixedPay: isFixed,
+            profileRateUpdated,
           }),
           ip: requestIp(ctx.req),
         });
-        return { id, grossPay, regularPay };
+        return { id, grossPay, regularPay, profileRateUpdated };
       }),
 
     // NOTE: scheduled hours are written via schedule.commit (the single
@@ -777,7 +950,11 @@ export const appRouter = router({
           });
         }
         const stores = resolveStores(scope, input.store);
-        const entries = await getPayrollRange(start, end, stores);
+        // Placeholder rows (schedule-only, or $0 with 0 hours) are not
+        // payroll of record and must not count as paid weeks.
+        const entries = (await getPayrollRange(start, end, stores)).filter(
+          isPayrollOfRecord
+        );
         // Hydrate employees so the UI can show names without N+1 calls.
         const empIds = Array.from(new Set(entries.map(e => e.employeeId)));
         const empRows = await getEmployeesByIds(empIds);
@@ -1056,9 +1233,12 @@ export const appRouter = router({
           ctx.session.role === "cfo"
             ? ({ isAdmin: true, stores: [...STORES] } as Scope)
             : getScope(ctx.session);
-        const week = getWeekStart(input?.weekStart ?? new Date());
-        const weekEnd = new Date(week);
-        weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+        const week = input?.weekStart
+          ? getWeekStart(input.weekStart)
+          : payWeekOf(new Date());
+        // Punch window in store time: Thursday 00:00 → next Thursday 00:00
+        // (Chicago), so a Wednesday-night shift counts in the week it was worked.
+        const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
 
         // byStore needs concrete keys, so an unfiltered admin view expands to all stores.
         const storesFilter = resolveStores(scope, input?.store) ?? [...STORES];
@@ -1066,7 +1246,7 @@ export const appRouter = router({
         const [employees, entries, clockHours, openPunches] = await Promise.all([
           listEmployees({ stores: storesFilter }),
           getPayrollByWeek(week, storesFilter),
-          hoursWorkedForWeekBulk(week, weekEnd, storesFilter),
+          hoursWorkedForWeekBulk(weekStartAt, weekEnd, storesFilter),
           listOpenPunches(storesFilter),
         ]);
         const shifts = (
@@ -1218,12 +1398,12 @@ export const appRouter = router({
         const todayMarker = businessDayStart(new Date());
         const dayBoundary = businessDayBoundaryUtc(new Date());
         let totalProjectedGross = totalScheduledCost;
-        if (dayBoundary.getTime() > week.getTime()) {
+        if (dayBoundary.getTime() > weekStartAt.getTime()) {
           const actualEnd = new Date(
             Math.min(dayBoundary.getTime(), weekEnd.getTime())
           );
           const closedClock = await hoursWorkedForWeekBulk(
-            week,
+            weekStartAt,
             actualEnd,
             storesFilter
           );
@@ -1411,15 +1591,17 @@ export const appRouter = router({
         const stores = resolveStores(scope, input.store);
         const n = input.weeks ?? 8;
 
-        const currentWeek = getWeekStart(new Date());
+        const currentWeek = payWeekOf(new Date());
         const firstWeek = new Date(currentWeek);
         firstWeek.setUTCDate(firstWeek.getUTCDate() - (n - 1) * 7);
-        const rangeEnd = new Date(currentWeek);
-        rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 7);
+        // Punches between the first week's and the live week's store-time
+        // bounds; each is bucketed by the store-local day it started on.
+        const rangeStart = payWeekBounds(firstWeek).start;
+        const rangeEnd = payWeekBounds(currentWeek).end;
 
         const [entries, punches] = await Promise.all([
           getPayrollRange(firstWeek, currentWeek, stores),
-          listPunchesInRange(firstWeek, rangeEnd, stores),
+          listPunchesInRange(rangeStart, rangeEnd, stores),
         ]);
 
         const weeks = Array.from({ length: n }, (_, i) => {
@@ -1444,10 +1626,9 @@ export const appRouter = router({
         }
         const now = new Date();
         for (const p of punches) {
-          const bucket = byIso.get(getWeekStart(new Date(p.clockInAt)).toISOString());
+          const bucket = byIso.get(payWeekOf(new Date(p.clockInAt)).toISOString());
           if (!bucket) continue;
-          const weekEnd = new Date(bucket.weekStart);
-          weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+          const weekEnd = payWeekBounds(bucket.weekStart).end;
           const openCap = Math.min(now.getTime(), weekEnd.getTime());
           const inAt = new Date(p.clockInAt).getTime();
           const outAt = p.clockOutAt ? new Date(p.clockOutAt).getTime() : openCap;
@@ -1480,7 +1661,7 @@ export const appRouter = router({
         const n = input?.weeks ?? 5;
         // Most recent CLOSED Thu–Wed pay week; the in-progress week is a
         // projection and lives in dashboard.summary, not in this history.
-        const lastClosed = getCurrentPayPeriodStart(new Date());
+        const lastClosed = lastClosedPayWeek(new Date());
         const firstWeek = new Date(lastClosed);
         firstWeek.setUTCDate(firstWeek.getUTCDate() - (n - 1) * 7);
         // Punches are fetched through RIGHT NOW: the weekly buckets only
@@ -1490,7 +1671,7 @@ export const appRouter = router({
 
         const [entries, punches, employees] = await Promise.all([
           getPayrollRange(firstWeek, lastClosed, [...STORES]),
-          listPunchesInRange(firstWeek, punchEnd, [...STORES]),
+          listPunchesInRange(payWeekBounds(firstWeek).start, punchEnd, [...STORES]),
           listEmployees({}),
         ]);
         const empById = new Map(employees.map(e => [e.id, e]));
@@ -1560,12 +1741,11 @@ export const appRouter = router({
           weeks.map(w => [w.weekStart.toISOString(), new Map()])
         );
         for (const p of punches) {
-          const iso = getWeekStart(new Date(p.clockInAt)).toISOString();
+          const iso = payWeekOf(new Date(p.clockInAt)).toISOString();
           const bucket = byIso.get(iso);
           const perEmp = clockAgg.get(iso);
           if (!bucket || !perEmp) continue;
-          const weekEnd = new Date(bucket.weekStart);
-          weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+          const weekEnd = payWeekBounds(bucket.weekStart).end;
           const openCap = Math.min(now.getTime(), weekEnd.getTime());
           const inAt = new Date(p.clockInAt).getTime();
           const outAt = p.clockOutAt ? new Date(p.clockOutAt).getTime() : openCap;
@@ -1672,17 +1852,23 @@ export const appRouter = router({
       .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
       .query(async ({ input }) => {
         const week = getWeekStart(input.weekStart);
-        const weekEnd = new Date(week);
-        weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+        const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
         const stores = input.store ? [input.store] : [...STORES];
-        const [employees, entries, clockHours, openPunches, shifts] =
+        const [activeEmployees, entries, clockHours, openPunches, shifts] =
           await Promise.all([
             listEmployees({ stores }),
             getPayrollByWeek(week, stores),
-            hoursWorkedForWeekBulk(week, weekEnd, stores),
+            hoursWorkedForWeekBulk(weekStartAt, weekEnd, stores),
             listOpenPunches(stores),
             getShiftsForWeek(week, stores),
           ]);
+        // Same rule as payroll.week: someone deactivated mid-week still
+        // belongs to the weeks they were paid or clocked time in.
+        const employees = await withFormerEmployeesForWeek(
+          activeEmployees,
+          [...entries.map(e => e.employeeId), ...Array.from(clockHours.keys())],
+          stores
+        );
         // Same scheduled-hours fallback as the manager dashboard, so both
         // views (and the kiosk) always agree on over-clock status.
         const shiftHoursByEmp = new Map<number, number>();
@@ -1935,8 +2121,7 @@ export const appRouter = router({
         // and day the employee is actually working, not the UTC date.
         const today = businessDayStart(now);
         const week = getWeekStart(today);
-        const weekEnd = new Date(week);
-        weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
+        const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
 
         /**
          * Week context shown on the kiosk after a punch: hours worked so far,
@@ -1945,7 +2130,7 @@ export const appRouter = router({
          */
         const buildWeekSummary = async () => {
           const [worked, entryRows, empShifts] = await Promise.all([
-            hoursWorkedForWeek(matched!.id, week, weekEnd, now),
+            hoursWorkedForWeek(matched!.id, weekStartAt, weekEnd, now),
             getPayrollByWeek(week, [matched!.storeLocation]),
             getShiftsForEmployeeWeek(matched!.id, week),
           ]);
@@ -1979,6 +2164,24 @@ export const appRouter = router({
         // or imports, and leaving one open double-counts the employee forever.
         const openAll = await findOpenPunches(matched.id);
         const open = openAll[0];
+        // A repeat tap moments after clocking in (double press, or Enter
+        // after the 4th digit auto-submitted) answers "you're clocked in"
+        // again instead of closing the shift at 0 minutes.
+        if (
+          open &&
+          open.source === "kiosk" &&
+          now.getTime() - new Date(open.clockInAt).getTime() <
+            KIOSK_REPEAT_WINDOW_MS
+        ) {
+          return {
+            action: "in" as const,
+            employee: { id: matched.id, fullName: matched.fullName },
+            at: new Date(open.clockInAt),
+            durationHours: null,
+            repeat: true as const,
+            week: await buildWeekSummary(),
+          };
+        }
         if (open) {
           const weekSummary = await buildWeekSummary();
           for (const p of openAll) {
@@ -2020,6 +2223,29 @@ export const appRouter = router({
           employeeId: matched.id,
           limit: 1,
         });
+        // Same repeat-tap rule on the way out: a second tap right after
+        // clocking out must not start a brand-new shift.
+        if (
+          latest?.clockOutAt &&
+          latest.source === "kiosk" &&
+          !isAutoClosedNote(latest.note) &&
+          now.getTime() - new Date(latest.clockOutAt).getTime() <
+            KIOSK_REPEAT_WINDOW_MS
+        ) {
+          return {
+            action: "out" as const,
+            employee: { id: matched.id, fullName: matched.fullName },
+            at: new Date(latest.clockOutAt),
+            durationHours: Math.max(
+              0,
+              (new Date(latest.clockOutAt).getTime() -
+                new Date(latest.clockInAt).getTime()) /
+                3_600_000
+            ),
+            repeat: true as const,
+            week: await buildWeekSummary(),
+          };
+        }
         if (
           latest?.clockOutAt &&
           isAutoClosedNote(latest.note) &&
@@ -2218,6 +2444,8 @@ export const appRouter = router({
           )
       )
       .mutation(async ({ ctx, input }) => {
+        assertNotFuture(input.clockInAt, "Clock-in");
+        assertNotFuture(input.clockOutAt, "Clock-out");
         const emp = await getEmployeeById(input.employeeId);
         if (!emp) throw new TRPCError({ code: "NOT_FOUND" });
         const scope = getScope(ctx.session);
@@ -2234,10 +2462,16 @@ export const appRouter = router({
           if (alreadyOpen) {
             throw new TRPCError({
               code: "CONFLICT",
-              message: `${emp.fullName} is already clocked in (since ${new Date(alreadyOpen.clockInAt).toLocaleString("en-US", { timeZone: "America/Chicago" })}). Close or edit that punch instead of adding another open one.`,
+              message: `${emp.fullName} is already clocked in (since ${fmtStoreTime(alreadyOpen.clockInAt)}). Close or edit that punch instead of adding another open one.`,
             });
           }
         }
+        await assertNoOverlap(
+          emp.id,
+          emp.fullName,
+          input.clockInAt,
+          input.clockOutAt ?? null
+        );
         const id = await createManualPunch({
           employeeId: emp.id,
           storeLocation: emp.storeLocation,
@@ -2280,6 +2514,8 @@ export const appRouter = router({
           )
       )
       .mutation(async ({ ctx, input }) => {
+        assertNotFuture(input.clockInAt, "Clock-in");
+        assertNotFuture(input.clockOutAt, "Clock-out");
         const punch = await getPunchById(input.id);
         if (!punch) throw new TRPCError({ code: "NOT_FOUND" });
         const scope = getScope(ctx.session);
@@ -2288,6 +2524,31 @@ export const appRouter = router({
           !scope.stores.includes(punch.storeLocation as Store)
         ) {
           throw new TRPCError({ code: "FORBIDDEN" });
+        }
+        // Validate the punch as it will be AFTER the edit — a partial edit
+        // (only clock-in, say) must still leave clock-out after clock-in.
+        const nextIn = input.clockInAt ?? new Date(punch.clockInAt);
+        const nextOut =
+          input.clockOutAt !== undefined
+            ? input.clockOutAt
+            : punch.clockOutAt
+              ? new Date(punch.clockOutAt)
+              : null;
+        if (nextOut && nextOut.getTime() <= nextIn.getTime()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Clock-out must be after clock-in.",
+          });
+        }
+        if (input.clockInAt !== undefined || input.clockOutAt !== undefined) {
+          const emp = await getEmployeeById(punch.employeeId);
+          await assertNoOverlap(
+            punch.employeeId,
+            emp?.fullName ?? "This employee",
+            nextIn,
+            nextOut,
+            punch.id
+          );
         }
         const update: Record<string, unknown> = {};
         if (input.clockInAt !== undefined) update.clockInAt = input.clockInAt;
@@ -2362,9 +2623,8 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         const start = getWeekStart(input.weekStart);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 7);
-        const hours = await hoursWorkedForWeek(emp.id, start, end);
+        const bounds = payWeekBounds(start);
+        const hours = await hoursWorkedForWeek(emp.id, bounds.start, bounds.end);
         return { employeeId: emp.id, weekStart: start, hours };
       }),
 
@@ -2375,9 +2635,9 @@ export const appRouter = router({
         const scope = getScope(ctx.session);
         const stores = resolveStores(scope, input.store);
         const start = getWeekStart(input.weekStart);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 7);
-        const map = await hoursWorkedForWeekBulk(start, end, stores);
+        // Store-time bounds: Thursday 00:00 Chicago → next Thursday 00:00.
+        const bounds = payWeekBounds(start);
+        const map = await hoursWorkedForWeekBulk(bounds.start, bounds.end, stores);
         return {
           weekStart: start,
           entries: Array.from(map.entries()).map(([employeeId, hours]) => ({
@@ -2812,6 +3072,14 @@ export const appRouter = router({
         z.object({
           weekStart: z.date(),
           importId: z.number().int().nullable().optional(),
+          /**
+           * REPLACE the week's schedule instead of merging into it: anyone
+           * at the covered store(s) who is NOT in this commit has their
+           * shifts and scheduled hours for the week cleared. Covered stores
+           * are `store` when given, else the stores of the committed people.
+           */
+          replace: z.boolean().optional(),
+          store: StoreEnum.optional(),
           entries: z
             .array(
               z.object({
@@ -2856,29 +3124,31 @@ export const appRouter = router({
             continue;
           }
 
-          const payRate = Number(emp.payRate);
           const existingEntry = existingByEmp.get(emp.id);
-          const hoursWorked = Number(existingEntry?.hoursWorked ?? 0);
-          const { regularPay, grossPay } = computeGrossPay(
-            hoursWorked,
-            payRate
-          );
-
-          await upsertPayrollEntry({
-            employeeId: emp.id,
-            storeLocation: emp.storeLocation,
-            weekStart: week,
-            hoursWorked: String(hoursWorked),
-            scheduledHours: String(item.scheduledHours),
-            payRateSnapshot: String(payRate),
-            regularPay: String(regularPay.toFixed(2)),
-            overtimePay: "0.00",
-            grossPay: String(grossPay.toFixed(2)),
+          if (existingEntry) {
+            // A saved week keeps exactly what the manager saved — hours,
+            // rate snapshot, gross, set pay and notes. Only the schedule
+            // side changes.
+            await setPayrollScheduledHours(
+              existingEntry.id,
+              item.scheduledHours
+            );
+          } else {
             // A schedule commit must never masquerade as manager-entered
-            // hours. Fresh rows are marked schedule-only; existing rows
-            // keep whatever note they already carry (fixed-pay, manual…).
-            notes: existingEntry ? (existingEntry.notes ?? null) : SCHEDULE_ONLY_NOTE,
-          });
+            // hours: fresh rows are marked schedule-only.
+            await upsertPayrollEntry({
+              employeeId: emp.id,
+              storeLocation: emp.storeLocation,
+              weekStart: week,
+              hoursWorked: "0",
+              scheduledHours: String(item.scheduledHours),
+              payRateSnapshot: String(Number(emp.payRate)),
+              regularPay: "0.00",
+              overtimePay: "0.00",
+              grossPay: "0.00",
+              notes: SCHEDULE_ONLY_NOTE,
+            });
+          }
 
           // Day-level shifts: only dated shifts are persisted.
           const shifts = (item.shifts ?? []).filter(s => s.date !== null);
@@ -2896,6 +3166,61 @@ export const appRouter = router({
             }))
           );
           saved++;
+        }
+
+        // Replace mode: whoever was on the old schedule for the covered
+        // store(s) but is not in this commit comes off the week.
+        let cleared = 0;
+        if (input.replace) {
+          const committedIds = new Set(
+            input.entries
+              .map(e => e.employeeId)
+              .filter(id => !skipped.includes(id))
+          );
+          const coveredStores = (
+            input.store
+              ? [input.store]
+              : Array.from(
+                  new Set(
+                    emps
+                      .filter(e => committedIds.has(e.id))
+                      .map(e => e.storeLocation as Store)
+                  )
+                )
+          ).filter(st => scope.isAdmin || scope.stores.includes(st));
+          if (coveredStores.length > 0) {
+            const oldShifts = await getShiftsForWeek(week, coveredStores);
+            const dropped = oldShifts.filter(
+              s => !committedIds.has(s.employeeId)
+            );
+            const droppedIds = Array.from(
+              new Set(dropped.map(s => s.employeeId))
+            );
+            if (droppedIds.length > 0) {
+              void logAudit({
+                actorScope: ctx.session.scope,
+                action: "schedule.replaceClear",
+                entityType: "schedule",
+                detail: JSON.stringify({
+                  weekStart: week.toISOString(),
+                  stores: coveredStores,
+                  employeeIds: droppedIds,
+                  snapshot: dropped.map(s => ({
+                    employeeId: s.employeeId,
+                    storeLocation: s.storeLocation,
+                    shiftDate: s.shiftDate,
+                    startLabel: s.startLabel,
+                    endLabel: s.endLabel,
+                    hours: s.hours,
+                    importId: s.importId,
+                  })),
+                }),
+                ip: requestIp(ctx.req),
+              });
+              await clearWeekScheduleForEmployees(week, droppedIds);
+              cleared = droppedIds.length;
+            }
+          }
         }
 
         if (input.importId) {
@@ -2928,10 +3253,12 @@ export const appRouter = router({
             weekStart: week.toISOString(),
             saved,
             skipped,
+            replace: input.replace ?? false,
+            cleared,
           }),
           ip: requestIp(ctx.req),
         });
-        return { saved, skipped };
+        return { saved, skipped, cleared };
       }),
 
     /** Day-level shifts for a week, hydrated with employee names. */
@@ -3089,27 +3416,25 @@ export const appRouter = router({
           });
           await replaceWeekShifts(empId, to, rows);
           const scheduled = empShifts.reduce((a, s) => a + Number(s.hours), 0);
-          const payRate = Number(emp.payRate);
           const targetEntry = targetByEmp.get(empId);
-          const hoursWorked = Number(targetEntry?.hoursWorked ?? 0);
-          const { regularPay, grossPay } = computeGrossPay(
-            hoursWorked,
-            payRate
-          );
-          await upsertPayrollEntry({
-            employeeId: empId,
-            storeLocation: emp.storeLocation,
-            weekStart: to,
-            hoursWorked: String(hoursWorked),
-            scheduledHours: String(Math.round(scheduled * 100) / 100),
-            payRateSnapshot: String(payRate),
-            regularPay: String(regularPay.toFixed(2)),
-            overtimePay: "0.00",
-            grossPay: String(grossPay.toFixed(2)),
-            // Same rule as schedule.commit: never turn a schedule copy into
-            // manager-entered hours; keep real notes on existing rows.
-            notes: targetEntry ? (targetEntry.notes ?? null) : SCHEDULE_ONLY_NOTE,
-          });
+          if (targetEntry) {
+            // Same rule as schedule.commit: a saved week keeps its saved
+            // hours, rate and pay — only the scheduled hours follow.
+            await setPayrollScheduledHours(targetEntry.id, scheduled);
+          } else {
+            await upsertPayrollEntry({
+              employeeId: empId,
+              storeLocation: emp.storeLocation,
+              weekStart: to,
+              hoursWorked: "0",
+              scheduledHours: String(Math.round(scheduled * 100) / 100),
+              payRateSnapshot: String(Number(emp.payRate)),
+              regularPay: "0.00",
+              overtimePay: "0.00",
+              grossPay: "0.00",
+              notes: SCHEDULE_ONLY_NOTE,
+            });
+          }
           moved += empShifts.length;
         }
 

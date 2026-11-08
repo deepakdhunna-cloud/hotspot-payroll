@@ -6,7 +6,29 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
-const queryClient = new QueryClient();
+/**
+ * Retry only what a retry can fix. "Not found", "not allowed", "signed out"
+ * and bad input will never succeed on a second try — retrying them just
+ * holds a skeleton on screen for seconds before the real message shows.
+ */
+const NO_RETRY_CODES = new Set([
+  "NOT_FOUND",
+  "FORBIDDEN",
+  "UNAUTHORIZED",
+  "BAD_REQUEST",
+  "CONFLICT",
+]);
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        const code = (error as { data?: { code?: string } } | null)?.data?.code;
+        if (code && NO_RETRY_CODES.has(code)) return false;
+        return failureCount < 2;
+      },
+    },
+  },
+});
 
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {

@@ -6,9 +6,15 @@
  * first-detected date so everyone can see how long a task has been pending.
  * When there's nothing to do it collapses to one quiet line; when there is,
  * it's the first card on the page and each item carries its own fix.
+ *
+ * Sign-offs (approve hours, mark reviewed, keep an automatic clock-out) ask
+ * once before they clear an item, and a failed check never reads as
+ * "all clear".
  */
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -19,19 +25,26 @@ import {
   CheckCircle2,
   Clock,
   KeyRound,
+  RotateCw,
   Scale,
   ShieldAlert,
   TimerOff,
   Wallet,
   WifiOff,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { STORE_ABBR } from "@/lib/format";
-import { useState } from "react";
+import { errorMessage } from "@/lib/errors";
+import { useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
-import { toDateInput } from "@/lib/payweek";
+import {
+  BUSINESS_TIME_ZONE,
+  fromStoreInput,
+  storeTzLabel,
+  toDateInput,
+  toStoreInput,
+} from "@/lib/payweek";
 
 type Item = {
   id: number;
@@ -44,6 +57,12 @@ type Item = {
   createdAt: Date | string;
 };
 
+/** Shared target for the top-bar bell: it scrolls here instead of leaving. */
+const ANCHOR = {
+  id: "attention",
+  tabIndex: -1,
+} as const;
+
 function pendingFor(createdAt: Date | string) {
   const ms = Date.now() - new Date(createdAt).getTime();
   const days = Math.floor(ms / 86_400_000);
@@ -51,10 +70,10 @@ function pendingFor(createdAt: Date | string) {
   const since = new Date(createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    timeZone: "America/Chicago",
+    timeZone: BUSINESS_TIME_ZONE,
   });
   return {
-    label: days >= 1 ? `waiting ${days}d` : hours >= 1 ? `waiting ${hours}h` : "new today",
+    label: days >= 1 ? `Waiting ${days}d` : hours >= 1 ? `Waiting ${hours}h` : "New today",
     since,
     days,
   };
@@ -84,13 +103,13 @@ function fixHref(
     case "missing_schedule":
       return { href: "/schedule-import", label: "Import schedule" };
     case "missing_feed":
-      // The kiosk is a full-screen page with no way back — never navigate
-      // the manager's own tab into it.
+      // The time clock is a full-screen page with no way back — never
+      // navigate the manager's own tab into it.
       return {
         href: item.storeLocation
           ? `/clock/${encodeURIComponent(item.storeLocation)}`
           : "/clock",
-        label: "Open kiosk",
+        label: "Open time clock",
         newTab: true,
       };
     case "missing_codes":
@@ -120,6 +139,37 @@ const KIND_META: Record<string, { label: string; icon: LucideIcon }> = {
 
 const MANUAL_KINDS = new Set(["long_punch", "auto_clockout", "hours_mismatch"]);
 
+/** What each one-tap sign-off says before it clears an item. */
+const SIGN_OFF: Record<
+  string,
+  { button: string; title: string; explain: string; confirm: string; resolution: "approved" | "reviewed" }
+> = {
+  long_punch: {
+    button: "Approve hours",
+    title: "Approve these hours?",
+    explain:
+      "This signs the shift off as correct and clears it from the list. To change the times instead, open punches.",
+    confirm: "Approve hours",
+    resolution: "approved",
+  },
+  hours_mismatch: {
+    button: "Mark reviewed",
+    title: "Mark this as reviewed?",
+    explain:
+      "Do this once you've checked the hours against the schedule. It clears the item from the list and doesn't change any hours or pay.",
+    confirm: "Mark reviewed",
+    resolution: "reviewed",
+  },
+  auto_clockout: {
+    button: "Times are right",
+    title: "Keep the automatic clock-out?",
+    explain:
+      "The punch keeps the clock-out time the system set, and the item clears from the list.",
+    confirm: "Keep these times",
+    resolution: "reviewed",
+  },
+};
+
 export function AttentionCenter({ className }: { className?: string }) {
   const utils = trpc.useUtils();
   const listQ = trpc.attention.list.useQuery(undefined, {
@@ -127,20 +177,36 @@ export function AttentionCenter({ className }: { className?: string }) {
   });
   const [clockOutFormFor, setClockOutFormFor] = useState<number | null>(null);
   const [clockOutValue, setClockOutValue] = useState("");
+  const [clockOutError, setClockOutError] = useState<string | null>(null);
+
+  const closeForm = () => {
+    setClockOutFormFor(null);
+    setClockOutValue("");
+    setClockOutError(null);
+  };
 
   const resolveM = trpc.attention.resolve.useMutation({
     onSuccess: (data) => {
       if ((data as { alreadyResolved?: boolean }).alreadyResolved) {
-        toast.info("Already handled elsewhere — refreshing the stack.");
+        toast.info("Already handled elsewhere — the list is up to date.");
       } else {
-        toast.success("Signed off — item cleared from the stack.");
+        toast.success("Signed off and cleared from the list.");
       }
       utils.attention.list.invalidate();
       utils.dashboard.summary.invalidate();
-      setClockOutFormFor(null);
-      setClockOutValue("");
+      closeForm();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      const code = (e as { data?: { code?: string } }).data?.code;
+      if (code === "NOT_FOUND") {
+        toast.info("Someone already handled that one — the list is up to date.");
+        utils.attention.list.invalidate();
+        closeForm();
+        return;
+      }
+      if (clockOutFormFor !== null) setClockOutError(errorMessage(e));
+      else toast.error(errorMessage(e));
+    },
   });
 
   const items = (listQ.data?.items ?? []) as Item[];
@@ -151,19 +217,56 @@ export function AttentionCenter({ className }: { className?: string }) {
 
   if (listQ.isLoading) {
     return (
-      <div className={cn("h-11 rounded-xl border border-border bg-card animate-pulse", className)} />
+      <div
+        {...ANCHOR}
+        className={cn("h-11 rounded-xl border border-border bg-card animate-pulse scroll-mt-24 outline-none", className)}
+        aria-label="Checking for issues"
+      />
+    );
+  }
+
+  // A failed check must never read as "all clear".
+  if (listQ.isError && !listQ.data) {
+    return (
+      <div
+        {...ANCHOR}
+        role="status"
+        className={cn(
+          "callout-warn flex flex-wrap items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm scroll-mt-24 outline-none",
+          className,
+        )}
+      >
+        <span className="icon-badge icon-badge-sm" aria-hidden="true">
+          <AlertTriangle />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="font-semibold callout-title">Couldn&apos;t check for issues.</span>{" "}
+          Punches, schedules and payroll weren&apos;t checked just now.
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-9 bg-card"
+          onClick={() => listQ.refetch()}
+          disabled={listQ.isFetching}
+        >
+          <RotateCw className={cn("mr-1.5 h-3.5 w-3.5", listQ.isFetching && "animate-spin")} aria-hidden />
+          Try again
+        </Button>
+      </div>
     );
   }
 
   if (items.length === 0) {
     return (
       <p
+        {...ANCHOR}
         className={cn(
-          "callout-good flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground",
+          "callout-good flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground scroll-mt-24 outline-none",
           className,
         )}
       >
-        <span className="icon-badge icon-badge-sm">
+        <span className="icon-badge icon-badge-sm" aria-hidden="true">
           <CheckCircle2 />
         </span>
         <span>
@@ -174,26 +277,45 @@ export function AttentionCenter({ className }: { className?: string }) {
     );
   }
 
+  const submitClockOut = (e: FormEvent, item: Item) => {
+    e.preventDefault();
+    const at = fromStoreInput(clockOutValue);
+    if (!at) {
+      setClockOutError("Enter the date and time they actually clocked out.");
+      return;
+    }
+    if (at.getTime() > Date.now() + 60_000) {
+      setClockOutError("That time is in the future.");
+      return;
+    }
+    setClockOutError(null);
+    resolveM.mutate({ id: item.id, resolution: "approved", clockOutAt: at });
+  };
+
   return (
     <section
-      className={cn("attention-card rise-in", className)}
-      aria-label="Needs attention"
+      {...ANCHOR}
+      className={cn("attention-card rise-in scroll-mt-24 outline-none", className)}
+      aria-labelledby="attention-title"
     >
       <header className="attention-head flex flex-wrap items-center gap-x-3 gap-y-1 px-4 sm:px-5 pt-4 pb-3">
         <span className="attention-beacon attention-icon" aria-hidden="true">
           <ShieldAlert />
         </span>
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold leading-tight flex items-center gap-2">
+          <h2 id="attention-title" className="text-[15px] font-semibold leading-tight flex items-center gap-2">
             Needs attention
-            <span className="attention-count">{items.length}</span>
+            <span className="attention-count" aria-hidden="true">
+              {items.length}
+            </span>
+            <span className="sr-only">, {items.length} open</span>
           </h2>
           <p className="text-xs text-muted-foreground leading-snug">
             Each stays here until someone signs it off
           </p>
         </div>
         {oldest >= 1 ? (
-          <span className="ml-auto attention-age">oldest waiting {oldest}d</span>
+          <span className="ml-auto attention-age">Oldest waiting {oldest}d</span>
         ) : null}
       </header>
 
@@ -208,9 +330,16 @@ export function AttentionCenter({ className }: { className?: string }) {
           // 12h+ punch, or a punch the system closed at the limit.
           const showsClockOutForm =
             isOpenLongPunch || item.kind === "auto_clockout";
+          const signOff = isManual && !isOpenLongPunch ? SIGN_OFF[item.kind] : null;
           const stale = p.days >= 3;
           const meta = KIND_META[item.kind] ?? { label: "Check", icon: AlertTriangle };
           const KindIcon = meta.icon;
+          const formOpen = clockOutFormFor === item.id;
+          const inputId = `attention-clockout-${item.id}`;
+          // The item's main fix is its filled button, at the top of its column.
+          const hasFormButton = isManual && showsClockOutForm;
+          const signOffIsPrimary = !hasFormButton && !!signOff;
+          const linkIsPrimary = !hasFormButton && !signOff;
           return (
             <li key={item.id} className="attention-item">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
@@ -226,7 +355,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="attention-kind">{meta.label}</span>
                       {item.storeLocation ? (
-                        <span className="chip-neutral">
+                        <span className="chip-neutral" title={item.storeLocation}>
                           {STORE_ABBR[item.storeLocation] ?? item.storeLocation}
                         </span>
                       ) : null}
@@ -244,96 +373,134 @@ export function AttentionCenter({ className }: { className?: string }) {
                       </p>
                     ) : null}
 
-                    {clockOutFormFor === item.id ? (
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <Input
-                          type="datetime-local"
-                          value={clockOutValue}
-                          onChange={(e) => setClockOutValue(e.target.value)}
-                          className="h-9 w-56 text-sm"
-                          aria-label="Actual clock-out time"
-                        />
-                        <Button
-                          size="sm"
-                          className="h-9"
-                          disabled={!clockOutValue || resolveM.isPending}
-                          onClick={() =>
-                            resolveM.mutate({
-                              id: item.id,
-                              resolution: "approved",
-                              clockOutAt: new Date(clockOutValue),
-                            })
-                          }
-                        >
-                          <BadgeCheck className="h-3.5 w-3.5 mr-1" />
-                          Save clock-out & approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-9"
-                          onClick={() => setClockOutFormFor(null)}
-                          aria-label="Cancel"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                    {formOpen ? (
+                      <form
+                        className="mt-3 rounded-xl bg-card p-3 shadow-[inset_0_0_0_1px_var(--sk-ring)]"
+                        onSubmit={(e) => submitClockOut(e, item)}
+                        noValidate
+                      >
+                        <Label htmlFor={inputId} className="text-xs font-medium">
+                          Actual clock-out{" "}
+                          <span className="font-normal text-muted-foreground">
+                            · store time ({storeTzLabel()})
+                          </span>
+                        </Label>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          <Input
+                            id={inputId}
+                            type="datetime-local"
+                            value={clockOutValue}
+                            max={toStoreInput(new Date())}
+                            onChange={(e) => {
+                              setClockOutValue(e.target.value);
+                              setClockOutError(null);
+                            }}
+                            className="h-9 w-full text-sm sm:w-60"
+                            aria-invalid={clockOutError ? true : undefined}
+                            aria-describedby={clockOutError ? `${inputId}-error` : undefined}
+                            autoFocus
+                          />
+                          <div className="flex w-full gap-2 sm:w-auto">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 flex-1 sm:flex-none"
+                              onClick={closeForm}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="submit"
+                              size="sm"
+                              className="h-9 flex-1 sm:flex-none"
+                              disabled={resolveM.isPending}
+                            >
+                              <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                              Save clock-out & approve
+                            </Button>
+                          </div>
+                        </div>
+                        {clockOutError ? (
+                          <p
+                            id={`${inputId}-error`}
+                            role="alert"
+                            className="mt-1.5 text-xs font-medium text-destructive"
+                          >
+                            {clockOutError}
+                          </p>
+                        ) : null}
+                      </form>
                     ) : null}
                   </div>
                 </div>
 
                 {/* The fix: one column of equal-width buttons, main action first */}
                 <div className="grid grid-cols-2 gap-2 shrink-0 [&>*:only-child]:col-span-2 sm:flex sm:w-44 sm:flex-col sm:items-stretch">
-                  {isManual && showsClockOutForm ? (
+                  {hasFormButton ? (
                     <Button
                       size="sm"
+                      variant="tint"
                       className="h-9"
                       onClick={() => {
                         setClockOutFormFor(item.id);
                         setClockOutValue("");
+                        setClockOutError(null);
                       }}
-                      disabled={resolveM.isPending}
+                      disabled={resolveM.isPending || formOpen}
                     >
                       {item.kind === "auto_clockout" ? "Fix time" : "Fix & approve"}
                     </Button>
                   ) : null}
-                  {isManual && !isOpenLongPunch ? (
-                    <Button
-                      size="sm"
-                      variant={item.kind === "auto_clockout" ? "outline" : "default"}
-                      className="h-9"
-                      onClick={() =>
-                        resolveM.mutate({
-                          id: item.id,
-                          resolution:
-                            item.kind === "long_punch" ? "approved" : "reviewed",
-                        })
-                      }
+                  {signOff ? (
+                    <ConfirmDialog
+                      destructive={false}
                       disabled={resolveM.isPending}
-                    >
-                      {item.kind === "long_punch"
-                        ? "Approve hours"
-                        : item.kind === "auto_clockout"
-                          ? "Times are right"
-                          : "Mark reviewed"}
-                    </Button>
+                      title={signOff.title}
+                      description={
+                        <>
+                          <span className="block font-medium text-foreground">
+                            {item.title}
+                          </span>
+                          <span className="mt-1.5 block">{signOff.explain}</span>
+                        </>
+                      }
+                      confirmLabel={signOff.confirm}
+                      onConfirm={() =>
+                        resolveM.mutate({ id: item.id, resolution: signOff.resolution })
+                      }
+                      trigger={
+                        <Button
+                          size="sm"
+                          variant={signOffIsPrimary ? "tint" : "outline"}
+                          className="h-9"
+                        >
+                          {signOff.button}
+                        </Button>
+                      }
+                    />
                   ) : null}
                   {fix ? (
-                    fix.newTab ? (
-                      <Button size="sm" variant="outline" className="h-9" asChild>
-                        <a href={fix.href} target="_blank" rel="noopener noreferrer">
+                    <Button
+                      size="sm"
+                      variant={linkIsPrimary ? "tint" : "outline"}
+                      className="h-9"
+                      asChild
+                    >
+                      {fix.newTab ? (
+                        <a
+                          href={fix.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`${fix.label} (opens in a new tab)`}
+                        >
                           {fix.label}
-                          <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
+                          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
                         </a>
-                      </Button>
-                    ) : (
-                      <Button size="sm" variant="outline" className="h-9" asChild>
-                        <Link href={fix.href}>
-                          {fix.label}
-                          <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
-                        </Link>
-                      </Button>
-                    )
+                      ) : (
+                        <Link href={fix.href}>{fix.label}</Link>
+                      )}
+                    </Button>
                   ) : null}
                 </div>
               </div>

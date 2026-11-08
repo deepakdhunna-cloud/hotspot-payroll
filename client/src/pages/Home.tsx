@@ -12,6 +12,7 @@
  * foot makes any older pay week (always Thu → Wed) one click away.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { businessDayStart } from "@shared/hotspot";
 import { AttentionCenter } from "@/components/AttentionCenter";
 import { EmptyState } from "@/components/EmptyState";
@@ -25,10 +26,13 @@ import { WeekTrend } from "@/components/WeekTrend";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
+import { STORE_ABBR, fmtHours, fmtHoursLabel, fmtMoney, fmtWeekRange } from "@/lib/format";
 import {
+  BUSINESS_TIME_ZONE,
   fmtDuration,
+  fmtTime,
   inProgressPayWeekStart,
+  payWeekBounds,
   payWeekDays,
   shortDayLabel,
   toDateInput,
@@ -37,6 +41,7 @@ import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle,
   ArrowRight,
+  RotateCw,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -60,6 +65,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 
 export default function Home() {
+  usePageTitle("Dashboard");
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   // The CFO login's home IS the finance portal.
@@ -71,6 +77,9 @@ export default function Home() {
   const [weekStart, setWeekStart] = useState(() => inProgressPayWeekStart());
   const { scope: storeFilter } = useStoreScope();
   const [showAllClockedIn, setShowAllClockedIn] = useState(false);
+  // Long ledgers (the CEO sees every store) start with the top 10.
+  const [showAllLedger, setShowAllLedger] = useState(false);
+  const LEDGER_PREVIEW = 10;
 
   const scopeQ = trpc.meta.myScope.useQuery();
   const greetingQ = trpc.meta.greetingName.useQuery();
@@ -114,10 +123,16 @@ export default function Home() {
 
   /* ---------------- derived signals ---------------- */
 
-  const overClocked = employees.filter((e) => e.overClocked);
-  // Worked this week but nothing saved to payroll yet (matters once closed).
-  const unsaved = employees.filter((e) => e.clockHours > 0.25 && e.hoursWorked === 0);
-  const savedCount = employees.filter((e) => e.hoursWorked > 0).length;
+  // One definition of "saved" everywhere: hours or pay on the saved entry
+  // (a set-pay week can carry pay with 0 hours recorded).
+  const isSaved = (e: (typeof employees)[number]) => e.hoursWorked > 0 || e.grossPay > 0;
+  // Worked that week but nothing saved to payroll yet (matters once closed).
+  const unsaved = employees.filter((e) => e.clockHours > 0.25 && !isSaved(e));
+  const savedCount = employees.filter(isSaved).length;
+  // "Saved X of Y" counts only people with something to pay.
+  const payableCount = employees.filter((e) => isSaved(e) || e.clockHours > 0.25).length;
+  // Never show zeros for a week that failed to load.
+  const summaryFailed = summaryQ.isError && !data;
   // Open punches running longer than 12h are almost always forgotten.
   const forgotten = clockedIn.filter(
     (c) => Date.now() - new Date(c.clockInAt).getTime() > 12 * 3_600_000,
@@ -125,9 +140,11 @@ export default function Home() {
 
   const pace = useMemo(() => {
     if (!isLiveWeek || totals.totalScheduled <= 0) return null;
+    // Elapsed share of the week in store time (Thu 00:00 → Thu 00:00 Chicago).
+    const { start, end } = payWeekBounds(weekStart);
     const frac = Math.min(
       1,
-      Math.max(0, (Date.now() - weekStart.getTime()) / (7 * 86_400_000)),
+      Math.max(0, (Date.now() - start.getTime()) / (end.getTime() - start.getTime())),
     );
     if (frac <= 0) return null;
     const diff = totals.totalHours - totals.totalScheduled * frac;
@@ -150,7 +167,14 @@ export default function Home() {
   const maxDayHours = Math.max(1, ...dayStrip.map((d) => d.totalHours));
 
   const firstName = isAdmin ? "" : (greetingQ.data?.name ?? "").split(" ")[0];
-  const hour = new Date().getHours();
+  // Greeting and date follow store time, like everything else on the page.
+  const hour = Number(
+    new Date().toLocaleString("en-US", {
+      hour: "numeric",
+      hourCycle: "h23",
+      timeZone: BUSINESS_TIME_ZONE,
+    }),
+  );
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const scopeLabel = isAdmin
@@ -162,6 +186,7 @@ export default function Home() {
     weekday: "long",
     month: "long",
     day: "numeric",
+    timeZone: BUSINESS_TIME_ZONE,
   });
   const sortedEmployees = useMemo(
     () => [...employees].sort((a, b) => b.clockHours - a.clockHours),
@@ -196,16 +221,38 @@ export default function Home() {
       {/* KPI band — one strip, one dominant number per mode */}
       {summaryQ.isLoading ? (
         <Skeleton className="h-[116px] rounded-xl" />
+      ) : summaryFailed ? (
+        <div
+          role="alert"
+          className="surface-card flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
+        >
+          <div className="flex items-center gap-3">
+            <span className="icon-badge hue-amber">
+              <AlertTriangle />
+            </span>
+            <div>
+              <p className="text-sm font-medium">Couldn&apos;t load this week&apos;s numbers</p>
+              <p className="text-sm text-muted-foreground">
+                Check the connection, then try again. Nothing below is current until it loads.
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" onClick={() => summaryQ.refetch()} className="shrink-0">
+            <RotateCw className="h-4 w-4 mr-2" /> Try again
+          </Button>
+        </div>
       ) : isLiveWeek ? (
         <KpiBand>
           <KpiCell
             hero
             icon={<Clock />}
             label="Hours clocked"
-            value={totals.totalHours.toFixed(1)}
+            value={fmtHours(totals.totalHours)}
             sub={
               totals.totalScheduled > 0
-                ? `of ${totals.totalScheduled.toFixed(1)} scheduled`
+                ? `of ${fmtHours(totals.totalScheduled)} scheduled${
+                    pace ? ` · heading for ~${fmtHours(pace.projected, 0)}` : ""
+                  }`
                 : "no schedule this week"
             }
             footer={
@@ -213,15 +260,13 @@ export default function Home() {
                 pace.kind === "over" ? (
                   <span className="chip-warn">
                     <AlertTriangle className="h-3 w-3" />
-                    over pace · ~{pace.projected.toFixed(0)}h
+                    Running over schedule
                   </span>
                 ) : pace.kind === "under" ? (
-                  <span className="chip-neutral">
-                    behind pace · ~{pace.projected.toFixed(0)}h
-                  </span>
+                  <span className="chip-neutral">Running under schedule</span>
                 ) : (
                   <span className="chip-good">
-                    <CheckCircle2 className="h-3 w-3" /> on pace
+                    <CheckCircle2 className="h-3 w-3" /> On pace
                   </span>
                 )
               ) : null
@@ -249,7 +294,7 @@ export default function Home() {
                   </span>
                 ) : (
                   <span className="chip-good">
-                    <CheckCircle2 className="h-3 w-3" /> on plan
+                    <CheckCircle2 className="h-3 w-3" /> On plan
                   </span>
                 )
               ) : null
@@ -270,7 +315,11 @@ export default function Home() {
             icon={<Wallet />}
             label="Payroll saved"
             value={<Money value={totals.totalSavedGross} />}
-            sub={`${savedCount} of ${employees.length} people saved`}
+            sub={
+              payableCount > 0
+                ? `${savedCount} of ${payableCount} ${payableCount === 1 ? "person" : "people"} saved`
+                : "nobody worked that week"
+            }
             footer={
               unsaved.length > 0 ? (
                 <span className="chip-warn">
@@ -279,7 +328,7 @@ export default function Home() {
                 </span>
               ) : savedCount > 0 ? (
                 <span className="chip-good">
-                  <CheckCircle2 className="h-3 w-3" /> complete
+                  <CheckCircle2 className="h-3 w-3" /> Complete
                 </span>
               ) : null
             }
@@ -288,10 +337,10 @@ export default function Home() {
             hue="blue"
             icon={<Clock />}
             label="Hours worked"
-            value={totals.totalHours.toFixed(1)}
+            value={fmtHours(totals.totalHours)}
             sub={
               totals.totalScheduled > 0
-                ? `of ${totals.totalScheduled.toFixed(1)} scheduled`
+                ? `of ${fmtHours(totals.totalScheduled)} scheduled`
                 : "no schedule that week"
             }
             footer={
@@ -299,11 +348,11 @@ export default function Home() {
                 totals.totalHours - totals.totalScheduled > 0.25 ? (
                   <span className="chip-warn">
                     <AlertTriangle className="h-3 w-3" />+
-                    {(totals.totalHours - totals.totalScheduled).toFixed(1)}h over
+                    {fmtHoursLabel(totals.totalHours - totals.totalScheduled)} over
                   </span>
                 ) : (
                   <span className="chip-good">
-                    <CheckCircle2 className="h-3 w-3" /> within schedule
+                    <CheckCircle2 className="h-3 w-3" /> Within schedule
                   </span>
                 )
               ) : null
@@ -313,7 +362,7 @@ export default function Home() {
             hue="teal"
             icon={<ClipboardCheck />}
             label="Hours entered"
-            value={totals.totalEntered.toFixed(1)}
+            value={fmtHours(totals.totalEntered)}
             sub="saved to payroll"
           />
           <KpiCell
@@ -370,16 +419,20 @@ export default function Home() {
                   {clockedIn.length}
                 </span>
               </CardTitle>
-              <Button size="sm" variant="outline" className=" h-8" asChild>
+              <Button size="sm" variant="outline" className="h-9 sm:h-8" asChild>
                 <Link href="/payroll?tab=punches">All punches</Link>
               </Button>
             </CardHeader>
             <CardContent className="px-4 sm:px-5 pb-4">
-              {clockedIn.length === 0 ? (
+              {summaryQ.isLoading ? (
+                <CardRowsSkeleton />
+              ) : summaryFailed ? (
+                <CardLoadError onRetry={() => summaryQ.refetch()} />
+              ) : clockedIn.length === 0 ? (
                 <EmptyState
                   icon={<Clock />}
                   title="Nobody is on the clock"
-                  hint="People appear here the moment they punch in."
+                  hint="People appear here the moment they clock in."
                 />
               ) : (
                 <>
@@ -402,11 +455,7 @@ export default function Home() {
                               {stores.length > 1
                                 ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
                                 : ""}{" "}
-                              · in at{" "}
-                              {new Date(c.clockInAt).toLocaleTimeString("en-US", {
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
+                              · in at {fmtTime(c.clockInAt)}
                             </p>
                           </div>
                           <span
@@ -423,7 +472,7 @@ export default function Home() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-8 w-8 text-muted-foreground"
+                              className="h-9 w-9 sm:h-8 sm:w-8 text-muted-foreground"
                               onClick={() => setFixTimeFor(asQuickPunch(c))}
                               aria-label={`Fix ${c.fullName}'s clock-in time`}
                               title="Fix clock-in time"
@@ -433,7 +482,7 @@ export default function Home() {
                             <Button
                               size="sm"
                               variant={long ? "default" : "outline"}
-                              className="h-8 px-2.5"
+                              className="h-9 sm:h-8 px-2.5"
                               onClick={() => setClockOutFor(asQuickPunch(c))}
                               title={
                                 long
@@ -441,9 +490,8 @@ export default function Home() {
                                   : "Clock this person out"
                               }
                             >
-                              <LogOut className="h-3.5 w-3.5 sm:mr-1" />
-                              <span className="hidden sm:inline">Clock out</span>
-                              <span className="sr-only sm:hidden">Clock out</span>
+                              <LogOut className="h-3.5 w-3.5 sm:mr-1" aria-hidden="true" />
+                              <span className="sr-only sm:not-sr-only">Clock out</span>
                             </Button>
                           </div>
                         </li>
@@ -454,7 +502,7 @@ export default function Home() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="w-full mt-1 h-8 text-muted-foreground"
+                      className="w-full mt-1 h-9 text-muted-foreground"
                       onClick={() => setShowAllClockedIn((v) => !v)}
                     >
                       {showAllClockedIn
@@ -473,12 +521,16 @@ export default function Home() {
                 <span className="icon-badge icon-badge-sm">
                   <Clock />
                 </span>
-                Most hours this week
+                Most hours that week
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 sm:px-5 pb-4">
-              {employees.filter((e) => e.clockHours > 0).length === 0 ? (
-                <EmptyState icon={<Clock />} title="No hours were clocked this week" />
+              {summaryQ.isLoading ? (
+                <CardRowsSkeleton />
+              ) : summaryFailed ? (
+                <CardLoadError onRetry={() => summaryQ.refetch()} />
+              ) : employees.filter((e) => e.clockHours > 0).length === 0 ? (
+                <EmptyState icon={<Clock />} title="No hours were clocked that week" />
               ) : (
                 <ul className="divide-y divide-border">
                   {sortedEmployees
@@ -494,12 +546,12 @@ export default function Home() {
                           {e.fullName}
                         </Link>
                         <span className="text-sm tabular-nums text-muted-foreground">
-                          {e.clockHours.toFixed(1)}h
+                          {fmtHoursLabel(e.clockHours)}
                         </span>
-                        {e.hoursWorked > 0 ? (
-                          <span className="chip-good">saved</span>
+                        {isSaved(e) ? (
+                          <span className="chip-good">Saved</span>
                         ) : (
-                          <span className="chip-warn">not saved</span>
+                          <span className="chip-warn">Not saved</span>
                         )}
                       </li>
                     ))}
@@ -517,15 +569,19 @@ export default function Home() {
               </span>
               Scheduled hours by day
             </CardTitle>
-            <Button size="sm" variant="outline" className=" h-8" asChild>
+            <Button size="sm" variant="outline" className="h-9 sm:h-8" asChild>
               <Link href="/schedule-import">Schedule</Link>
             </Button>
           </CardHeader>
-          <CardContent className="px-4 sm:px-5 pb-4 flex-1 flex flex-col justify-center">
-            {!data?.hasDaySchedule ? (
+          <CardContent className="px-4 sm:px-5 pb-4 flex-1 flex flex-col">
+            {summaryQ.isLoading ? (
+              <Skeleton className="min-h-44 flex-1 rounded-lg" />
+            ) : summaryFailed ? (
+              <CardLoadError onRetry={() => summaryQ.refetch()} />
+            ) : !data?.hasDaySchedule ? (
               <EmptyState
                 icon={<CalendarDays />}
-                title="No schedule for this week"
+                title={isLiveWeek ? "No schedule for this week" : "No schedule for that week"}
                 action={
                   <Button size="sm" variant="outline" asChild>
                     <Link href="/schedule-import">Import schedule</Link>
@@ -533,24 +589,24 @@ export default function Home() {
                 }
               />
             ) : (
-              <div className="flex items-end justify-between gap-1.5 sm:gap-2 pt-2 [--bar-max:84px] lg:[--bar-max:150px]">
+              // Bars are sized in % of the space the card gives them, so the
+              // chart fills its card whatever the neighbouring card's height.
+              <div className="flex flex-1 min-h-44 items-stretch justify-between gap-1.5 sm:gap-2 pt-1">
                 {dayStrip.map((d) => {
                   const isToday = toDateInput(d.day) === todayIso;
                   return (
                     <div
                       key={d.day.toISOString()}
-                      className="flex flex-col items-center gap-1.5 flex-1 justify-end"
-                      title={`${shortDayLabel(d.day)} — ${d.totalHours.toFixed(1)}h across ${d.shiftCount} shift${d.shiftCount === 1 ? "" : "s"}`}
+                      className="flex flex-1 flex-col items-center gap-1.5"
+                      title={`${shortDayLabel(d.day)}: ${fmtHoursLabel(d.totalHours)} across ${d.shiftCount} shift${d.shiftCount === 1 ? "" : "s"}`}
                     >
-                      <span className="text-[11px] tabular-nums text-muted-foreground">
-                        {d.totalHours > 0 ? d.totalHours.toFixed(0) : ""}
-                      </span>
+                      <div className="relative flex w-full flex-1 items-end justify-center pt-5">
                       <div
-                        className="sk-bar w-full max-w-10 rounded-[4px]"
+                        className="sk-bar relative w-full max-w-10 rounded-md"
                         style={{
                           height:
                             d.totalHours > 0
-                              ? `max(6px, calc(var(--bar-max) * ${d.totalHours / maxDayHours}))`
+                              ? `max(6px, ${(d.totalHours / maxDayHours) * 100}%)`
                               : "2px",
                           background:
                             d.totalHours <= 0
@@ -559,7 +615,14 @@ export default function Home() {
                                 ? "var(--chart-1)"
                                 : "color-mix(in oklab, var(--chart-1) 30%, var(--card))",
                         }}
-                      />
+                      >
+                        {d.totalHours > 0 ? (
+                          <span className="absolute -top-5 inset-x-0 text-center text-[11px] tabular-nums text-muted-foreground">
+                            {fmtHours(d.totalHours, 0)}
+                          </span>
+                        ) : null}
+                      </div>
+                      </div>
                       <span
                         className={`text-[11px] ${isToday ? "font-semibold text-foreground" : "text-muted-foreground"}`}
                       >
@@ -583,7 +646,7 @@ export default function Home() {
             </span>
             {isLiveWeek ? "This week by employee" : "Week by employee"}
           </CardTitle>
-          <Button size="sm" variant="outline" className=" h-8" asChild>
+          <Button size="sm" variant="outline" className="h-9 sm:h-8" asChild>
             <Link href={`/payroll?week=${toDateInput(weekStart)}`}>
               {isLiveWeek ? "Open payroll" : "Enter hours"}
             </Link>
@@ -596,6 +659,8 @@ export default function Home() {
                 <Skeleton key={i} className="h-9" />
               ))}
             </div>
+          ) : summaryFailed ? (
+            <CardLoadError onRetry={() => summaryQ.refetch()} />
           ) : employees.length === 0 ? (
             <EmptyState
               title="No employees yet"
@@ -607,12 +672,30 @@ export default function Home() {
             />
           ) : (
             <ul className="divide-y divide-border">
-              {sortedEmployees.map((emp) => {
+              {(showAllLedger ? sortedEmployees : sortedEmployees.slice(0, LEDGER_PREVIEW)).map((emp) => {
                 const onClockNow = clockedIn.some((c) => c.employeeId === emp.id);
                 const pct =
                   emp.scheduledHours > 0
                     ? Math.min(1, emp.clockHours / emp.scheduledHours)
                     : 0;
+                // One status, shown in its own column on desktop and under
+                // the name on phones (never color-only).
+                const status = onClockNow ? (
+                  <span className="chip-good">
+                    <Clock className="h-3 w-3" /> On the clock
+                  </span>
+                ) : emp.overClocked ? (
+                  <span className="chip-warn">
+                    <AlertTriangle className="h-3 w-3" />+
+                    {fmtHoursLabel(emp.overClockedBy)} over
+                  </span>
+                ) : !isLiveWeek && emp.clockHours > 0.25 && !isSaved(emp) ? (
+                  <span className="chip-warn">Not saved</span>
+                ) : !isLiveWeek && isSaved(emp) ? (
+                  <span className="chip-good">
+                    <CheckCircle2 className="h-3 w-3" /> Saved
+                  </span>
+                ) : null;
                 return (
                   <li key={emp.id}>
                     <Link
@@ -629,6 +712,7 @@ export default function Home() {
                               ? ` · ${STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}`
                               : ""}
                           </p>
+                          {status ? <span className="mt-1 flex sm:hidden">{status}</span> : null}
                         </div>
                       </div>
                       <span className="text-right text-sm font-medium tabular-nums sm:order-last">
@@ -650,35 +734,31 @@ export default function Home() {
                             }}
                           />
                         </div>
-                        <span className="w-[5.5rem] text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
-                          {emp.clockHours.toFixed(1)}
-                          {emp.scheduledHours > 0 ? ` / ${emp.scheduledHours.toFixed(1)}h` : "h"}
+                        <span className="w-[6rem] text-right text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                          {emp.scheduledHours > 0
+                            ? `${fmtHours(emp.clockHours)} / ${fmtHoursLabel(emp.scheduledHours)}`
+                            : fmtHoursLabel(emp.clockHours)}
                         </span>
                       </div>
-                      <span className="hidden sm:flex justify-end">
-                        {onClockNow ? (
-                          <span className="chip-good">
-                            <Clock className="h-3 w-3" /> on the clock
-                          </span>
-                        ) : emp.overClocked ? (
-                          <span className="chip-warn">
-                            <AlertTriangle className="h-3 w-3" />+
-                            {emp.overClockedBy.toFixed(1)}h over
-                          </span>
-                        ) : !isLiveWeek && emp.clockHours > 0.25 && emp.hoursWorked === 0 ? (
-                          <span className="chip-warn">not saved</span>
-                        ) : !isLiveWeek && emp.hoursWorked > 0 ? (
-                          <span className="chip-good">
-                            <CheckCircle2 className="h-3 w-3" /> saved
-                          </span>
-                        ) : null}
-                      </span>
+                      <span className="hidden sm:flex justify-end">{status}</span>
                     </Link>
                   </li>
                 );
               })}
             </ul>
           )}
+          {sortedEmployees.length > LEDGER_PREVIEW ? (
+            <div className="px-4 sm:px-5 pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-9 text-muted-foreground"
+                onClick={() => setShowAllLedger((v) => !v)}
+              >
+                {showAllLedger ? "Show fewer" : `Show all ${sortedEmployees.length}`}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -692,12 +772,14 @@ export default function Home() {
             Last 8 pay weeks
           </CardTitle>
           <span className="hidden sm:inline text-xs text-muted-foreground">
-            tap a week to open it
+            Pick a week to open it
           </span>
         </CardHeader>
         <CardContent className="px-4 sm:px-5 pb-4">
           {trendQ.isLoading ? (
             <Skeleton className="h-24 rounded-md" />
+          ) : trendQ.isError && !trendQ.data ? (
+            <CardLoadError onRetry={() => trendQ.refetch()} />
           ) : (
             <WeekTrend
               weeks={(trendQ.data?.weeks ?? []) as any}
@@ -716,6 +798,30 @@ export default function Home() {
         punch={fixTimeFor}
         onOpenChange={(o) => !o && setFixTimeFor(null)}
       />
+    </div>
+  );
+}
+
+/** Placeholder rows while the week loads — never a premature empty state. */
+function CardRowsSkeleton() {
+  return (
+    <div className="space-y-2 py-2" role="status" aria-label="Loading">
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className="h-10 w-full" />
+      ))}
+    </div>
+  );
+}
+
+/** A card whose data failed: say so, and offer the retry. */
+function CardLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <AlertTriangle className="h-6 w-6 text-warning" aria-hidden="true" />
+      <p className="text-sm font-semibold">Couldn&apos;t load this</p>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        <RotateCw className="mr-1.5 h-3.5 w-3.5" /> Retry
+      </Button>
     </div>
   );
 }

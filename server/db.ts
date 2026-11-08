@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   appSettings,
@@ -174,6 +174,13 @@ export async function deactivateEmployee(id: number) {
   await db.update(employees).set({ active: 0 }).where(eq(employees.id, id));
 }
 
+/** Undo a deactivation: back on the roster, the kiosk and payroll. */
+export async function reactivateEmployee(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.update(employees).set({ active: 1 }).where(eq(employees.id, id));
+}
+
 /**
  * Permanently delete an employee and every dependent record (payroll history,
  * time punches, scheduled shifts) in a single transaction so a mid-delete
@@ -227,6 +234,23 @@ export async function upsertPayrollEntry(data: InsertPayrollEntry) {
   }
   const result = await db.insert(payrollEntries).values(data);
   return Number((result as any)[0]?.insertId ?? (result as any).insertId ?? 0);
+}
+
+/** One employee's payroll entry for one week, if it exists. */
+export async function getPayrollEntry(employeeId: number, weekStart: Date) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(payrollEntries)
+    .where(
+      and(
+        eq(payrollEntries.employeeId, employeeId),
+        eq(payrollEntries.weekStart, weekStart),
+      ),
+    )
+    .limit(1);
+  return rows[0];
 }
 
 export async function getPayrollByWeek(weekStart: Date, stores?: string[]) {
@@ -415,6 +439,35 @@ export async function updatePunch(
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
   await db.update(timePunches).set(data).where(eq(timePunches.id, id));
+}
+
+/**
+ * The earliest other punch for this employee whose time overlaps
+ * [inAt, outAt) — an open punch (no clock-out) runs to "now". `outAt` null
+ * means the proposed punch is itself open. Used to stop a manual or edited
+ * punch from double-counting hours already on the clock.
+ */
+export async function findOverlappingPunch(
+  employeeId: number,
+  inAt: Date,
+  outAt: Date | null,
+  excludeId?: number,
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const conds = [
+    eq(timePunches.employeeId, employeeId),
+    or(isNull(timePunches.clockOutAt), gt(timePunches.clockOutAt, inAt)),
+  ] as any[];
+  if (outAt) conds.push(lt(timePunches.clockInAt, outAt));
+  if (excludeId !== undefined) conds.push(ne(timePunches.id, excludeId));
+  const rows = await db
+    .select()
+    .from(timePunches)
+    .where(and(...conds))
+    .orderBy(asc(timePunches.clockInAt))
+    .limit(1);
+  return rows[0];
 }
 
 export async function deletePunch(id: number) {
@@ -830,6 +883,53 @@ export async function reopenAttentionItems(ids: number[]) {
       createdAt: new Date(),
     })
     .where(inArray(attentionItems.id, ids));
+}
+
+/**
+ * Update ONLY the scheduled hours of an existing payroll entry. A schedule
+ * change must never reprice a saved week (rate snapshot, gross, set pay
+ * and notes stay exactly as the manager saved them).
+ */
+export async function setPayrollScheduledHours(entryId: number, scheduledHours: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db
+    .update(payrollEntries)
+    .set({ scheduledHours: (Math.round(scheduledHours * 100) / 100).toFixed(2) })
+    .where(eq(payrollEntries.id, entryId));
+}
+
+/**
+ * Clear one week's schedule for specific employees only (their shifts go,
+ * their entries' scheduledHours reset to 0). Used when a re-imported
+ * schedule REPLACES the old one and someone is no longer on it.
+ */
+export async function clearWeekScheduleForEmployees(
+  weekStart: Date,
+  employeeIds: number[],
+) {
+  if (employeeIds.length === 0) return;
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(scheduleShifts)
+      .where(
+        and(
+          eq(scheduleShifts.weekStart, weekStart),
+          inArray(scheduleShifts.employeeId, employeeIds)
+        )
+      );
+    await tx
+      .update(payrollEntries)
+      .set({ scheduledHours: "0.00" })
+      .where(
+        and(
+          eq(payrollEntries.weekStart, weekStart),
+          inArray(payrollEntries.employeeId, employeeIds)
+        )
+      );
+  });
 }
 
 /**
