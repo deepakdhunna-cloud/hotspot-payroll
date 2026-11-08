@@ -26,11 +26,9 @@ import {
   AlertTriangle,
   Building2,
   CalendarClock,
-  Clock,
   Delete,
   LogIn,
   LogOut,
-  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
@@ -196,16 +194,13 @@ export default function ClockKiosk() {
         <div className="container max-w-5xl pt-12 pb-16">
           <div className="flex flex-col items-center text-center">
             <BrandMark size="lg" tone="ink" />
-            <div className="mt-8 eyebrow flex items-center gap-2">
-              <Clock className="h-4 w-4" /> Time Clock Kiosk
-            </div>
             <h1
-              className="font-display mt-2 text-3xl font-bold tracking-tight text-white"
+              className="font-display mt-10 text-3xl font-bold tracking-tight text-white"
             >
-              Select your store
+              Which store is this tablet at?
             </h1>
             <p className="mt-2 text-white/60">
-              Tap your location to start the time clock. The choice is remembered on this device.
+              This device will remember it.
             </p>
             <div className="mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
               {STORES.map((s) => (
@@ -216,16 +211,13 @@ export default function ClockKiosk() {
                     setStore(s);
                     navigate(kioskPath(s));
                   }}
-                  className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-6 text-left transition-all hover:border-[var(--brand-red-bright)] hover:bg-white/10"
+                  className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] p-5 text-left transition-all hover:border-white/25 hover:bg-white/[0.08]"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-primary/15 p-3 text-[var(--brand-red-bright)] transition-colors">
-                      <Building2 className="h-6 w-6" />
+                    <div className="rounded-xl bg-white/[0.08] p-3 text-white/70">
+                      <Building2 className="h-5 w-5" />
                     </div>
-                    <div>
-                      <div className="text-lg font-semibold text-white">{s}</div>
-                      <div className="text-sm text-white/50">Open kiosk</div>
-                    </div>
+                    <div className="text-lg font-semibold text-white">{s}</div>
                   </div>
                   <div className="text-white/40 transition-transform group-hover:translate-x-1 group-hover:text-white/80">
                     →
@@ -255,20 +247,10 @@ export default function ClockKiosk() {
           <LiveClock />
         </div>
 
-        <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-5 py-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/15 p-2 text-[var(--brand-red-bright)]">
-              <Building2 className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/50">
-                Punching at
-              </div>
-              <div className="font-semibold text-white">{store}</div>
-            </div>
-          </div>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-white/40">Store locked</span>
-        </div>
+        <p className="mt-5 flex items-center gap-2 text-sm text-white/60">
+          <Building2 className="h-4 w-4" />
+          <span className="font-medium text-white/90">{store}</span>
+        </p>
       </div>
 
       {/* Body — the keypad floats on a paper card against the ink frame. */}
@@ -276,16 +258,13 @@ export default function ClockKiosk() {
         <Card className="border-0 rounded-3xl bg-card text-card-foreground shadow-[0_1px_2px_rgb(0_0_0/0.3),0_24px_60px_-24px_rgb(0_0_0/0.7)]">
           <CardContent className="px-6 py-8">
             <div className="flex flex-col items-center">
-              <div className="eyebrow flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" /> Enter your 4-digit code
-              </div>
               <h1
-                className="font-display mt-2 text-3xl font-bold tracking-tight"
+                className="font-display text-3xl font-bold tracking-tight"
               >
-                Clock In or Out
+                Clock in or out
               </h1>
               <p className="mt-1 text-muted-foreground">
-                The system punches you in if you're out, or out if you're in.
+                Enter your 4-digit code.
               </p>
 
               <div className="mt-6 flex items-center gap-4">
@@ -294,7 +273,7 @@ export default function ClockKiosk() {
                     key={i}
                     className={cn(
                       "h-5 w-5 rounded-full border-2 transition-all duration-150",
-                      filled ? "scale-110 border-primary bg-primary" : "border-input bg-card",
+                      filled ? "scale-110 border-foreground bg-foreground" : "border-input bg-card",
                     )}
                   />
                 ))}

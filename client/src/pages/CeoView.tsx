@@ -165,13 +165,11 @@ export default function CeoView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="CEO · all stores"
-        icon={<ShieldCheck className="h-5 w-5" />}
-        title="Executive view"
+        title="Executive"
         description={
           isLiveWeek
-            ? "Live company pulse — click a store card to focus on one location."
-            : `Closed week · ${fmtWeekRange(weekStart)} — saved payroll and withholding estimates.`
+            ? `Live · ${storeFilter === "all" ? "all stores" : storeFilter} · tap a store to focus on it`
+            : `Closed week · ${fmtWeekRange(weekStart)} · ${storeFilter === "all" ? "all stores" : storeFilter}`
         }
         actions={
           <>
@@ -183,6 +181,20 @@ export default function CeoView() {
       {/* The assistant — same persistent task stack, all stores in scope */}
       <AttentionCenter />
 
+      {/* Everything the CEO does here, one tap away at the top of the page */}
+      <Tabs defaultValue="overview" className="gap-4 md:gap-5">
+        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+          <TabsList className="w-max md:self-start">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="payroll">Payroll</TabsTrigger>
+            <TabsTrigger value="managers">Access &amp; PINs</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="portal">Live portal</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="overview" className="space-y-5 md:space-y-6">
+
       {/* Company pulse — one strip, the money leads */}
       {ceoQ.isLoading ? (
         <Skeleton className="h-[124px] rounded-xl" />
@@ -190,13 +202,9 @@ export default function CeoView() {
         <KpiBand>
           <KpiCell
             hero
-            label={isLiveWeek ? "Labor cost (live)" : "Gross payroll"}
+            label={isLiveWeek ? "Labor cost so far" : "Gross payroll"}
             value={<Money value={isLiveWeek ? liveLabor : agg.totalGross} />}
-            sub={
-              isLiveWeek
-                ? `what the team has earned so far · ${focusLabel}`
-                : `payroll saved for that week · ${focusLabel}`
-            }
+            sub={isLiveWeek ? `earned this week · ${focusLabel}` : `saved for that week · ${focusLabel}`}
             footer={
               !isLiveWeek && unsavedCount > 0 ? (
                 <span className="chip-warn">
@@ -215,8 +223,8 @@ export default function CeoView() {
             value={agg.totalClockHours.toFixed(1)}
             sub={
               agg.totalScheduled > 0
-                ? `of ${agg.totalScheduled.toFixed(1)} hours scheduled`
-                : "no schedule loaded this week"
+                ? `of ${agg.totalScheduled.toFixed(1)} scheduled`
+                : "no schedule this week"
             }
             footer={
               agg.overClockedCount > 0 ? (
@@ -258,7 +266,7 @@ export default function CeoView() {
             <KpiCell
               label="Payroll saved"
               value={<Money value={agg.totalGross} />}
-              sub="fills in when payroll is saved after Wednesday"
+              sub="fills in once the week is paid"
             />
           ) : (
             <KpiCell
@@ -271,9 +279,9 @@ export default function CeoView() {
       )}
 
       {/* Every store at one glance — the cards are the filter */}
-      <section className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
         {ceoQ.isLoading
-          ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-44 rounded-xl" />)
+          ? [0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-36 rounded-xl" />)
           : Object.entries(byStore).map(([store, s]: [string, any], i) => {
               const focused = storeFilter === store;
               return (
@@ -290,64 +298,50 @@ export default function CeoView() {
                     }
                   }}
                   className={cn(
-                    "surface-card border-0 rise-in cursor-pointer transition-all select-none",
+                    "surface-card border-0 gap-0 py-0 cursor-pointer transition-all select-none",
                     focused
-                      ? "ring-2 ring-primary shadow-md"
+                      ? "ring-2 ring-foreground"
                       : storeFilter !== "all"
                         ? "opacity-55 hover:opacity-90"
-                        : "hover:shadow-md hover:-translate-y-0.5",
+                        : "hover:border-foreground/20",
                   )}
-                  style={{ animationDelay: `${i * 40}ms` }}
                   title={
                     focused
-                      ? "Click to show all stores"
-                      : `Click to focus on ${store}`
+                      ? "Tap to show all stores"
+                      : `Tap to focus on ${store}`
                   }
                 >
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-2 truncate">
-                        <Building2
-                          className={cn(
-                            "h-4 w-4 shrink-0",
-                            focused ? "text-primary" : "text-muted-foreground",
-                          )}
-                        />
-                        <span className="truncate">{store}</span>
+                  <CardContent className="p-4 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {STORE_ABBR[store] ?? store}
                       </span>
                       {isLiveWeek && s.clockedInCount > 0 ? (
-                        <span className="chip-good shrink-0">
-                          <Clock className="h-3 w-3" />
-                          {s.clockedInCount} in
-                        </span>
+                        <span className="chip-good shrink-0">{s.clockedInCount} in</span>
                       ) : null}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
-                    <Stat label="Clocked" value={`${s.totalClockHours.toFixed(1)}h`} />
-                    <Stat label="Scheduled" value={`${s.totalScheduled.toFixed(1)}h`} />
-                    <Stat
-                      label={isLiveWeek ? "Labor (live)" : "Gross saved"}
-                      value={fmtMoney(
-                        isLiveWeek
-                          ? (liveLaborByStore.get(store) ?? 0)
-                          : s.totalGross,
-                      )}
-                      bold
-                    />
-                    <div>
-                      <div className="kpi-label">Status</div>
-                      {s.overClockedCount > 0 ? (
-                        <span className="chip-warn mt-0.5">
-                          <AlertTriangle className="h-3 w-3" />
-                          {s.overClockedCount} over
-                        </span>
-                      ) : (
-                        <span className="chip-good mt-0.5">
-                          <CheckCircle2 className="h-3 w-3" /> on track
-                        </span>
-                      )}
                     </div>
+                    <div>
+                      <p className="text-xl font-semibold tabular-nums tracking-tight">
+                        <Money
+                          value={
+                            isLiveWeek ? (liveLaborByStore.get(store) ?? 0) : s.totalGross
+                          }
+                        />
+                      </p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {s.totalClockHours.toFixed(1)}h of {s.totalScheduled.toFixed(1)}h
+                      </p>
+                    </div>
+                    {s.overClockedCount > 0 ? (
+                      <span className="chip-warn">
+                        <AlertTriangle className="h-3 w-3" />
+                        {s.overClockedCount} over schedule
+                      </span>
+                    ) : (
+                      <span className="chip-good">
+                        <CheckCircle2 className="h-3 w-3" /> on track
+                      </span>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -355,17 +349,14 @@ export default function CeoView() {
       </section>
 
       {/* Eight-week filmstrip — older payroll is one click away */}
-      <Card className="surface-card border-0 rise-in" style={{ animationDelay: "160ms" }}>
-        <CardHeader className="pb-1 flex flex-row items-center justify-between">
+      <Card className="surface-card border-0 gap-0 py-0">
+        <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
           <CardTitle className="section-title">
             Last 8 pay weeks{storeFilter !== "all" ? ` · ${focusLabel}` : ""}
           </CardTitle>
-          <span className="text-xs text-muted-foreground">
-            bars = clocked hours · <span className="text-success">●</span> payroll saved ·
-            click to open
-          </span>
+          <span className="hidden sm:inline text-xs text-muted-foreground">tap a week to open it</span>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 sm:px-5 pb-4">
           {trendQ.isLoading ? (
             <Skeleton className="h-24 rounded-md" />
           ) : (
@@ -378,23 +369,16 @@ export default function CeoView() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="payroll" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="payroll">Payroll detail</TabsTrigger>
-          <TabsTrigger value="managers">Access &amp; PINs</TabsTrigger>
-          <TabsTrigger value="activity">Activity log</TabsTrigger>
-          <TabsTrigger value="portal">Live portal</TabsTrigger>
-        </TabsList>
+        </TabsContent>
 
         <TabsContent value="payroll">
-          <Card className="surface-card border-0">
-            <CardHeader>
+          <Card className="surface-card border-0 gap-0 py-0">
+            <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
               <CardTitle className="section-title">
-                Per-employee payroll{storeFilter !== "all" ? ` — ${storeFilter}` : ""}
+                Payroll by employee{storeFilter !== "all" ? ` · ${storeFilter}` : ""}
               </CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">
-                Withholding is an estimate only — federal (FIT + FICA) at ~18%, state at
-                ~5%. Gross and net come from saved payroll hours.
+              <p className="text-sm text-muted-foreground">
+                Tax is an estimate: federal (FIT + FICA) ~18%, state ~5%, on saved payroll.
               </p>
             </CardHeader>
             <CardContent className="px-0">
@@ -509,14 +493,6 @@ export default function CeoView() {
   );
 }
 
-function Stat({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div>
-      <div className="kpi-label">{label}</div>
-      <div className={`tabular-nums ${bold ? "font-semibold text-base" : "text-sm"}`}>{value}</div>
-    </div>
-  );
-}
 
 function ManagersPanel() {
   const pinsQ = trpc.ceo.listPins.useQuery();
