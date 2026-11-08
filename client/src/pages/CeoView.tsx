@@ -189,20 +189,20 @@ export default function CeoView() {
       <Tabs defaultValue="overview" className="gap-4 md:gap-5">
         <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
           <TabsList className="w-max md:self-start">
-            <TabsTrigger value="overview" className="hue-red">
-              <LayoutDashboard className="hue-text" /> Overview
+            <TabsTrigger value="overview" >
+              <LayoutDashboard  /> Overview
             </TabsTrigger>
-            <TabsTrigger value="payroll" className="hue-green">
-              <Wallet className="hue-text" /> Payroll
+            <TabsTrigger value="payroll" >
+              <Wallet  /> Payroll
             </TabsTrigger>
-            <TabsTrigger value="managers" className="hue-amber">
-              <KeyRound className="hue-text" /> Access &amp; PINs
+            <TabsTrigger value="managers" >
+              <KeyRound  /> Access &amp; PINs
             </TabsTrigger>
-            <TabsTrigger value="activity" className="hue-teal">
-              <History className="hue-text" /> Activity
+            <TabsTrigger value="activity" >
+              <History  /> Activity
             </TabsTrigger>
-            <TabsTrigger value="portal" className="hue-blue">
-              <Radio className="hue-text" /> Live portal
+            <TabsTrigger value="portal" >
+              <Radio  /> Live portal
             </TabsTrigger>
           </TabsList>
         </div>
@@ -323,7 +323,7 @@ export default function CeoView() {
                     }
                   }}
                   className={cn(
-                    "tint-surface rounded-xl border gap-0 py-0 cursor-pointer transition-all select-none overflow-hidden",
+                    "surface-card gap-0 py-0 cursor-pointer transition-all select-none overflow-hidden",
                     focused
                       ? "ring-2 ring-[var(--hue)] shadow-md"
                       : storeFilter !== "all"
@@ -389,7 +389,7 @@ export default function CeoView() {
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
           <CardTitle className="section-title">
-            <span className="icon-badge icon-badge-sm hue-teal">
+            <span className="icon-badge icon-badge-sm">
               <History />
             </span>
             Last 8 pay weeks{storeFilter !== "all" ? ` · ${focusLabel}` : ""}
@@ -415,7 +415,7 @@ export default function CeoView() {
           <Card className="surface-card border-0 gap-0 py-0">
             <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
               <CardTitle className="section-title">
-                <span className="icon-badge icon-badge-sm hue-green">
+                <span className="icon-badge icon-badge-sm">
                   <Wallet />
                 </span>
                 Payroll by employee{storeFilter !== "all" ? ` · ${storeFilter}` : ""}
@@ -553,7 +553,7 @@ function ManagersPanel() {
     <Card className="surface-card border-0 gap-0 py-0">
       <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
         <CardTitle className="section-title">
-          <span className="icon-badge icon-badge-sm hue-amber">
+          <span className="icon-badge icon-badge-sm">
             <KeyRound />
           </span>
           Access PINs

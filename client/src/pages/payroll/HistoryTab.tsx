@@ -208,8 +208,8 @@ export default function HistoryTab({
           />
         </div>
         <Button
-          variant="soft"
-          className="h-9 lg:ml-auto hue-green"
+          variant="outline"
+          className="h-9 lg:ml-auto"
           onClick={handleExport}
           disabled={!rangeQ.data || employees.length === 0}
           title="Download this range as an .xlsx spreadsheet (opens in Google Sheets)"
@@ -227,7 +227,7 @@ export default function HistoryTab({
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
           <CardTitle className="section-title">
-            <span className="icon-badge icon-badge-sm hue-amber">
+            <span className="icon-badge icon-badge-sm">
               <UserRound />
             </span>
             By employee

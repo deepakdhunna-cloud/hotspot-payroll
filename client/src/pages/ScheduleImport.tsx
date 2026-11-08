@@ -457,7 +457,7 @@ export default function ScheduleImport() {
               </Select>
             ) : null}
             {hasSchedule && !uploadOpen ? (
-              <Button variant="soft" className="hue-violet" onClick={() => setShowUpload(true)}>
+              <Button variant="outline"  onClick={() => setShowUpload(true)}>
                 <Upload className="h-4 w-4 mr-2" /> Replace schedule
               </Button>
             ) : null}
@@ -497,10 +497,10 @@ export default function ScheduleImport() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={onDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`hue-violet relative border-2 border-dashed rounded-xl transition-colors cursor-pointer px-6 py-10 text-center ${
+                className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer px-6 py-10 text-center ${
                   dragOver
-                    ? "border-[var(--c-violet)] bg-[color-mix(in_oklab,var(--c-violet)_12%,transparent)]"
-                    : "border-[color-mix(in_oklab,var(--c-violet)_35%,transparent)] bg-[color-mix(in_oklab,var(--c-violet)_5%,transparent)] hover:bg-[color-mix(in_oklab,var(--c-violet)_9%,transparent)]"
+                    ? "border-primary/50 bg-primary/[0.04]"
+                    : "border-input bg-muted/40 hover:border-primary/40 hover:bg-primary/[0.03]"
                 }`}
               >
                 <input
@@ -1127,7 +1127,7 @@ function WeekScheduleBoard({
       <CardHeader className="px-4 sm:px-5 pt-4 pb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <CardTitle className="section-title">
-            <span className="icon-badge icon-badge-sm hue-violet">
+            <span className="icon-badge icon-badge-sm">
               <CalendarDays />
             </span>
             Week of {fmtWeekRange(weekStart)}
@@ -1141,9 +1141,9 @@ function WeekScheduleBoard({
         <div className="flex flex-wrap items-center gap-2">
           {sourceImport?.fileUrl ? (
             <Button
-              variant="soft"
+              variant="outline"
               size="sm"
-              className="hue-violet"
+              
               onClick={() =>
                 window.open(sourceImport.fileUrl!, "_blank", "noopener,noreferrer")
               }
@@ -1315,7 +1315,7 @@ function WeekScheduleBoard({
                         style={{
                           background:
                             t > 0
-                              ? `color-mix(in oklab, var(--c-violet) ${Math.round(6 + (t / maxDay) * 16)}%, transparent)`
+                              ? `color-mix(in oklab, var(--chart-1) ${Math.round(5 + (t / maxDay) * 14)}%, transparent)`
                               : undefined,
                         }}
                       >

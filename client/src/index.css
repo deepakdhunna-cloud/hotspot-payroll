@@ -74,66 +74,66 @@
 
 :root {
   /* ------------------------------------------------------------------ */
-  /* Hotspot Market · "Quiet Signal"                                     */
-  /*  - brand red is spent on ONE thing per screen: the primary action   */
-  /*  - a flat, quiet canvas; cards separate by hairline, not shadow     */
-  /*  - one typeface (Inter) for titles, labels and numbers alike;       */
-  /*    the condensed signage face is kept for the brand moments only    */
-  /*  - status colors reserved for state, never decoration               */
+  /* Hotspot Market · "Ink & Signal"                                     */
+  /*  - three colors carry the brand: warm paper, deep ink, signal red.  */
+  /*    Controls use only these, the same way on every page.           */
+  /*  - each page's numbers sit together on one ink summary band.      */
+  /*  - variety lives in the data: a muted, even-weight series palette */
+  /*    for stores and charts. Status colors only ever mean status.    */
   /* ------------------------------------------------------------------ */
-  --brand-red: oklch(0.54 0.21 27);
-  --brand-red-bright: oklch(0.63 0.24 27.5);
+  --brand-red: oklch(0.54 0.2 27);
+  --brand-red-bright: oklch(0.62 0.22 28);
   --primary: var(--brand-red);
   --primary-foreground: oklch(0.99 0 0);
   --sidebar-primary: var(--brand-red);
   --sidebar-primary-foreground: oklch(0.99 0 0);
 
-  /* Data-mark hues: validated categorical set (CVD-safe adjacent pairs).
-     Brand red stays out of the series palette — red is reserved for state. */
-  --chart-1: #2a78d6; /* blue    */
-  --chart-2: #008300; /* green   */
-  --chart-3: #e87ba4; /* magenta */
-  --chart-4: #eda100; /* yellow  */
-  --chart-5: #1baf7a; /* aqua    */
+  /* Series palette (stores, chart stacks, avatars): one lightness and
+     chroma, hues spread apart, so no series shouts over another. Brand
+     red stays out of it. */
+  --chart-1: oklch(0.56 0.11 252); /* steel blue */
+  --chart-2: oklch(0.6 0.09 185); /* teal */
+  --chart-3: oklch(0.55 0.11 340); /* plum */
+  --chart-4: oklch(0.7 0.12 75); /* ochre */
+  --chart-5: oklch(0.58 0.09 145); /* sage */
   --radius: 0.625rem;
 
-  /* Light theme — flat paper canvas, white cards, crisp hairlines. */
-  --background: oklch(0.977 0.002 250);
-  --foreground: oklch(0.185 0.01 265);
+  /* Warm paper canvas, white cards, warm hairlines: neutrals lean toward
+     the brand's red instead of the default cool gray. */
+  --background: oklch(0.976 0.004 75);
+  --foreground: oklch(0.21 0.012 40);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.185 0.01 265);
+  --card-foreground: oklch(0.21 0.012 40);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.185 0.01 265);
-  --secondary: oklch(0.945 0.004 255);
-  --secondary-foreground: oklch(0.3 0.012 260);
-  --muted: oklch(0.945 0.004 255);
-  --muted-foreground: oklch(0.5 0.013 260);
-  --accent: oklch(0.935 0.006 255);
-  --accent-foreground: oklch(0.185 0.01 265);
-  --destructive: oklch(0.54 0.21 27);
+  --popover-foreground: oklch(0.21 0.012 40);
+  --secondary: oklch(0.952 0.005 70);
+  --secondary-foreground: oklch(0.3 0.012 45);
+  --muted: oklch(0.952 0.005 70);
+  --muted-foreground: oklch(0.5 0.013 55);
+  --accent: oklch(0.945 0.006 70);
+  --accent-foreground: oklch(0.21 0.012 40);
+  --destructive: oklch(0.54 0.2 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.52 0.13 160);
+  --success: oklch(0.52 0.12 155);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.62 0.15 65);
+  --warning: oklch(0.64 0.14 65);
   --warning-foreground: oklch(0.2 0.02 65);
-  --border: oklch(0.915 0.005 255);
-  --input: oklch(0.885 0.006 255);
+  --border: oklch(0.912 0.007 70);
+  --input: oklch(0.88 0.009 70);
   --ring: var(--brand-red);
-  /* ---- Meaning hues: every kind of thing keeps one color everywhere ----
-     hours/time = blue · pay/money = green · schedule = violet ·
-     people = amber · history/records = teal · brand/actions = red.
-     Components pick one with a .hue-* class and read var(--hue). */
-  --c-blue: oklch(0.57 0.17 258);
-  --c-green: oklch(0.56 0.13 158);
-  --c-violet: oklch(0.54 0.19 292);
-  --c-amber: oklch(0.66 0.15 62);
-  --c-teal: oklch(0.58 0.1 205);
-  --c-red: var(--brand-red);
-  --hue: var(--c-red);
-  /* Ink chrome: the top bar, login and kiosk grounds. A whisper of red
-     undertone ties the black to the brandmark. */
-  --ink: oklch(0.17 0.008 20);
-  --ink-soft: oklch(0.22 0.008 20);
+  /* Icon accents inside the ink summary band: muted, so the band reads
+     as one surface. Hours blue, pay green, plan violet, people ochre. */
+  --c-blue: oklch(0.7 0.1 252);
+  --c-green: oklch(0.72 0.11 155);
+  --c-violet: oklch(0.7 0.1 295);
+  --c-amber: oklch(0.78 0.11 75);
+  --c-teal: oklch(0.72 0.08 190);
+  --c-red: oklch(0.7 0.15 28);
+  --hue: var(--brand-red);
+  /* Ink: the top bar, the summary band, sign-in and the kiosk. A whisper
+     of red in the black ties it to the brandmark. */
+  --ink: oklch(0.2 0.012 30);
+  --ink-soft: oklch(0.25 0.013 30);
   --sidebar: var(--ink);
   --sidebar-foreground: oklch(0.88 0.006 80);
   --sidebar-accent: oklch(0.62 0.21 27 / 0.16);
@@ -227,18 +227,14 @@
     }
   }
 
-  /* Primary actions: lit brand red, so the one main action reads first. */
+  /* Primary actions: brand red with a soft top light, so the main action
+     reads first without shouting. */
   [data-slot="button"].bg-primary,
   button.bg-primary {
-    background-image: linear-gradient(180deg, oklch(0.6 0.22 29), oklch(0.51 0.21 26));
+    background-image: linear-gradient(180deg, oklch(1 0 0 / 0.1), oklch(1 0 0 / 0));
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.18),
-      0 1px 2px rgb(120 20 20 / 0.25),
-      0 4px 12px -4px oklch(0.54 0.21 27 / 0.45);
-  }
-  [data-slot="button"].bg-primary:hover,
-  button.bg-primary:hover {
-    background-image: linear-gradient(180deg, oklch(0.63 0.22 30), oklch(0.54 0.21 27));
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
+      0 1px 2px rgb(80 20 10 / 0.22);
   }
 
   /* Brand text selection — a small signature every premium site gets right. */
@@ -270,7 +266,7 @@
 
   /* Softer row rules: tables separate by whisper, not by wire. */
   tbody tr {
-    border-color: oklch(0.93 0.005 255);
+    border-color: oklch(0.935 0.006 70);
   }
   .dark tbody tr {
     border-color: oklch(1 0 0 / 0.06);
@@ -347,9 +343,8 @@
      glow of brand red at the top edge — the only decoration it keeps. */
   .ink-panel {
     background:
-      radial-gradient(60rem 28rem at 50% -12rem, oklch(0.56 0.22 27 / 0.42), transparent 70%),
-      radial-gradient(36rem 22rem at 100% 100%, oklch(0.72 0.16 55 / 0.16), transparent 70%),
-      radial-gradient(30rem 20rem at 0% 90%, oklch(0.55 0.18 292 / 0.12), transparent 70%),
+      radial-gradient(60rem 28rem at 50% -12rem, oklch(0.54 0.2 27 / 0.34), transparent 70%),
+      radial-gradient(36rem 22rem at 100% 100%, oklch(0.6 0.14 40 / 0.12), transparent 70%),
       var(--ink);
     color: oklch(0.95 0.006 80);
   }
@@ -357,7 +352,7 @@
   /* App top bar: ink, closed by the brand's red-to-amber stripe. */
   .topbar {
     background:
-      radial-gradient(40rem 8rem at 85% -4rem, oklch(0.54 0.21 27 / 0.32), transparent 70%),
+      radial-gradient(40rem 8rem at 85% -4rem, oklch(0.54 0.2 27 / 0.22), transparent 70%),
       var(--ink);
     color: oklch(0.95 0.006 80);
   }
@@ -365,13 +360,8 @@
     content: "";
     position: absolute;
     inset: auto 0 -1px 0;
-    height: 3px;
-    background: linear-gradient(
-      90deg,
-      var(--brand-red-bright),
-      oklch(0.7 0.18 45) 55%,
-      oklch(0.78 0.15 75)
-    );
+    height: 2px;
+    background: linear-gradient(90deg, var(--brand-red), var(--brand-red-bright) 45%, oklch(0.68 0.17 42));
   }
 
   /* Brand motif: the three speed lines from the logo, as a compact rule. */
@@ -422,9 +412,9 @@
     border-radius: 999px;
   }
 
-  /* ---------- Meaning hues ----------
-     .hue-* sets --hue; everything below reads it, so one class colors a
-     badge, a button or a card by what it is about.                      */
+  /* ---------- Accents ----------
+     Controls use the brand only. .hue-* only tints icons inside the ink
+     summary band, where a muted accent says what a number measures.     */
   .hue-blue { --hue: var(--c-blue); }
   .hue-green { --hue: var(--c-green); }
   .hue-violet { --hue: var(--c-violet); }
@@ -432,7 +422,7 @@
   .hue-teal { --hue: var(--c-teal); }
   .hue-red { --hue: var(--c-red); }
 
-  /* Icon badge: a soft square of the hue with the icon in its deep tone. */
+  /* Section icon: one brand style everywhere, a soft red square. */
   .icon-badge {
     display: inline-flex;
     flex-shrink: 0;
@@ -441,27 +431,53 @@
     width: 2rem;
     height: 2rem;
     border-radius: 0.6rem;
-    background: color-mix(in oklab, var(--hue) 15%, var(--card));
-    color: color-mix(in oklab, var(--hue) 84%, black);
+    background: oklch(0.54 0.2 27 / 0.08);
+    color: var(--brand-red);
+    box-shadow: inset 0 0 0 1px oklch(0.54 0.2 27 / 0.1);
   }
   .icon-badge > svg { width: 1rem; height: 1rem; }
-  .icon-badge-sm { width: 1.625rem; height: 1.625rem; border-radius: 0.5rem; }
-  .icon-badge-sm > svg { width: 0.875rem; height: 0.875rem; }
+  .icon-badge-sm { width: 1.75rem; height: 1.75rem; border-radius: 0.5rem; }
+  .icon-badge-sm > svg { width: 0.9rem; height: 0.9rem; }
   .icon-badge-lg { width: 2.5rem; height: 2.5rem; border-radius: 0.75rem; }
   .icon-badge-lg > svg { width: 1.25rem; height: 1.25rem; }
 
-  /* Tinted surface: a card washed in its hue, for things you act on. */
-  .tint-surface {
-    background: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--hue) 10%, var(--card)),
-      color-mix(in oklab, var(--hue) 4%, var(--card))
-    );
-    border-color: color-mix(in oklab, var(--hue) 24%, var(--border));
+  /* Callouts: status only. Green means done or fine, amber means look. */
+  .callout-good,
+  .callout-warn {
+    border-width: 1px;
   }
-  .hue-text { color: color-mix(in oklab, var(--hue) 84%, black); }
+  .callout-good {
+    background: color-mix(in oklab, var(--success) 6%, var(--card));
+    border-color: color-mix(in oklab, var(--success) 22%, var(--border));
+  }
+  .callout-good .icon-badge {
+    background: color-mix(in oklab, var(--success) 12%, var(--card));
+    color: color-mix(in oklab, var(--success) 85%, black);
+    box-shadow: none;
+  }
+  .callout-warn {
+    background: color-mix(in oklab, var(--warning) 8%, var(--card));
+    border-color: color-mix(in oklab, var(--warning) 28%, var(--border));
+  }
+  .callout-warn .icon-badge {
+    background: color-mix(in oklab, var(--warning) 16%, var(--card));
+    color: color-mix(in oklab, var(--warning) 75%, black);
+    box-shadow: none;
+  }
+  .callout-good .callout-title { color: color-mix(in oklab, var(--success) 80%, black); }
+  .callout-warn .callout-title { color: color-mix(in oklab, var(--warning) 70%, black); }
 
-  /* Role tag: a person's role in its own hue. */
+  /* Secondary button: warm neutral fill. */
+  .btn-soft {
+    background: var(--secondary);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+  }
+  .btn-soft:hover {
+    background: var(--accent);
+  }
+
+  /* Role tag: quiet and the same for everyone. */
   .role-tag {
     display: inline-flex;
     align-items: center;
@@ -470,40 +486,42 @@
     font-size: 11.5px;
     font-weight: 500;
     line-height: 1.25rem;
-    background: color-mix(in oklab, var(--hue) 12%, var(--card));
-    color: color-mix(in oklab, var(--hue) 84%, black);
+    background: var(--muted);
+    color: oklch(0.38 0.012 45);
   }
 
-  /* Soft button: the secondary action, tinted in its section's hue. */
-  .btn-soft {
-    background: color-mix(in oklab, var(--hue) 11%, var(--card));
-    color: color-mix(in oklab, var(--hue) 84%, black);
-    border: 1px solid color-mix(in oklab, var(--hue) 24%, transparent);
-  }
-  .btn-soft:hover {
-    background: color-mix(in oklab, var(--hue) 18%, var(--card));
-  }
-
-  /* Page wash: warm brand light falling from the top bar onto the page. */
+  /* Page wash: a faint warm light from the top bar onto the paper. */
   .page-wash {
     position: absolute;
     inset: 0 0 auto 0;
-    height: 26rem;
+    height: 22rem;
     pointer-events: none;
     background:
-      radial-gradient(46rem 18rem at 8% -7rem, oklch(0.6 0.2 28 / 0.11), transparent 70%),
-      radial-gradient(42rem 18rem at 92% -8rem, oklch(0.78 0.14 68 / 0.16), transparent 70%),
-      radial-gradient(34rem 14rem at 52% -9rem, oklch(0.6 0.17 292 / 0.07), transparent 70%);
+      radial-gradient(50rem 16rem at 15% -8rem, oklch(0.6 0.16 30 / 0.07), transparent 70%),
+      radial-gradient(40rem 16rem at 90% -8rem, oklch(0.75 0.1 60 / 0.1), transparent 70%);
   }
 
-  /* ---------- KPI band: one strip, cells divided by hairlines ----------
-     The first cell is the page's headline number and reads larger.      */
+  /* Tabs: the active tab's icon takes the brand color. */
+  [data-slot="tabs-trigger"][data-state="active"] > svg {
+    color: var(--brand-red);
+  }
+
+  /* ---------- Summary band: each page's numbers on one ink surface ----------
+     The first cell is the headline and reads larger, on a faint red light.
+     Icons carry a muted accent for what each number measures.          */
   .kpi-band {
-    @apply grid grid-cols-2 xl:grid-cols-4 overflow-hidden rounded-xl border border-border bg-card;
-    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+    @apply grid grid-cols-2 xl:grid-cols-4 overflow-hidden rounded-xl;
+    --hue: var(--c-red);
+    color: oklch(0.97 0.004 80);
+    background:
+      radial-gradient(36rem 14rem at 0% -30%, oklch(0.54 0.2 27 / 0.3), transparent 65%),
+      linear-gradient(160deg, var(--ink-soft), var(--ink));
+    border: 1px solid oklch(0.28 0.015 30);
+    box-shadow: 0 10px 28px -16px rgb(40 12 6 / 0.55);
   }
   .kpi-cell {
-    @apply flex flex-col gap-1 p-4 sm:p-5 border-border min-w-0;
+    @apply flex flex-col gap-1 p-4 sm:p-5 min-w-0;
+    border-color: oklch(1 0 0 / 0.08);
   }
   .kpi-band > .kpi-cell:not(:first-child) {
     border-left-width: 1px;
@@ -516,42 +534,67 @@
       border-top-width: 1px;
     }
   }
-  .kpi-value {
-    @apply text-[1.5rem] sm:text-[1.75rem] leading-[1.1] font-semibold tabular-nums text-foreground mt-1;
-    letter-spacing: -0.025em;
+  /* Odd number of cells on a two-column band: the headline takes the whole
+     first row so no corner is left empty. */
+  @media (max-width: 1279.98px) {
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) {
+      grid-column: span 2;
+    }
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) ~ .kpi-cell {
+      border-top-width: 1px;
+    }
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) ~ .kpi-cell:nth-child(even) {
+      border-left-width: 0;
+    }
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) ~ .kpi-cell:nth-child(odd) {
+      border-left-width: 1px;
+    }
   }
-  .kpi-cell-hero {
+  .kpi-value {
+    @apply text-[1.5rem] sm:text-[1.75rem] leading-[1.1] font-semibold tabular-nums mt-1;
+    letter-spacing: -0.025em;
     color: oklch(0.99 0 0);
-    background:
-      radial-gradient(22rem 12rem at 105% -10%, oklch(0.72 0.17 50 / 0.55), transparent 65%),
-      linear-gradient(140deg, oklch(0.5 0.19 27), oklch(0.34 0.11 22));
   }
   .kpi-cell-hero .kpi-value {
-    @apply text-[1.75rem] sm:text-[2.125rem];
-    color: oklch(0.99 0 0);
-  }
-  .kpi-cell-hero .kpi-label,
-  .kpi-cell-hero .kpi-sub {
-    color: oklch(1 0 0 / 0.78);
-  }
-  .kpi-cell-hero .icon-badge {
-    background: oklch(1 0 0 / 0.16);
-    color: oklch(0.99 0 0);
-  }
-  .kpi-cell-hero .chip-good,
-  .kpi-cell-hero .chip-warn,
-  .kpi-cell-hero .chip-neutral,
-  .kpi-cell-hero .chip-bad {
-    background: oklch(1 0 0 / 0.16);
-    border-color: transparent;
-    color: oklch(0.99 0 0);
+    @apply text-[1.75rem] sm:text-[2.25rem];
   }
   .kpi-label {
-    @apply text-[13px] font-medium text-muted-foreground;
+    @apply text-[13px] font-medium;
+    color: oklch(1 0 0 / 0.66);
   }
   .kpi-sub {
-    @apply text-xs text-muted-foreground;
+    @apply text-xs;
+    color: oklch(1 0 0 / 0.52);
   }
+  .kpi-band .icon-badge {
+    background: oklch(1 0 0 / 0.08);
+    color: var(--hue);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06);
+  }
+  .kpi-band .chip-good,
+  .kpi-band .chip-warn,
+  .kpi-band .chip-neutral,
+  .kpi-band .chip-bad {
+    border-color: transparent;
+  }
+  .kpi-band .chip-good {
+    background: oklch(0.72 0.11 155 / 0.16);
+    color: oklch(0.85 0.09 155);
+  }
+  .kpi-band .chip-warn {
+    background: oklch(0.78 0.12 75 / 0.16);
+    color: oklch(0.88 0.1 80);
+  }
+  .kpi-band .chip-neutral {
+    background: oklch(1 0 0 / 0.09);
+    color: oklch(1 0 0 / 0.75);
+  }
+  .kpi-band .chip-bad {
+    background: oklch(0.7 0.15 28 / 0.18);
+    color: oklch(0.85 0.09 28);
+  }
+  .kpi-band .delta-good { color: oklch(0.82 0.11 155); }
+  .kpi-band .delta-bad { color: oklch(0.8 0.12 28); }
 
   /* ---------- Status chips: state is icon + label, never color alone ---------- */
   .chip-good,
@@ -607,7 +650,7 @@
     right: 30%;
     height: 3px;
     border-radius: 0 0 3px 3px;
-    background: linear-gradient(90deg, var(--brand-red-bright), oklch(0.7 0.18 45));
+    background: var(--brand-red);
   }
 
   /* Card entrance: subtle rise, staggered by inline delay. */
@@ -644,9 +687,9 @@
 
   /* Scheduled-shift pill — chart-1 family, used by the schedule board. */
   .pill-sched {
-    background: color-mix(in oklab, var(--c-violet) 10%, var(--card));
-    border: 1px solid color-mix(in oklab, var(--c-violet) 26%, transparent);
-    color: oklch(0.4 0.15 292);
+    background: color-mix(in oklab, var(--chart-1) 8%, var(--card));
+    border: 1px solid color-mix(in oklab, var(--chart-1) 22%, transparent);
+    color: oklch(0.38 0.08 252);
     border-radius: 0.5rem;
   }
   .dark .pill-sched {

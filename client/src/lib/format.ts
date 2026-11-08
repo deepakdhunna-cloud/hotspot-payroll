@@ -52,22 +52,3 @@ export const STORE_ABBR: Record<string, string> = {
   "Hotspot Travel Center": "Travel",
 };
 
-/** Each role keeps one hue, so a list of people reads at a glance. */
-export function roleHue(role: string): "blue" | "green" | "violet" | "amber" | "teal" | "red" {
-  switch (role) {
-    case "Manager":
-      return "red";
-    case "Assistant Manager":
-      return "violet";
-    case "Kitchen Manager":
-      return "green";
-    case "Cook":
-      return "amber";
-    case "Cashier":
-      return "blue";
-    case "Janitorial":
-      return "teal";
-    default:
-      return "green";
-  }
-}
