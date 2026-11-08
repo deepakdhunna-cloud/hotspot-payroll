@@ -606,8 +606,8 @@ export default function HoursAndPayTab({
         />
       </KpiBand>
 
-      <Card className="surface-card border-0 gap-0 py-0">
-        <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+      <Card className="surface-card gap-0 py-0">
+        <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
               <Clock />

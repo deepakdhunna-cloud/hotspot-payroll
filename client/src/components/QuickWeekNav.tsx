@@ -39,14 +39,14 @@ export function QuickWeekNav({
     cn(
       "h-8 rounded-md px-2.5 sm:px-3 text-xs font-medium whitespace-nowrap transition-colors",
       active
-        ? "bg-card text-foreground shadow-sm"
+        ? "sk-seg-on bg-card text-foreground shadow-sm"
         : "text-muted-foreground hover:text-foreground",
     );
 
   return (
     <div
       className={cn(
-        "inline-flex max-w-full items-center gap-0.5 rounded-lg bg-muted p-0.5",
+        "sk-track inline-flex max-w-full items-center gap-0.5 rounded-lg bg-muted p-0.5",
         className,
       )}
     >

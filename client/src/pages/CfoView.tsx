@@ -402,7 +402,7 @@ export default function CfoView() {
         </KpiBand>
       ) : null}
 
-      <Card className="surface-card border-0">
+      <Card className="surface-card">
         <CardHeader className="pb-2">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
@@ -457,7 +457,7 @@ export default function CfoView() {
       </Card>
 
       {weeks.length > 0 ? (
-        <Card className="surface-card border-0">
+        <Card className="surface-card">
           <CardHeader>
             <CardTitle className="section-title">
               <span className="icon-badge icon-badge-sm">
@@ -573,7 +573,7 @@ export default function CfoView() {
 
       {m ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          <Card className="surface-card border-0">
+          <Card className="surface-card">
             <CardHeader>
               <CardTitle className="section-title">
                 <span className="icon-badge icon-badge-sm">
@@ -694,7 +694,7 @@ export default function CfoView() {
               )}
               sub={`Last closed week, ${fmtWeekRange(new Date(m.last.weekStart))}`}
             />
-            <Card className="surface-card border-0">
+            <Card className="surface-card">
               <CardHeader className="pb-2">
                 <CardTitle className="section-title">
                   <span className="icon-badge icon-badge-sm">

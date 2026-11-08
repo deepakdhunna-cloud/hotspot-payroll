@@ -43,7 +43,7 @@ export function InitialsBadge({
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full font-bold select-none",
+        "sk-avatar inline-flex shrink-0 items-center justify-center rounded-full font-bold select-none",
         size === "sm" ? "h-6 w-6 text-[9.5px]" : "h-8 w-8 text-[11px]",
         className,
       )}

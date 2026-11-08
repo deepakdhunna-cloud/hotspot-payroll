@@ -34,8 +34,8 @@ export function PositionBreakdown({
   const total = rows.reduce((s, r) => s + r.gross, 0);
 
   return (
-    <Card className={cn("surface-card border-0 gap-0 py-0", className)}>
-      <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
+    <Card className={cn("surface-card gap-0 py-0", className)}>
+      <CardHeader className="card-head px-4 sm:px-5 py-3">
         <CardTitle className="section-title">
           <span className="icon-badge icon-badge-sm">
             <Wallet />
@@ -61,11 +61,11 @@ export function PositionBreakdown({
               </span>
             </div>
             <div
-              className="h-1.5 rounded-full bg-muted overflow-hidden"
+              className="sk-track h-2 rounded-full bg-muted overflow-hidden"
               aria-hidden="true"
             >
               <div
-                className="h-full rounded-full"
+                className="sk-fill h-full rounded-full"
                 style={{
                   width: `${maxGross > 0 ? Math.max(2, (r.gross / maxGross) * 100) : 0}%`,
                   background: "var(--chart-1)",

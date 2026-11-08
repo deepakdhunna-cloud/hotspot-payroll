@@ -15,10 +15,19 @@ import {
   AlertTriangle,
   ArrowUpRight,
   BadgeCheck,
+  CalendarX,
   CheckCircle2,
+  Clock,
+  KeyRound,
+  Scale,
   ShieldAlert,
+  TimerOff,
+  Wallet,
+  WifiOff,
   X,
+  type LucideIcon,
 } from "lucide-react";
+import { STORE_ABBR } from "@/lib/format";
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -45,7 +54,7 @@ function pendingFor(createdAt: Date | string) {
     timeZone: "America/Chicago",
   });
   return {
-    label: days >= 1 ? `pending ${days}d` : hours >= 1 ? `pending ${hours}h` : "new today",
+    label: days >= 1 ? `waiting ${days}d` : hours >= 1 ? `waiting ${hours}h` : "new today",
     since,
     days,
   };
@@ -97,6 +106,17 @@ function fixHref(
       return null;
   }
 }
+
+/** A plain name and icon for each kind of task, shown above its title. */
+const KIND_META: Record<string, { label: string; icon: LucideIcon }> = {
+  long_punch: { label: "Long shift", icon: Clock },
+  auto_clockout: { label: "Auto clock-out", icon: TimerOff },
+  hours_mismatch: { label: "Hours vs schedule", icon: Scale },
+  missing_schedule: { label: "No schedule", icon: CalendarX },
+  missing_feed: { label: "Time clock offline", icon: WifiOff },
+  missing_codes: { label: "Missing clock codes", icon: KeyRound },
+  unsaved_payroll: { label: "Payroll not saved", icon: Wallet },
+};
 
 const MANUAL_KINDS = new Set(["long_punch", "auto_clockout", "hours_mismatch"]);
 
@@ -177,7 +197,7 @@ export function AttentionCenter({ className }: { className?: string }) {
         ) : null}
       </header>
 
-      <ul className="divide-y divide-border bg-card">
+      <ul className="attention-list">
         {items.map((item) => {
           const p = pendingFor(item.createdAt);
           const fix = fixHref(item);
@@ -189,28 +209,40 @@ export function AttentionCenter({ className }: { className?: string }) {
           const showsClockOutForm =
             isOpenLongPunch || item.kind === "auto_clockout";
           const stale = p.days >= 3;
+          const meta = KIND_META[item.kind] ?? { label: "Check", icon: AlertTriangle };
+          const KindIcon = meta.icon;
           return (
-            <li key={item.id} className="px-4 sm:px-5 py-3.5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+            <li key={item.id} className="attention-item">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
                 <div className="flex flex-1 min-w-0 items-start gap-3">
                   <span
                     className={cn("attention-marker", stale && "attention-marker-stale")}
                     aria-hidden="true"
                   >
-                    <AlertTriangle />
+                    <KindIcon />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold leading-snug">{item.title}</p>
+                    {/* What kind of issue, where, and how long it has waited */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="attention-kind">{meta.label}</span>
+                      {item.storeLocation ? (
+                        <span className="chip-neutral">
+                          {STORE_ABBR[item.storeLocation] ?? item.storeLocation}
+                        </span>
+                      ) : null}
+                      <span
+                        className={stale ? "chip-bad" : "chip-neutral"}
+                        title={`First flagged ${p.since}`}
+                      >
+                        {p.label}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[15px] font-semibold leading-snug">{item.title}</p>
                     {item.detail ? (
-                      <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
+                      <p className="mt-0.5 text-sm text-muted-foreground leading-relaxed">
                         {item.detail}
                       </p>
                     ) : null}
-                    <p className="text-xs mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
-                      <span className={stale ? "chip-bad" : "chip-warn"}>{p.label}</span>
-                      <span>flagged {p.since}</span>
-                      {item.storeLocation ? <span>· {item.storeLocation}</span> : null}
-                    </p>
 
                     {clockOutFormFor === item.id ? (
                       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -218,12 +250,12 @@ export function AttentionCenter({ className }: { className?: string }) {
                           type="datetime-local"
                           value={clockOutValue}
                           onChange={(e) => setClockOutValue(e.target.value)}
-                          className="h-8 w-56 text-sm"
+                          className="h-9 w-56 text-sm"
                           aria-label="Actual clock-out time"
                         />
                         <Button
                           size="sm"
-                          className="h-8"
+                          className="h-9"
                           disabled={!clockOutValue || resolveM.isPending}
                           onClick={() =>
                             resolveM.mutate({
@@ -239,7 +271,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-8"
+                          className="h-9"
                           onClick={() => setClockOutFormFor(null)}
                           aria-label="Cancel"
                         >
@@ -250,11 +282,12 @@ export function AttentionCenter({ className }: { className?: string }) {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1.5 shrink-0 pl-7 sm:pl-0">
+                {/* The fix: one column of equal-width buttons, main action first */}
+                <div className="grid grid-cols-2 gap-2 shrink-0 [&>*:only-child]:col-span-2 sm:flex sm:w-44 sm:flex-col sm:items-stretch">
                   {isManual && showsClockOutForm ? (
                     <Button
                       size="sm"
-                      className="h-8"
+                      className="h-9"
                       onClick={() => {
                         setClockOutFormFor(item.id);
                         setClockOutValue("");
@@ -268,7 +301,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                     <Button
                       size="sm"
                       variant={item.kind === "auto_clockout" ? "outline" : "default"}
-                      className="h-8"
+                      className="h-9"
                       onClick={() =>
                         resolveM.mutate({
                           id: item.id,
@@ -287,14 +320,14 @@ export function AttentionCenter({ className }: { className?: string }) {
                   ) : null}
                   {fix ? (
                     fix.newTab ? (
-                      <Button size="sm" variant="outline" className="h-8" asChild>
+                      <Button size="sm" variant="outline" className="h-9" asChild>
                         <a href={fix.href} target="_blank" rel="noopener noreferrer">
                           {fix.label}
                           <ArrowUpRight className="h-3.5 w-3.5 ml-1" />
                         </a>
                       </Button>
                     ) : (
-                      <Button size="sm" variant="outline" className="h-8" asChild>
+                      <Button size="sm" variant="outline" className="h-9" asChild>
                         <Link href={fix.href}>
                           {fix.label}
                           <ArrowUpRight className="h-3.5 w-3.5 ml-1" />

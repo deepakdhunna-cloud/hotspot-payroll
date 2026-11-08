@@ -185,7 +185,7 @@ function KeypadKey({
       variant={variant === "ghost" ? "ghost" : "secondary"}
       onClick={onClick}
       disabled={disabled}
-      className="h-14 text-2xl font-medium tabular-nums rounded-xl"
+      className="sk-keycap h-14 text-2xl font-medium tabular-nums rounded-xl"
       {...rest}
     >
       {children}

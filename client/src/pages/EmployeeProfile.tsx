@@ -189,8 +189,8 @@ export default function EmployeeProfile() {
           />
 
           <div className="grid gap-5 md:gap-6 lg:grid-cols-[1fr_1.4fr] lg:items-start">
-            <Card className="surface-card border-0 gap-0 py-0">
-              <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
+            <Card className="surface-card gap-0 py-0">
+              <CardHeader className="card-head px-4 sm:px-5 py-3">
                 <CardTitle className="section-title">
                   <span className="icon-badge icon-badge-sm">
                     <Wallet />
@@ -407,8 +407,8 @@ function PunchHistoryCard({
   const time = (d: Date | string) =>
     new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   return (
-    <Card className="surface-card border-0 gap-0 py-0">
-      <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+    <Card className="surface-card gap-0 py-0">
+      <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
         <CardTitle className="section-title">
           <span className="icon-badge icon-badge-sm">
             <Clock />

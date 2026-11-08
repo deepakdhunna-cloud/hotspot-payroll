@@ -349,8 +349,8 @@ export default function Home() {
       {/* Operational detail */}
       <div className="grid gap-5 md:gap-6 lg:grid-cols-[1.25fr_1fr]">
         {isLiveWeek ? (
-          <Card className="surface-card border-0 gap-0 py-0">
-            <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+          <Card className="surface-card gap-0 py-0">
+            <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
               <CardTitle className="section-title">
                 <span className="icon-badge icon-badge-sm">
                   <Users />
@@ -467,8 +467,8 @@ export default function Home() {
             </CardContent>
           </Card>
         ) : (
-          <Card className="surface-card border-0 gap-0 py-0">
-            <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
+          <Card className="surface-card gap-0 py-0">
+            <CardHeader className="card-head px-4 sm:px-5 py-3">
               <CardTitle className="section-title">
                 <span className="icon-badge icon-badge-sm">
                   <Clock />
@@ -509,8 +509,8 @@ export default function Home() {
           </Card>
         )}
 
-        <Card className="surface-card border-0 gap-0 py-0 flex flex-col">
-          <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+        <Card className="surface-card gap-0 py-0 flex flex-col">
+          <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
             <CardTitle className="section-title">
               <span className="icon-badge icon-badge-sm">
                 <CalendarDays />
@@ -546,7 +546,7 @@ export default function Home() {
                         {d.totalHours > 0 ? d.totalHours.toFixed(0) : ""}
                       </span>
                       <div
-                        className="w-full max-w-10 rounded-[4px]"
+                        className="sk-bar w-full max-w-10 rounded-[4px]"
                         style={{
                           height:
                             d.totalHours > 0
@@ -575,8 +575,8 @@ export default function Home() {
       </div>
 
       {/* The week's ledger */}
-      <Card className="surface-card border-0 gap-0 py-0">
-        <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+      <Card className="surface-card gap-0 py-0">
+        <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
               <UserRound />
@@ -641,9 +641,9 @@ export default function Home() {
                         )}
                       </span>
                       <div className="col-span-2 flex items-center gap-3 sm:col-span-1">
-                        <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                        <div className="sk-track h-2 flex-1 rounded-full bg-muted overflow-hidden">
                           <div
-                            className="h-full rounded-full"
+                            className="sk-fill h-full rounded-full"
                             style={{
                               width: `${pct * 100}%`,
                               background: emp.overClocked ? "var(--warning)" : "var(--chart-1)",
@@ -683,8 +683,8 @@ export default function Home() {
       </Card>
 
       {/* Eight-week filmstrip — older payroll is one click away */}
-      <Card className="surface-card border-0 gap-0 py-0">
-        <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+      <Card className="surface-card gap-0 py-0">
+        <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
               <History />
@@ -735,7 +735,7 @@ function QuickAction({
   return (
     <Link
       href={href}
-      className="group flex items-center gap-3 rounded-xl border border-border bg-card px-3 py-3 shadow-[0_1px_2px_rgb(40_20_10_/_0.05)] transition-all hover:border-primary/30 hover:shadow-[0_6px_16px_-8px_rgb(80_20_10_/_0.25)]"
+      className="sk-key group flex items-center gap-3 rounded-xl px-3 py-3 transition-all"
     >
       <span className="icon-badge transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
         {icon}

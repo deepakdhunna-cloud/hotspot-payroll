@@ -420,9 +420,7 @@ function KeyButton({
       size="lg"
       className={cn(
         "h-16 text-2xl font-semibold select-none",
-        variant === "primary"
-          ? "bg-secondary hover:bg-accent border-border"
-          : "bg-card hover:bg-secondary border-border text-muted-foreground",
+        variant === "primary" ? "sk-keycap" : "sk-keycap text-muted-foreground",
       )}
       {...rest}
     >

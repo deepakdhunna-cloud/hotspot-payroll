@@ -475,16 +475,16 @@
     overflow: hidden;
     border-radius: 0.875rem;
     background: var(--card);
-    border: 1px solid color-mix(in oklab, var(--warning) 45%, var(--border));
+    border: 1px solid color-mix(in oklab, var(--brand-red) 40%, var(--border));
     box-shadow:
-      0 0 0 4px color-mix(in oklab, var(--warning) 12%, transparent),
-      0 14px 32px -18px oklch(0.5 0.14 50 / 0.55);
+      0 0 0 4px color-mix(in oklab, var(--brand-red) 9%, transparent),
+      0 14px 32px -18px oklch(0.45 0.16 27 / 0.55);
   }
   .attention-head {
     position: relative;
     color: oklch(0.99 0 0);
     background:
-      radial-gradient(28rem 9rem at 0% -30%, oklch(0.75 0.15 65 / 0.32), transparent 65%),
+      radial-gradient(28rem 9rem at 0% -30%, oklch(0.56 0.2 27 / 0.45), transparent 65%),
       linear-gradient(160deg, var(--ink-soft), var(--ink));
   }
   .attention-head::before {
@@ -492,15 +492,15 @@
     position: absolute;
     inset: 0 0 auto 0;
     height: 3px;
-    background: linear-gradient(90deg, var(--brand-red), var(--brand-red-bright) 40%, oklch(0.76 0.15 65));
+    background: linear-gradient(90deg, var(--brand-red), var(--brand-red-bright) 55%, oklch(0.68 0.17 42));
   }
   .attention-head .icon-badge {
     width: 2.25rem;
     height: 2.25rem;
     border-radius: 0.7rem;
-    background: oklch(0.78 0.15 70 / 0.18);
-    color: oklch(0.86 0.13 78);
-    box-shadow: inset 0 0 0 1px oklch(0.78 0.15 70 / 0.3);
+    background: oklch(0.62 0.21 27 / 0.22);
+    color: oklch(0.86 0.08 25);
+    box-shadow: inset 0 0 0 1px oklch(0.62 0.21 27 / 0.4);
   }
   .attention-head .icon-badge > svg { width: 1.125rem; height: 1.125rem; }
   .attention-count {
@@ -514,29 +514,51 @@
     font-size: 12px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    background: oklch(0.8 0.15 72);
-    color: var(--ink);
+    background: var(--brand-red-bright);
+    color: oklch(0.99 0 0);
   }
   .attention-age {
     font-size: 12px;
     font-weight: 500;
-    color: oklch(0.86 0.12 78);
+    color: oklch(0.85 0.07 25);
+  }
+  .attention-list {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.625rem;
+    background: var(--muted);
+  }
+  @media (min-width: 640px) {
+    .attention-list { padding: 0.75rem; }
+  }
+  .attention-item {
+    border-radius: 0.625rem;
+    border: 1px solid var(--border);
+    background: var(--card);
+    padding: 0.875rem 1rem;
+  }
+  .attention-kind {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--brand-red);
   }
   .attention-marker {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
+    width: 2.25rem;
+    height: 2.25rem;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--warning) 16%, var(--card));
-    color: color-mix(in oklab, var(--warning) 78%, black);
+    background: color-mix(in oklab, var(--brand-red) 10%, var(--card));
+    color: var(--brand-red);
   }
-  .attention-marker > svg { width: 0.9rem; height: 0.9rem; }
+  .attention-marker > svg { width: 1.05rem; height: 1.05rem; }
   .attention-marker-stale {
-    background: color-mix(in oklab, var(--destructive) 12%, var(--card));
-    color: var(--destructive);
+    background: var(--brand-red);
+    color: oklch(0.99 0 0);
   }
   @media (prefers-reduced-motion: no-preference) {
     .attention-beacon {
@@ -547,7 +569,7 @@
       position: absolute;
       inset: -3px;
       border-radius: 0.85rem;
-      border: 2px solid oklch(0.8 0.15 72 / 0.55);
+      border: 2px solid oklch(0.64 0.21 28 / 0.65);
       animation: attention-pulse 2.4s cubic-bezier(0.23, 1, 0.32, 1) infinite;
     }
   }
@@ -555,6 +577,14 @@
     0% { opacity: 0.9; transform: scale(0.92); }
     70% { opacity: 0; transform: scale(1.25); }
     100% { opacity: 0; transform: scale(1.25); }
+  }
+
+  /* Card title row: its own strip, ruled off from the content. */
+  .card-head {
+    border-bottom: 1px solid var(--border);
+  }
+  .card-head + [data-slot="card-content"] {
+    padding-top: 0.75rem;
   }
 
   /* Secondary button: warm neutral fill. */
@@ -847,5 +877,382 @@
       padding-right: 2rem;
       max-width: 1280px;
     }
+  }
+}
+
+
+/* =======================================================================
+   Skeuomorphic skin
+   -----------------------------------------------------------------------
+   Real-world materials on top of the Ink & Signal palette: textured paper
+   under raised panels, beveled glossy buttons that press in, recessed
+   fields and tracks, an instrument-panel summary band with sunken
+   readouts, and physical keycaps on the keypads.
+
+   These rules sit outside @layer on purpose: unlayered styles outrank
+   Tailwind's utility layer, so the skin applies the same way everywhere
+   without touching each component's class list.
+   ======================================================================= */
+:root {
+  --sk-hi: oklch(1 0 0 / 0.9);
+  --sk-edge: oklch(0.84 0.012 65);
+  --sk-edge-dark: oklch(0.76 0.015 60);
+  --sk-panel-top: oklch(1 0 0);
+  --sk-panel-bottom: oklch(0.982 0.005 75);
+  --sk-drop:
+    0 1px 1px rgb(70 40 20 / 0.07),
+    0 2px 4px rgb(70 40 20 / 0.06),
+    0 12px 22px -12px rgb(70 40 20 / 0.28);
+  --sk-drop-sm: 0 1px 1px rgb(70 40 20 / 0.1), 0 2px 4px -1px rgb(70 40 20 / 0.12);
+  --sk-well: inset 0 1px 2px rgb(70 40 20 / 0.16), inset 0 0 0 1px rgb(70 40 20 / 0.04);
+}
+
+/* ---- Paper ---- */
+body {
+  background-color: var(--background);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35  0 0 0 0 .24  0 0 0 0 .15  0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, oklch(0.972 0.006 75), oklch(0.952 0.009 70));
+  background-attachment: fixed;
+}
+
+/* ---- Raised panels: every card and section ---- */
+.surface-card,
+[data-slot="card"] {
+  background-color: var(--card);
+  background-image: linear-gradient(180deg, var(--sk-panel-top), var(--sk-panel-bottom));
+  border: 1px solid var(--sk-edge);
+  border-bottom-color: var(--sk-edge-dark);
+  box-shadow: inset 0 1px 0 var(--sk-hi), var(--sk-drop);
+}
+/* Title strip: a slightly darker band, ruled off with an engraved line */
+.card-head {
+  background-image: linear-gradient(180deg, oklch(0.99 0.003 75), oklch(0.957 0.007 70));
+  border-bottom: 1px solid var(--sk-edge);
+  box-shadow: 0 1px 0 var(--sk-hi);
+  border-radius: calc(var(--radius) + 3px) calc(var(--radius) + 3px) 0 0;
+}
+.card-head .section-title { text-shadow: 0 1px 0 oklch(1 0 0 / 0.9); }
+
+/* Table header: a strip with engraved labels */
+thead th {
+  background-image: linear-gradient(180deg, oklch(0.985 0.004 75), oklch(0.955 0.007 70));
+  text-shadow: 0 1px 0 oklch(1 0 0 / 0.9);
+}
+
+/* ---- Buttons ---- */
+.btn-primary {
+  background-color: var(--brand-red);
+  background-image: linear-gradient(180deg, oklch(0.66 0.2 30), oklch(0.54 0.2 27) 55%, oklch(0.48 0.19 26));
+  border: 1px solid oklch(0.4 0.15 25);
+  color: oklch(0.99 0 0);
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 0.28);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.35),
+    inset 0 -1px 0 rgb(0 0 0 / 0.12),
+    0 1px 2px rgb(90 20 10 / 0.3),
+    0 4px 10px -4px rgb(160 30 20 / 0.45);
+}
+.btn-primary:hover {
+  background-image: linear-gradient(180deg, oklch(0.69 0.2 31), oklch(0.57 0.21 28) 55%, oklch(0.5 0.19 26));
+}
+.btn-primary:active {
+  background-image: linear-gradient(180deg, oklch(0.47 0.18 26), oklch(0.53 0.2 27));
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.35), 0 1px 0 oklch(1 0 0 / 0.6);
+  transform: translateY(1px);
+}
+.btn-raised {
+  background-color: oklch(0.97 0.004 75);
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.94 0.007 72));
+  border: 1px solid oklch(0.8 0.013 62);
+  border-bottom-color: oklch(0.7 0.016 58);
+  color: var(--foreground);
+  text-shadow: 0 1px 0 oklch(1 0 0 / 0.9);
+  box-shadow: inset 0 1px 0 oklch(1 0 0), var(--sk-drop-sm);
+}
+.btn-raised:hover {
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.96 0.006 72));
+  border-color: oklch(0.74 0.015 60);
+}
+.btn-raised:active {
+  background-image: linear-gradient(180deg, oklch(0.92 0.008 70), oklch(0.96 0.005 72));
+  box-shadow: inset 0 2px 3px rgb(70 40 20 / 0.2);
+  transform: translateY(1px);
+}
+
+/* Keycaps: the sign-in and kiosk keypads */
+.sk-keycap {
+  background-color: oklch(0.97 0.004 75);
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.93 0.008 70));
+  border: 1px solid oklch(0.78 0.014 60);
+  border-bottom-width: 3px;
+  border-bottom-color: oklch(0.68 0.016 56);
+  border-radius: 0.875rem;
+  color: var(--foreground);
+  text-shadow: 0 1px 0 oklch(1 0 0);
+  box-shadow: inset 0 1px 0 oklch(1 0 0), 0 2px 4px rgb(70 40 20 / 0.18);
+}
+.sk-keycap:hover { background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.955 0.006 72)); }
+.sk-keycap:active {
+  border-bottom-width: 1px;
+  transform: translateY(2px);
+  background-image: linear-gradient(180deg, oklch(0.91 0.009 70), oklch(0.95 0.006 72));
+  box-shadow: inset 0 2px 4px rgb(70 40 20 / 0.25);
+}
+
+/* Shortcut tiles: raised buttons you press */
+.sk-key {
+  color: var(--foreground);
+  background-color: var(--card);
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.965 0.006 72));
+  border: 1px solid var(--sk-edge);
+  border-bottom-color: var(--sk-edge-dark);
+  box-shadow: inset 0 1px 0 var(--sk-hi), var(--sk-drop-sm);
+}
+.sk-key:hover {
+  border-color: oklch(0.54 0.2 27 / 0.45);
+  box-shadow: inset 0 1px 0 var(--sk-hi), 0 2px 4px rgb(70 40 20 / 0.12), 0 8px 18px -10px rgb(150 30 20 / 0.4);
+}
+.sk-key:active {
+  transform: translateY(1px);
+  background-image: linear-gradient(180deg, oklch(0.95 0.007 72), oklch(0.985 0.004 75));
+  box-shadow: inset 0 2px 4px rgb(70 40 20 / 0.18);
+}
+
+/* ---- Recessed fields ---- */
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  background-color: oklch(0.995 0.002 75);
+  background-image: linear-gradient(180deg, oklch(0.958 0.006 72), oklch(0.995 0.002 75) 45%);
+  border: 1px solid oklch(0.8 0.012 62);
+  border-top-color: oklch(0.72 0.015 58);
+  box-shadow: inset 0 1px 2px rgb(70 40 20 / 0.12);
+}
+[data-slot="checkbox"] {
+  background-image: linear-gradient(180deg, oklch(0.95 0.006 72), oklch(1 0 0));
+  box-shadow: inset 0 1px 2px rgb(70 40 20 / 0.18);
+}
+[data-slot="checkbox"][data-state="checked"] {
+  background-image: linear-gradient(180deg, oklch(0.64 0.2 29), oklch(0.5 0.19 26));
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.3);
+}
+/* Store picker in the dark top bar: a sunken slot in the leather */
+.topbar [data-slot="select-trigger"] {
+  background-color: rgb(0 0 0 / 0.3);
+  background-image: none;
+  border-color: rgb(0 0 0 / 0.5);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.55), 0 1px 0 oklch(1 0 0 / 0.08);
+}
+
+/* ---- Tracks and segmented controls ---- */
+[data-slot="tabs-list"],
+.sk-track {
+  background-color: oklch(0.925 0.008 70);
+  background-image: linear-gradient(180deg, oklch(0.9 0.009 68), oklch(0.94 0.007 72));
+  box-shadow: inset 0 1px 3px rgb(70 40 20 / 0.2), 0 1px 0 oklch(1 0 0 / 0.85);
+}
+[data-slot="tabs-list"] { border: 1px solid oklch(0.82 0.012 62); }
+[data-slot="tabs-trigger"][data-state="active"],
+.sk-seg-on {
+  background-color: oklch(1 0 0);
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.955 0.006 72));
+  box-shadow: inset 0 1px 0 oklch(1 0 0), 0 1px 2px rgb(70 40 20 / 0.25), 0 0 0 1px oklch(0.8 0.012 62);
+  text-shadow: 0 1px 0 oklch(1 0 0);
+}
+/* Progress: a sunken groove with a glossy fill */
+.sk-track.rounded-full { box-shadow: inset 0 1px 2px rgb(70 40 20 / 0.25); }
+.sk-fill,
+.sk-bar {
+  position: relative;
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.35), inset 0 -1px 0 rgb(0 0 0 / 0.08);
+}
+.sk-fill::after,
+.sk-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.38), oklch(1 0 0 / 0) 55%);
+  pointer-events: none;
+}
+.sk-bar { box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.4), 0 1px 2px rgb(70 40 20 / 0.18); }
+
+/* ---- Embossed details ---- */
+.icon-badge {
+  background-color: oklch(0.955 0.025 25);
+  background-image: linear-gradient(180deg, oklch(0.985 0.015 25), oklch(0.925 0.04 25));
+  border: 1px solid oklch(0.85 0.05 25);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 1px 2px rgb(140 30 20 / 0.18);
+}
+.sk-avatar {
+  position: relative;
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.65), inset 0 -1px 0 rgb(0 0 0 / 0.06), 0 1px 2px rgb(70 40 20 / 0.2);
+}
+.chip-good,
+.chip-warn,
+.chip-bad,
+.chip-neutral {
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.5), oklch(1 0 0 / 0));
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.6), 0 1px 1px rgb(70 40 20 / 0.08);
+}
+.role-tag {
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.6), oklch(1 0 0 / 0));
+  box-shadow: inset 0 0 0 1px rgb(70 40 20 / 0.08);
+}
+
+/* ---- Status callouts ---- */
+.callout-good,
+.callout-warn {
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.55), oklch(1 0 0 / 0));
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.8), var(--sk-drop-sm);
+}
+.callout-good .icon-badge {
+  background-image: linear-gradient(180deg, oklch(0.97 0.03 155), oklch(0.9 0.06 155));
+  border-color: oklch(0.82 0.06 155);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 1px 2px rgb(20 90 50 / 0.18);
+}
+.callout-warn .icon-badge {
+  background-image: linear-gradient(180deg, oklch(0.98 0.04 80), oklch(0.91 0.08 75));
+  border-color: oklch(0.82 0.09 72);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 1px 2px rgb(140 90 20 / 0.2);
+}
+
+/* ---- Leather top bar and the phone tab bar ---- */
+.topbar {
+  background-color: var(--ink);
+  background-image:
+    radial-gradient(40rem 8rem at 85% -4rem, oklch(0.54 0.2 27 / 0.22), transparent 70%),
+    linear-gradient(180deg, oklch(0.29 0.015 30), oklch(0.21 0.012 30) 55%, oklch(0.17 0.01 30));
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.09), 0 2px 8px rgb(30 10 5 / 0.35);
+}
+.topbar-link[data-active="true"] {
+  background-color: rgb(0 0 0 / 0.3);
+  box-shadow:
+    inset 0 -2px 0 var(--brand-red-bright),
+    inset 0 1px 3px rgb(0 0 0 / 0.6),
+    0 1px 0 oklch(1 0 0 / 0.08);
+}
+.tabbar {
+  background-color: var(--card);
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.95 0.006 72));
+  border-top: 1px solid var(--sk-edge-dark);
+  box-shadow: inset 0 1px 0 oklch(1 0 0), 0 -3px 10px rgb(70 40 20 / 0.12);
+}
+
+/* ---- Instrument panel: the summary band with sunken readouts ---- */
+.kpi-band {
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background-color: var(--ink);
+  background-image:
+    radial-gradient(36rem 14rem at 0% -30%, oklch(0.54 0.2 27 / 0.28), transparent 65%),
+    linear-gradient(180deg, oklch(0.31 0.015 30), oklch(0.22 0.012 30) 60%, oklch(0.19 0.011 30));
+  border: 1px solid oklch(0.13 0.01 30);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.14),
+    0 1px 1px rgb(0 0 0 / 0.25),
+    0 14px 26px -14px rgb(40 12 6 / 0.65);
+}
+.kpi-band > .kpi-cell {
+  border-width: 0;
+  border-radius: 0.625rem;
+  background-image: linear-gradient(180deg, oklch(0.15 0.01 30), oklch(0.19 0.012 30));
+  box-shadow:
+    inset 0 2px 5px rgb(0 0 0 / 0.55),
+    inset 0 0 0 1px rgb(0 0 0 / 0.35),
+    0 1px 0 oklch(1 0 0 / 0.08);
+}
+.kpi-band > .kpi-cell-hero {
+  background-image:
+    radial-gradient(20rem 8rem at 0% 0%, oklch(0.54 0.2 27 / 0.3), transparent 70%),
+    linear-gradient(180deg, oklch(0.16 0.015 28), oklch(0.2 0.02 27));
+}
+.kpi-value { text-shadow: 0 1px 0 rgb(0 0 0 / 0.6); }
+.kpi-band .icon-badge {
+  background-color: rgb(255 255 255 / 0.06);
+  background-image: linear-gradient(180deg, oklch(1 0 0 / 0.12), oklch(1 0 0 / 0.02));
+  border: 1px solid rgb(0 0 0 / 0.4);
+  color: var(--hue);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.12);
+}
+.kpi-band .chip-good,
+.kpi-band .chip-warn,
+.kpi-band .chip-bad,
+.kpi-band .chip-neutral {
+  background-image: none;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06);
+}
+
+/* ---- Needs attention: an alert plate over a tray of slips ---- */
+.attention-card {
+  background-color: var(--card);
+  border: 1px solid color-mix(in oklab, var(--brand-red) 45%, var(--sk-edge-dark));
+  box-shadow:
+    0 0 0 4px color-mix(in oklab, var(--brand-red) 10%, transparent),
+    inset 0 1px 0 var(--sk-hi),
+    0 16px 32px -18px oklch(0.45 0.16 27 / 0.6);
+}
+.attention-head {
+  background-image:
+    radial-gradient(28rem 9rem at 0% -30%, oklch(0.56 0.2 27 / 0.42), transparent 65%),
+    linear-gradient(180deg, oklch(0.31 0.015 30), oklch(0.21 0.012 30) 60%, oklch(0.18 0.011 30));
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.5);
+}
+.attention-head .icon-badge {
+  background-color: oklch(0.54 0.2 27 / 0.3);
+  background-image: linear-gradient(180deg, oklch(0.66 0.2 29 / 0.55), oklch(0.46 0.18 26 / 0.55));
+  border: 1px solid oklch(0.4 0.15 25);
+  color: oklch(0.97 0.02 25);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.25), 0 1px 2px rgb(0 0 0 / 0.4);
+}
+.attention-count {
+  background-image: linear-gradient(180deg, oklch(0.68 0.2 30), oklch(0.52 0.2 27));
+  border: 1px solid oklch(0.4 0.15 25);
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 0.3);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.35), 0 1px 2px rgb(0 0 0 / 0.4);
+}
+.attention-list {
+  background-color: oklch(0.94 0.008 70);
+  background-image: linear-gradient(180deg, oklch(0.925 0.009 68), oklch(0.95 0.007 72));
+  box-shadow: inset 0 2px 4px rgb(70 40 20 / 0.14);
+}
+.attention-item {
+  background-color: var(--card);
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.985 0.004 75));
+  border: 1px solid var(--sk-edge);
+  border-bottom-color: var(--sk-edge-dark);
+  box-shadow: inset 0 1px 0 var(--sk-hi), var(--sk-drop-sm);
+}
+.attention-kind { text-shadow: 0 1px 0 oklch(1 0 0 / 0.9); }
+.attention-marker {
+  background-image: linear-gradient(180deg, oklch(0.985 0.015 25), oklch(0.92 0.045 25));
+  border: 1px solid oklch(0.82 0.07 25);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.9), 0 1px 2px rgb(140 30 20 / 0.22);
+}
+.attention-marker-stale {
+  background-image: linear-gradient(180deg, oklch(0.66 0.2 29), oklch(0.5 0.19 26));
+  border-color: oklch(0.4 0.15 25);
+  color: oklch(0.99 0 0);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.35), 0 1px 2px rgb(140 30 20 / 0.35);
+}
+
+/* ---- Overlays: menus, popovers and dialogs float on real shadow ---- */
+[data-slot="dialog-content"],
+[data-slot="alert-dialog-content"],
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="select-content"] {
+  background-image: linear-gradient(180deg, oklch(1 0 0), oklch(0.98 0.005 75));
+  border: 1px solid var(--sk-edge-dark);
+  box-shadow: inset 0 1px 0 var(--sk-hi), 0 2px 6px rgb(70 40 20 / 0.12), 0 24px 48px -16px rgb(70 40 20 / 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary:active,
+  .btn-raised:active,
+  .sk-keycap:active,
+  .sk-key:active {
+    transform: none;
   }
 }

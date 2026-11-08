@@ -270,8 +270,8 @@ export default function PunchesTab({
         </Button>
       </div>
 
-      <Card className="surface-card border-0 gap-0 py-0 overflow-hidden">
-        <CardHeader className="flex flex-row flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 sm:px-5 pt-4 pb-3 border-b border-border">
+      <Card className="surface-card gap-0 py-0 overflow-hidden">
+        <CardHeader className="card-head flex flex-row flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 sm:px-5 py-3 border-b border-border">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
               <Clock />

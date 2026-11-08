@@ -359,9 +359,9 @@ export default function CeoView() {
                       <p className="text-xs text-muted-foreground tabular-nums">
                         {s.totalClockHours.toFixed(1)}h of {s.totalScheduled.toFixed(1)}h
                       </p>
-                      <div className="mt-1.5 h-1.5 rounded-full bg-[color-mix(in_oklab,var(--hue)_14%,transparent)] overflow-hidden">
+                      <div className="sk-track mt-1.5 h-2 rounded-full bg-[color-mix(in_oklab,var(--hue)_14%,transparent)] overflow-hidden">
                         <div
-                          className="h-full rounded-full"
+                          className="sk-fill h-full rounded-full"
                           style={{
                             width: `${s.totalScheduled > 0 ? Math.min(100, (s.totalClockHours / s.totalScheduled) * 100) : 0}%`,
                             background: "var(--hue)",
@@ -386,8 +386,8 @@ export default function CeoView() {
       </section>
 
       {/* Eight-week filmstrip — older payroll is one click away */}
-      <Card className="surface-card border-0 gap-0 py-0">
-        <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+      <Card className="surface-card gap-0 py-0">
+        <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
               <History />
@@ -412,8 +412,8 @@ export default function CeoView() {
         </TabsContent>
 
         <TabsContent value="payroll">
-          <Card className="surface-card border-0 gap-0 py-0">
-            <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
+          <Card className="surface-card gap-0 py-0">
+            <CardHeader className="card-head px-4 sm:px-5 py-3">
               <CardTitle className="section-title">
                 <span className="icon-badge icon-badge-sm">
                   <Wallet />
@@ -550,8 +550,8 @@ function ManagersPanel() {
   });
 
   return (
-    <Card className="surface-card border-0 gap-0 py-0">
-      <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
+    <Card className="surface-card gap-0 py-0">
+      <CardHeader className="card-head px-4 sm:px-5 py-3">
         <CardTitle className="section-title">
           <span className="icon-badge icon-badge-sm">
             <KeyRound />
@@ -690,7 +690,7 @@ function ActivityPanel() {
   };
 
   return (
-    <Card className="surface-card border-0">
+    <Card className="surface-card">
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle className="section-title flex items-center gap-2">
@@ -820,7 +820,7 @@ function LivePortalPanel() {
   return (
     <div className="space-y-4">
       <MoveToPortalCard />
-      <Card className="surface-card border-0">
+      <Card className="surface-card">
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
             <CardTitle className="section-title flex items-center gap-2">
@@ -943,7 +943,7 @@ function LivePortalPanel() {
         </CardContent>
       </Card>
 
-      <Card className="surface-card border-0">
+      <Card className="surface-card">
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
             <CardTitle className="section-title text-base">
@@ -1052,7 +1052,7 @@ function MoveToPortalCard() {
   };
 
   return (
-    <Card className="surface-card border-0">
+    <Card className="surface-card">
       <CardHeader>
         <CardTitle className="section-title flex items-center gap-2">
           <Database className="h-5 w-5" /> Move everything to your own portal
