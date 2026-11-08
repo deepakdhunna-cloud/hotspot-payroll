@@ -4,7 +4,7 @@
  * the two always agree. Bars are proportional to gross, biggest first.
  */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fmtMoney } from "@/lib/format";
+import { fmtHoursLabel, fmtMoney } from "@/lib/format";
 import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,16 +47,18 @@ export function PositionBreakdown({
       <CardContent className="space-y-3.5 px-4 sm:px-5 pb-5">
         {rows.map((r) => (
           <div key={r.role} className="space-y-1">
-            <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              <span className="font-medium">{r.role}</span>
-              <span className="text-xs text-muted-foreground">
-                {r.people} {r.people === 1 ? "person" : "people"} ·{" "}
-                <span className="tabular-nums">{r.hours.toFixed(1)}h</span>
-              </span>
-              <span className="ml-auto tabular-nums font-medium">
+            <div className="flex items-baseline gap-2 text-sm">
+              <p className="min-w-0 flex-1">
+                <span className="font-medium">{r.role}</span>{" "}
+                <span className="whitespace-nowrap text-xs text-muted-foreground">
+                  {r.people} {r.people === 1 ? "person" : "people"} ·{" "}
+                  <span className="tabular-nums">{fmtHoursLabel(r.hours)}</span>
+                </span>
+              </p>
+              <span className="shrink-0 tabular-nums font-medium">
                 {fmtMoney(r.gross)}
               </span>
-              <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">
+              <span className="w-10 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
                 {total > 0 ? Math.round((r.gross / total) * 100) : 0}%
               </span>
             </div>

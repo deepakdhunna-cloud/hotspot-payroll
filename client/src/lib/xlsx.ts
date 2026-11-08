@@ -50,8 +50,8 @@ function downloadBlob(buf: ArrayBuffer, filename: string) {
 }
 
 /**
- * Build and download a single-sheet xlsx with bold header, frozen row,
- * column formatting, zebra striping, and an optional totals row.
+ * Build and download a single-sheet xlsx with bold header, frozen header
+ * row, column formatting, zebra striping, and an optional "Total" row.
  */
 export async function exportXlsx<T extends Record<string, any>>(
   filename: string,
@@ -62,9 +62,7 @@ export async function exportXlsx<T extends Record<string, any>>(
   wb.creator = "Hotspot Market Payroll";
   wb.created = new Date();
 
-  const ws = wb.addWorksheet(sheet.name, {
-    views: [{ state: "frozen", ySplit: sheet.title ? 3 : 1 }],
-  });
+  const ws = wb.addWorksheet(sheet.name);
 
   let headerRowIndex = 1;
 
@@ -95,6 +93,10 @@ export async function exportXlsx<T extends Record<string, any>>(
     };
   });
   headerRow.height = 22;
+  // Freeze everything down to and including the column header, wherever
+  // the title/subtitle rows pushed it, so the header never scrolls away.
+  headerRowIndex = headerRow.number;
+  ws.views = [{ state: "frozen", xSplit: 0, ySplit: headerRowIndex }];
 
   // Apply column widths + per-cell alignment after the header is added.
   sheet.columns.forEach((c, i) => {
