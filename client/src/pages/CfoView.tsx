@@ -465,7 +465,12 @@ export default function CfoView() {
       prev,
       wow,
       wowPct,
-      avg: totalGross / weeks.length,
+      // Average only weeks that actually had payroll — a week with no data
+      // yet is not a $0 week, and counting it would drag the average down.
+      avg: paidWeeks.length
+        ? paidWeeks.reduce((sum, g) => sum + g, 0) / paidWeeks.length
+        : 0,
+      paidWeekCount: paidWeeks.length,
       totalGross,
       totalHours,
       avgCostPerHour: totalHours > 0 ? totalGross / totalHours : 0,
@@ -558,9 +563,13 @@ export default function CfoView() {
             <KpiCell
               hue="violet"
               icon={<BarChart3 />}
-              label="5-week average"
+              label="Average week"
               value={<Money value={m.avg} />}
-              sub="per closed pay week"
+              sub={
+                m.paidWeekCount === weeks.length
+                  ? `last ${weeks.length} closed pay weeks`
+                  : `over the ${m.paidWeekCount} of ${weeks.length} closed weeks with payroll`
+              }
             />
             <KpiCell
               hue="blue"
@@ -776,8 +785,8 @@ export default function CfoView() {
                 sub={
                   <>
                     Last closed week ({fmtWeekRange(new Date(m.last.weekStart))}
-                    ) beside each store&apos;s 5-week average. A store whose
-                    time clock isn&apos;t sending data reads $0.
+                    ) beside each store&apos;s average week (weeks with payroll
+                    only). A store whose time clock isn&apos;t sending data reads $0.
                   </>
                 }
               />
@@ -797,7 +806,7 @@ export default function CfoView() {
                         </TableHead>
                         <TableHead className="text-right">Change</TableHead>
                         <TableHead className="hidden sm:table-cell text-right">
-                          5-week avg
+                          Avg week
                         </TableHead>
                       </TableRow>
                     </TableHeader>
@@ -809,11 +818,15 @@ export default function CfoView() {
                           prevG > 0 && cur.gross > 0
                             ? ((cur.gross - prevG) / prevG) * 100
                             : null;
-                        const avg5 =
-                          weeks.reduce(
-                            (sum, w) => sum + (w.byStore[s]?.gross ?? 0),
-                            0
-                          ) / weeks.length;
+                        // Same rule as the headline average: only weeks
+                        // in which this store had payroll.
+                        const storeWeeks = weeks
+                          .map(w => w.byStore[s]?.gross ?? 0)
+                          .filter(g => g > 0);
+                        const avg5 = storeWeeks.length
+                          ? storeWeeks.reduce((sum, g) => sum + g, 0) /
+                            storeWeeks.length
+                          : 0;
                         const lastPunchAt = cfoQ.data?.feeds?.find(
                           f => f.store === s
                         )?.lastPunchAt;
