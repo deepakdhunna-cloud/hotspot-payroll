@@ -1,5 +1,6 @@
 /**
- * One-tap punch fixes, usable anywhere a punch appears.
+ * One-tap punch fixes, usable anywhere a punch appears — plus the store-time
+ * date + time field the Punches tab shares.
  *
  * ClockOutDialog — clock somebody out from the website: "now" by default,
  * one tap for "at scheduled end" when the shift's printed end time is
@@ -8,11 +9,15 @@
  * FixTimeDialog — adjust a punch's clock-in (and clock-out, when closed)
  * without hunting through the Punches tab.
  *
- * Both ride the existing store-scoped, audited `clock.update` procedure.
+ * Every time here is STORE time (America/Chicago) — what the kiosk recorded,
+ * whatever time zone the viewing device is in. Both dialogs ride the
+ * store-scoped, audited `clock.update` procedure; the server refuses future
+ * times and overlapping punches, and its message shows inline.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -24,7 +29,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { fmtDuration } from "@/lib/payweek";
+import { errorMessage } from "@/lib/errors";
+import {
+  BUSINESS_TIME_ZONE,
+  fmtDuration,
+  fmtTime,
+  fromStoreInput,
+  storeDayKey,
+  storeTzLabel,
+  toStoreInput,
+} from "@/lib/payweek";
 import { CalendarClock, Check, Clock, LogOut } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,14 +51,57 @@ export type QuickPunch = {
   shiftEndLabel?: string | null;
 };
 
-const fmtClock = (d: Date) =>
-  d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-const fmtDay = (d: Date) =>
-  d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+/** How far past "now" a punch time may be (device clock skew) — matches the server. */
+export const FUTURE_TOLERANCE_MS = 2 * 60_000;
+/** Shifts longer than this get a "double-check the dates" warning. */
+export const LONG_SHIFT_HOURS = 16;
+/** Amber text dark enough to read on a white card (the raw token is too light). */
+export const WARN_TEXT = "text-[color-mix(in_oklab,var(--warning)_68%,black)]";
 
-/** "5:00pm" / "5 PM" / "17:30" → a Date on the same local day as `base`. */
+/* ------------------------------------------------------------------ */
+/* Store-time helpers                                                  */
+/* ------------------------------------------------------------------ */
+
+/** "Sun, Nov 8" in store time. */
+export function fmtShortDay(d: Date | string): string {
+  return new Date(d).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: BUSINESS_TIME_ZONE,
+  });
+}
+
+/** Calendar arithmetic on store-local "YYYY-MM-DD" day strings. */
+export function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** An instant as store-time form fields: { day: "2026-11-04", time: "21:00" }. */
+export function splitStoreTime(d: Date | string): {
+  day: string;
+  time: string;
+} {
+  const [day, time] = toStoreInput(d).split("T");
+  return { day, time };
+}
+
+/** Store-time day + time fields → the real instant (null while incomplete). */
+export function joinStoreTime(day: string, time: string): Date | null {
+  if (!day || !time) return null;
+  return fromStoreInput(`${day}T${time}`);
+}
+
+/**
+ * "5:00pm" / "5 PM" / "17:30" → that clock time on the same STORE-local day
+ * as `base` (schedules are printed in store time).
+ */
 export function parseTimeLabel(label: string, base: Date): Date | null {
-  const m = label.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?$/i);
+  const m = label
+    .trim()
+    .match(/^(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?$/i);
   if (!m) return null;
   let h = Number(m[1]);
   const min = Number(m[2] ?? 0);
@@ -52,17 +109,96 @@ export function parseTimeLabel(label: string, base: Date): Date | null {
   if (h > 23 || min > 59) return null;
   if (mer?.startsWith("p") && h < 12) h += 12;
   if (mer?.startsWith("a") && h === 12) h = 0;
-  const d = new Date(base);
-  d.setHours(h, min, 0, 0);
-  return d;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return fromStoreInput(`${storeDayKey(base)}T${pad(h)}:${pad(min)}`);
 }
 
-const toLocalInput = (d: Date) => {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-};
+/** A `Date` that re-renders every `everyMs` while `active` (live "now"). */
+export function useNow(active: boolean, everyMs = 15_000): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!active) return;
+    setNow(new Date());
+    const id = window.setInterval(() => setNow(new Date()), everyMs);
+    return () => window.clearInterval(id);
+  }, [active, everyMs]);
+  return now;
+}
 
-function useClockUpdate(onDone: () => void) {
+/**
+ * A store-time moment as two native fields — a date and a time — which are
+ * far easier to work than one cramped date-time box. The label names the
+ * store's time zone so nobody types device time by mistake.
+ */
+export function StoreDateTimeField({
+  id,
+  label,
+  day,
+  time,
+  onDayChange,
+  onTimeChange,
+  invalid,
+  maxDay,
+  disabled,
+  children,
+}: {
+  id: string;
+  label: string;
+  day: string;
+  time: string;
+  onDayChange: (day: string) => void;
+  onTimeChange: (time: string) => void;
+  invalid?: boolean;
+  maxDay?: string;
+  disabled?: boolean;
+  /** Hint or status line under the fields. */
+  children?: ReactNode;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={`${id}-time`} className={cn(disabled && "opacity-60")}>
+        {label}{" "}
+        <span className="text-xs font-normal text-muted-foreground">
+          ({storeTzLabel()})
+        </span>
+      </Label>
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,8.5rem)] gap-2">
+        <Input
+          id={`${id}-day`}
+          type="date"
+          value={day}
+          max={maxDay}
+          onChange={e => onDayChange(e.target.value)}
+          aria-label={`${label} date`}
+          aria-invalid={invalid || undefined}
+          disabled={disabled}
+          className="tabular-nums"
+        />
+        <Input
+          id={`${id}-time`}
+          type="time"
+          value={time}
+          onChange={e => onTimeChange(e.target.value)}
+          aria-invalid={invalid || undefined}
+          disabled={disabled}
+          className="tabular-nums"
+        />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** The inline problem line every punch dialog uses (validation or server). */
+export function FormAlert({ children }: { children: ReactNode }) {
+  return (
+    <p role="alert" className="text-sm font-medium text-destructive">
+      {children}
+    </p>
+  );
+}
+
+function useClockUpdate() {
   const utils = trpc.useUtils();
   return trpc.clock.update.useMutation({
     onSuccess: () => {
@@ -71,15 +207,63 @@ function useClockUpdate(onDone: () => void) {
       utils.clock.weekHoursBulk.invalidate();
       utils.payroll.week.invalidate();
       utils.attention.list.invalidate();
-      onDone();
     },
-    onError: (e) => toast.error(e.message),
   });
 }
 
 /* ------------------------------------------------------------------ */
 /* Clock out                                                           */
 /* ------------------------------------------------------------------ */
+
+/** One selectable way to end the shift. Lives outside the dialog so a
+ *  choice never remounts the buttons (and keyboard focus stays put). */
+function ChoiceCard({
+  selected,
+  onSelect,
+  icon,
+  title,
+  sub,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  icon: ReactNode;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex w-full min-h-14 items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+        selected
+          ? "border-primary bg-primary/5"
+          : "border-border bg-card hover:border-input"
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg [&>svg]:h-4 [&>svg]:w-4",
+          selected
+            ? "bg-primary text-primary-foreground"
+            : "bg-secondary text-muted-foreground"
+        )}
+        aria-hidden
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="block text-xs text-muted-foreground">{sub}</span>
+      </span>
+      {selected ? (
+        <Check className="ml-auto h-4 w-4 shrink-0 text-primary" aria-hidden />
+      ) : null}
+    </button>
+  );
+}
 
 export function ClockOutDialog({
   punch,
@@ -88,8 +272,13 @@ export function ClockOutDialog({
   punch: QuickPunch | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const open = !!punch;
   const [choice, setChoice] = useState<"now" | "scheduled" | "custom">("now");
-  const [custom, setCustom] = useState("");
+  const [day, setDay] = useState("");
+  const [time, setTime] = useState("");
+  const [tried, setTried] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const now = useNow(open);
 
   const clockIn = punch ? new Date(punch.clockInAt) : null;
 
@@ -99,141 +288,159 @@ export function ClockOutDialog({
     if (!punch?.shiftEndLabel || !clockIn) return null;
     let d = parseTimeLabel(punch.shiftEndLabel, clockIn);
     if (!d) return null;
-    if (d.getTime() <= clockIn.getTime()) d = new Date(d.getTime() + 86_400_000);
+    if (d.getTime() <= clockIn.getTime())
+      d = new Date(d.getTime() + 86_400_000);
     if (d.getTime() > Date.now()) return null;
     return d;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [punch?.id, punch?.clockInAt, punch?.shiftEndLabel]);
 
+  // Fresh state every time the dialog opens for a punch.
   useEffect(() => {
     if (!punch) return;
     setChoice(scheduledEnd ? "scheduled" : "now");
-    setCustom(toLocalInput(new Date()));
+    const s = splitStoreTime(new Date());
+    setDay(s.day);
+    setTime(s.time);
+    setTried(false);
+    setServerError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [punch?.id]);
 
-  const update = useClockUpdate(() => onOpenChange(false));
+  const update = useClockUpdate();
 
   if (!punch || !clockIn) return null;
 
-  const chosen =
+  const chosenFor = (at: Date) =>
     choice === "now"
-      ? new Date()
+      ? at
       : choice === "scheduled" && scheduledEnd
         ? scheduledEnd
-        : custom
-          ? new Date(custom)
-          : null;
-  const valid = !!chosen && !isNaN(chosen.getTime()) && chosen.getTime() > clockIn.getTime();
-  const hrsSoFar = (Date.now() - clockIn.getTime()) / 3_600_000;
+        : joinStoreTime(day, time);
+  const chosen = chosenFor(now);
+
+  const problemFor = (at: Date | null, nowAt: Date): string | null => {
+    if (!at || isNaN(at.getTime()))
+      return "Pick the date and time they clocked out.";
+    if (at.getTime() <= clockIn.getTime())
+      return `Clock-out must be after the ${fmtTime(clockIn)} clock-in (${fmtShortDay(clockIn)}).`;
+    if (at.getTime() > nowAt.getTime() + FUTURE_TOLERANCE_MS)
+      return "That time hasn't happened yet. Pick a time before now, or choose Now.";
+    return null;
+  };
+  const problem = problemFor(chosen, now);
+  // Empty fields only complain after a save attempt; a complete-but-wrong
+  // time says so right away.
+  const showProblem =
+    !!problem && (tried || (choice === "custom" && !!day && !!time));
 
   const submit = () => {
-    if (!valid || !chosen) return;
+    setTried(true);
+    setServerError(null);
+    const at = chosenFor(new Date()); // "Now" means the moment of the click
+    if (problemFor(at, new Date()) || !at) return;
     update.mutate(
-      { id: punch.id, clockOutAt: chosen },
+      { id: punch.id, clockOutAt: at },
       {
-        onSuccess: () =>
-          toast.success(`Clocked out ${punch.employeeName} at ${fmtClock(chosen)}.`),
-      },
+        onSuccess: () => {
+          toast.success(`Clocked out ${punch.employeeName} at ${fmtTime(at)}.`);
+          onOpenChange(false);
+        },
+        onError: e => setServerError(errorMessage(e)),
+      }
     );
   };
 
-  const Option = ({
-    value,
-    icon,
-    title,
-    sub,
-  }: {
-    value: typeof choice;
-    icon: React.ReactNode;
-    title: string;
-    sub: string;
-  }) => (
-    <button
-      type="button"
-      onClick={() => setChoice(value)}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors",
-        choice === value
-          ? "border-primary bg-primary/5"
-          : "border-border bg-card hover:border-input",
-      )}
-      aria-pressed={choice === value}
-    >
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-          choice === value ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground",
-        )}
-      >
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold">{title}</span>
-        <span className="block text-xs text-muted-foreground">{sub}</span>
-      </span>
-      {choice === value ? <Check className="ml-auto h-4 w-4 text-primary" /> : null}
-    </button>
-  );
+  const hrsSoFar = Math.max(0, (now.getTime() - clockIn.getTime()) / 3_600_000);
 
   return (
-    <Dialog open={!!punch} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Clock out {punch.employeeName}</DialogTitle>
           <DialogDescription>
-            On the clock since {fmtClock(clockIn)} ({fmtDay(clockIn)}) ·{" "}
+            On the clock since {fmtTime(clockIn)} ({fmtShortDay(clockIn)}) ·{" "}
             {fmtDuration(hrsSoFar)} so far.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2">
-          {scheduledEnd ? (
-            <Option
-              value="scheduled"
-              icon={<CalendarClock className="h-4 w-4" />}
-              title={`At scheduled end — ${fmtClock(scheduledEnd)}`}
-              sub={`${fmtDay(scheduledEnd)} · from the imported schedule (“${punch.shiftEndLabel}”)`}
+        <form
+          id="clock-out-form"
+          noValidate
+          onSubmit={e => {
+            e.preventDefault();
+            submit();
+          }}
+          className="flex flex-col gap-2"
+        >
+          <div
+            role="radiogroup"
+            aria-label="When did they clock out?"
+            className="flex flex-col gap-2"
+          >
+            {scheduledEnd ? (
+              <ChoiceCard
+                selected={choice === "scheduled"}
+                onSelect={() => setChoice("scheduled")}
+                icon={<CalendarClock />}
+                title={`At scheduled end — ${fmtTime(scheduledEnd)}`}
+                sub={`${fmtShortDay(scheduledEnd)} · from the imported schedule (“${punch.shiftEndLabel}”)`}
+              />
+            ) : null}
+            <ChoiceCard
+              selected={choice === "now"}
+              onSelect={() => setChoice("now")}
+              icon={<LogOut />}
+              title={`Now — ${fmtTime(now)}`}
+              sub="Ends the shift at the moment you confirm"
             />
-          ) : null}
-          <Option
-            value="now"
-            icon={<LogOut className="h-4 w-4" />}
-            title={`Now — ${fmtClock(new Date())}`}
-            sub="Ends the shift at the current time"
-          />
-          <Option
-            value="custom"
-            icon={<Clock className="h-4 w-4" />}
-            title="A specific time"
-            sub="Pick the exact clock-out moment"
-          />
+            <ChoiceCard
+              selected={choice === "custom"}
+              onSelect={() => setChoice("custom")}
+              icon={<Clock />}
+              title="A specific time"
+              sub="Pick the exact clock-out moment"
+            />
+          </div>
           {choice === "custom" ? (
-            <Input
-              type="datetime-local"
-              value={custom}
-              onChange={(e) => setCustom(e.target.value)}
-              max={toLocalInput(new Date())}
-              className="tabular-nums"
-              aria-label="Custom clock-out time"
-            />
+            <div className="mt-1">
+              <StoreDateTimeField
+                id="clock-out-custom"
+                label="Clock out"
+                day={day}
+                time={time}
+                onDayChange={v => {
+                  setDay(v);
+                  setServerError(null);
+                }}
+                onTimeChange={v => {
+                  setTime(v);
+                  setServerError(null);
+                }}
+                maxDay={storeDayKey(now)}
+                invalid={showProblem}
+              />
+            </div>
           ) : null}
-          {!valid && choice === "custom" ? (
-            <p className="text-xs text-destructive">
-              Clock-out must be after the {fmtClock(clockIn)} clock-in.
-            </p>
-          ) : null}
-        </div>
+          {showProblem ? <FormAlert>{problem}</FormAlert> : null}
+          {serverError ? <FormAlert>{serverError}</FormAlert> : null}
+        </form>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={!valid || update.isPending}>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            type="submit"
+            form="clock-out-form"
+            disabled={update.isPending}
+          >
             {update.isPending
               ? "Clocking out…"
-              : chosen
-                ? `Clock out at ${fmtClock(chosen)}`
+              : chosen && !problem
+                ? `Clock out at ${fmtTime(chosen)}`
                 : "Clock out"}
           </Button>
         </DialogFooter>
@@ -253,43 +460,91 @@ export function FixTimeDialog({
   punch: QuickPunch | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [inVal, setInVal] = useState("");
-  const [outVal, setOutVal] = useState("");
+  const open = !!punch;
+  const [inDay, setInDay] = useState("");
+  const [inTime, setInTime] = useState("");
+  const [outDay, setOutDay] = useState("");
+  const [outTime, setOutTime] = useState("");
+  const [tried, setTried] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const now = useNow(open);
 
   const isOpenPunch = !punch?.clockOutAt;
 
+  // Fresh state every time the dialog opens for a punch.
   useEffect(() => {
     if (!punch) return;
-    setInVal(toLocalInput(new Date(punch.clockInAt)));
-    setOutVal(punch.clockOutAt ? toLocalInput(new Date(punch.clockOutAt)) : "");
+    const i = splitStoreTime(punch.clockInAt);
+    setInDay(i.day);
+    setInTime(i.time);
+    if (punch.clockOutAt) {
+      const o = splitStoreTime(punch.clockOutAt);
+      setOutDay(o.day);
+      setOutTime(o.time);
+    } else {
+      setOutDay("");
+      setOutTime("");
+    }
+    setTried(false);
+    setServerError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [punch?.id]);
 
-  const update = useClockUpdate(() => onOpenChange(false));
+  const update = useClockUpdate();
 
   if (!punch) return null;
 
-  const inDate = inVal ? new Date(inVal) : null;
-  const outDate = outVal ? new Date(outVal) : null;
-  const valid =
-    !!inDate &&
-    !isNaN(inDate.getTime()) &&
-    (isOpenPunch || (!!outDate && !isNaN(outDate.getTime()) && outDate > inDate));
+  const inAt = joinStoreTime(inDay, inTime);
+  const outAt = isOpenPunch ? null : joinStoreTime(outDay, outTime);
+  const limit = now.getTime() + FUTURE_TOLERANCE_MS;
+
+  let inProblem: string | null = null;
+  let outProblem: string | null = null;
+  if (!inAt) inProblem = "Enter the clock-in date and time.";
+  else if (inAt.getTime() > limit)
+    inProblem = "Clock-in can't be in the future.";
+  if (!isOpenPunch) {
+    if (!outAt) outProblem = "Enter the clock-out date and time.";
+    else if (inAt && outAt.getTime() <= inAt.getTime())
+      outProblem = "Clock-out must be after clock-in.";
+    else if (outAt.getTime() > limit)
+      outProblem = "Clock-out can't be in the future.";
+  }
+  // Empty fields only complain after a save attempt.
+  const showIn = !!inProblem && (tried || (!!inDay && !!inTime));
+  const showOut = !!outProblem && (tried || (!!outDay && !!outTime));
+  const problem = (showIn && inProblem) || (showOut && outProblem) || null;
+
+  const hours =
+    inAt && (isOpenPunch || outAt)
+      ? Math.max(0, ((outAt ?? now).getTime() - inAt.getTime()) / 3_600_000)
+      : null;
+  const long = hours !== null && hours > LONG_SHIFT_HOURS && !problem;
 
   const submit = () => {
-    if (!valid || !inDate) return;
+    setTried(true);
+    setServerError(null);
+    if (inProblem || outProblem || !inAt) return;
     update.mutate(
       {
         id: punch.id,
-        clockInAt: inDate,
-        ...(isOpenPunch ? {} : { clockOutAt: outDate }),
+        clockInAt: inAt,
+        ...(isOpenPunch ? {} : { clockOutAt: outAt }),
       },
-      { onSuccess: () => toast.success(`Updated ${punch.employeeName}'s punch.`) },
+      {
+        onSuccess: () => {
+          toast.success(`Updated ${punch.employeeName}'s punch.`);
+          onOpenChange(false);
+        },
+        onError: e => setServerError(errorMessage(e)),
+      }
     );
   };
 
+  const clearServer = () => setServerError(null);
+
   return (
-    <Dialog open={!!punch} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Fix {punch.employeeName}&apos;s time</DialogTitle>
@@ -300,41 +555,78 @@ export function FixTimeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4">
-          <div className="grid gap-1.5">
-            <Label htmlFor="fix-in">Clock in</Label>
-            <Input
-              id="fix-in"
-              type="datetime-local"
-              value={inVal}
-              onChange={(e) => setInVal(e.target.value)}
-              className="tabular-nums"
-            />
-          </div>
+        <form
+          id="fix-time-form"
+          noValidate
+          onSubmit={e => {
+            e.preventDefault();
+            submit();
+          }}
+          className="grid gap-4"
+        >
+          <StoreDateTimeField
+            id="fix-in"
+            label="Clock in"
+            day={inDay}
+            time={inTime}
+            onDayChange={v => {
+              setInDay(v);
+              clearServer();
+            }}
+            onTimeChange={v => {
+              setInTime(v);
+              clearServer();
+            }}
+            maxDay={storeDayKey(now)}
+            invalid={showIn}
+          />
           {!isOpenPunch ? (
-            <div className="grid gap-1.5">
-              <Label htmlFor="fix-out">Clock out</Label>
-              <Input
-                id="fix-out"
-                type="datetime-local"
-                value={outVal}
-                onChange={(e) => setOutVal(e.target.value)}
-                className="tabular-nums"
-              />
-              {!valid && inDate && outDate ? (
-                <p className="text-xs text-destructive">
-                  Clock-out must be after clock-in.
-                </p>
-              ) : null}
-            </div>
+            <StoreDateTimeField
+              id="fix-out"
+              label="Clock out"
+              day={outDay}
+              time={outTime}
+              onDayChange={v => {
+                setOutDay(v);
+                clearServer();
+              }}
+              onTimeChange={v => {
+                setOutTime(v);
+                clearServer();
+              }}
+              maxDay={storeDayKey(now)}
+              invalid={showOut}
+            />
           ) : null}
-        </div>
+          {hours !== null && !problem ? (
+            <p
+              className={cn(
+                "text-sm",
+                long ? cn("font-medium", WARN_TEXT) : "text-muted-foreground"
+              )}
+            >
+              {isOpenPunch
+                ? `${fmtDuration(hours)} on the clock so far.`
+                : long
+                  ? `That's a ${fmtDuration(hours)} shift — double-check the dates.`
+                  : `${fmtDuration(hours)} shift.`}
+            </p>
+          ) : null}
+          {problem ? <FormAlert>{problem}</FormAlert> : null}
+          {serverError ? <FormAlert>{serverError}</FormAlert> : null}
+        </form>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={!valid || update.isPending}>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            type="submit"
+            form="fix-time-form"
+            disabled={update.isPending}
+          >
             {update.isPending ? "Saving…" : "Save times"}
           </Button>
         </DialogFooter>
