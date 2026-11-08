@@ -156,25 +156,28 @@ export function AttentionCenter({ className }: { className?: string }) {
 
   return (
     <section
-      className={cn("surface-card overflow-hidden rise-in", className)}
+      className={cn("attention-card rise-in", className)}
       aria-label="Needs attention"
     >
-      <header className="callout-warn flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-0 border-b">
-        <span className="icon-badge icon-badge-sm">
+      <header className="attention-head flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 sm:px-5 py-3.5">
+        <span className="attention-beacon icon-badge" aria-hidden="true">
           <ShieldAlert />
         </span>
-        <h2 className="section-title">Needs attention</h2>
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[11px] font-semibold tabular-nums text-white">
-          {items.length}
-        </span>
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold leading-tight text-white flex items-center gap-2">
+            Needs attention
+            <span className="attention-count">{items.length}</span>
+          </h2>
+          <p className="text-xs text-white/60 leading-snug">
+            Each stays here until someone signs it off
+          </p>
+        </div>
         {oldest >= 1 ? (
-          <span className="ml-auto text-xs text-muted-foreground">
-            oldest waiting {oldest}d
-          </span>
+          <span className="ml-auto attention-age">oldest waiting {oldest}d</span>
         ) : null}
       </header>
 
-      <ul className="divide-y divide-border">
+      <ul className="divide-y divide-border bg-card">
         {items.map((item) => {
           const p = pendingFor(item.createdAt);
           const fix = fixHref(item);
@@ -190,22 +193,21 @@ export function AttentionCenter({ className }: { className?: string }) {
             <li key={item.id} className="px-4 sm:px-5 py-3.5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <div className="flex flex-1 min-w-0 items-start gap-3">
-                  <AlertTriangle
-                    className={cn(
-                      "mt-0.5 h-4 w-4 shrink-0",
-                      stale ? "text-destructive" : "text-warning",
-                    )}
+                  <span
+                    className={cn("attention-marker", stale && "attention-marker-stale")}
                     aria-hidden="true"
-                  />
+                  >
+                    <AlertTriangle />
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium leading-snug">{item.title}</p>
+                    <p className="text-sm font-semibold leading-snug">{item.title}</p>
                     {item.detail ? (
                       <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
                         {item.detail}
                       </p>
                     ) : null}
                     <p className="text-xs mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
-                      <span className={stale ? "chip-bad" : "chip-neutral"}>{p.label}</span>
+                      <span className={stale ? "chip-bad" : "chip-warn"}>{p.label}</span>
                       <span>flagged {p.since}</span>
                       {item.storeLocation ? <span>· {item.storeLocation}</span> : null}
                     </p>
