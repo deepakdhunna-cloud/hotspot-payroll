@@ -1,4 +1,4 @@
-import { getWeekStart } from "@shared/hotspot";
+import { getWeekStart, payWeekOf } from "@shared/hotspot";
 
 /**
  * The live Dashboard can show a punch that began before the displayed pay
@@ -10,8 +10,12 @@ export function dashboardScheduleWeeks(
   openPunches: ReadonlyArray<{ clockInAt: Date | string }>,
 ): Date[] {
   const weeks = new Map<string, Date>();
-  for (const date of [currentWeek, ...openPunches.map((punch) => punch.clockInAt)]) {
-    const week = getWeekStart(new Date(date));
+  const current = getWeekStart(currentWeek);
+  weeks.set(current.toISOString(), current);
+  // A punch's week is decided by its store-local date (a Wednesday 9pm
+  // clock-in is still Wednesday), not by the UTC calendar.
+  for (const punch of openPunches) {
+    const week = payWeekOf(new Date(punch.clockInAt));
     weeks.set(week.toISOString(), week);
   }
   return Array.from(weeks.values());

@@ -265,6 +265,47 @@ export function businessDayStart(now: Date = new Date()): Date {
   return new Date(`${ymd}T00:00:00Z`);
 }
 
+/** Store-timezone UTC offset in minutes at an instant (Chicago: -300 / -360). */
+function businessOffsetMinutes(at: Date): number {
+  const offsetName = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(at)
+    .find(p => p.type === "timeZoneName")?.value;
+  const m = offsetName?.match(/GMT([+-]\d+)(?::(\d+))?/);
+  if (!m) return offsetName === "GMT" ? 0 : -300;
+  const offsetHours = Number(m[1]);
+  const offsetMinutes = m[2] ? Math.sign(offsetHours || 1) * Number(m[2]) : 0;
+  return offsetHours * 60 + offsetMinutes;
+}
+
+/**
+ * The UTC instant a calendar day (a 00:00 UTC marker) begins in store-local
+ * time. Thu Nov 5 → Thu Nov 5 06:00Z (CST) or 05:00Z (CDT). Punch windows
+ * use this so an evening shift lands on the day — and pay week — the
+ * employee actually worked it.
+ */
+export function businessMidnightUtc(dayMarker: Date): Date {
+  const day = new Date(
+    Date.UTC(
+      dayMarker.getUTCFullYear(),
+      dayMarker.getUTCMonth(),
+      dayMarker.getUTCDate()
+    )
+  );
+  // Local midnight is 05:00–06:00Z; sample the offset there, then confirm
+  // it at the computed instant (covers a DST change near midnight).
+  let offset = businessOffsetMinutes(new Date(day.getTime() + 6 * 3_600_000));
+  let instant = new Date(day.getTime() - offset * 60_000);
+  const confirmed = businessOffsetMinutes(instant);
+  if (confirmed !== offset) {
+    offset = confirmed;
+    instant = new Date(day.getTime() - offset * 60_000);
+  }
+  return instant;
+}
+
 /**
  * The actual UTC instant when the current business day began (midnight in
  * the store timezone). Used to split a live week into "closed days"
@@ -272,19 +313,50 @@ export function businessDayStart(now: Date = new Date()): Date {
  * the schedule) for payroll projection.
  */
 export function businessDayBoundaryUtc(now: Date = new Date()): Date {
-  const marker = businessDayStart(now);
-  const offsetName = new Intl.DateTimeFormat("en-US", {
-    timeZone: BUSINESS_TIME_ZONE,
-    timeZoneName: "shortOffset",
-  })
-    .formatToParts(now)
-    .find(p => p.type === "timeZoneName")?.value;
-  const m = offsetName?.match(/GMT([+-]\d+)(?::(\d+))?/);
-  const offsetHours = m ? Number(m[1]) : -5;
-  const offsetMinutes = m?.[2] ? Math.sign(offsetHours) * Number(m[2]) : 0;
-  return new Date(
-    marker.getTime() - (offsetHours * 60 + offsetMinutes) * 60_000
-  );
+  return businessMidnightUtc(businessDayStart(now));
+}
+
+/**
+ * The real instants that bound a pay week's punches: [Thursday 00:00 store
+ * time, next Thursday 00:00 store time). Every "hours clocked this week"
+ * query uses these, never the UTC date markers, so a Wednesday-night
+ * closer's shift counts in the week it was worked.
+ */
+export function payWeekBounds(weekStart: Date): { start: Date; end: Date } {
+  const week = getWeekStart(weekStart);
+  const next = new Date(week);
+  next.setUTCDate(next.getUTCDate() + 7);
+  return { start: businessMidnightUtc(week), end: businessMidnightUtc(next) };
+}
+
+/**
+ * The UTC instant of a wall-clock time in store-local time — how a typed
+ * "Nov 4, 9:00 PM" becomes a real moment no matter where the device is.
+ * `month` is 1–12.
+ */
+export function businessLocalToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number
+): Date {
+  const asUtc = Date.UTC(year, month - 1, day, hour, minute);
+  const offset = businessOffsetMinutes(new Date(asUtc));
+  let instant = asUtc - offset * 60_000;
+  const confirmed = businessOffsetMinutes(new Date(instant));
+  if (confirmed !== offset) instant = asUtc - confirmed * 60_000;
+  return new Date(instant);
+}
+
+/** The pay week (Thursday marker) an instant falls in, by store-local date. */
+export function payWeekOf(instant: Date = new Date()): Date {
+  return getWeekStart(businessDayStart(instant));
+}
+
+/** The most recently CLOSED pay week as of `now`, by store-local date. */
+export function lastClosedPayWeek(now: Date = new Date()): Date {
+  return getCurrentPayPeriodStart(businessDayStart(now));
 }
 
 /**

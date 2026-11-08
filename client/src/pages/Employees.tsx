@@ -1,7 +1,9 @@
 import { Button } from "@/components/ui/button";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -10,6 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -32,31 +35,35 @@ import { fmtMoney, STORE_ABBR } from "@/lib/format";
 import { KeyRound, Plus, Search, ArrowRight, Trash2, X, ChevronRight } from "lucide-react";
 import { TableStateRows } from "@/components/QueryStates";
 import { useEffect, useMemo, useState } from "react";
-import { consumeQueryFlag } from "@/lib/queryFlag";
+import { useQueryFlag } from "@/lib/queryFlag";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DeleteEmployeeCopy } from "@/components/DeleteEmployeeCopy";
+import { errorMessage } from "@/lib/errors";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import { useStoreScope } from "@/contexts/StoreScopeContext";
 
 export default function Employees() {
+  usePageTitle("Employees");
   const { scope: storeFilter } = useStoreScope();
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   // Dashboard "Add employee" shortcut lands here with ?add=1.
-  useEffect(() => {
-    if (consumeQueryFlag("add")) setAddOpen(true);
-  }, []);
+  useQueryFlag("add", () => setAddOpen(true));
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkStore, setBulkStore] = useState<string>("");
   const [bulkRole, setBulkRole] = useState<string>("");
 
   const optionsQ = trpc.meta.options.useQuery();
   const scopeQ = trpc.meta.myScope.useQuery();
+  // Former (deactivated) people stay out of the way until asked for.
+  const [showFormer, setShowFormer] = useState(false);
   const listQ = trpc.employees.list.useQuery({
     store: storeFilter === "all" ? undefined : (storeFilter as any),
+    includeInactive: showFormer,
   });
 
   const filtered = useMemo(() => {
@@ -78,7 +85,9 @@ export default function Employees() {
 
   const stores = scopeQ.data?.stores ?? [];
   const roles = optionsQ.data?.roles ?? [];
-  const missingCodes = (listQ.data ?? []).filter((e) => !e.clockCodeHash).length;
+  const activePeople = (listQ.data ?? []).filter((e) => e.active !== 0);
+  const formerCount = (listQ.data ?? []).length - activePeople.length;
+  const missingCodes = activePeople.filter((e) => !e.clockCodeHash).length;
   // A store column only earns its place when the list spans several stores.
   const showStore = storeFilter === "all" && stores.length > 1;
   const [, navigate] = useLocation();
@@ -97,7 +106,7 @@ export default function Employees() {
       utils.dashboard.summary.invalidate();
       utils.attention.list.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const bulkM = trpc.employees.bulkUpdate.useMutation({
@@ -111,7 +120,7 @@ export default function Employees() {
       utils.employees.list.invalidate();
       utils.dashboard.summary.invalidate();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(errorMessage(e)),
   });
 
   // Clear selections that fall out of the filtered view — including rows that
@@ -162,7 +171,7 @@ export default function Employees() {
         title="Employees"
         description={
           listQ.data
-            ? `${listQ.data.length} ${listQ.data.length === 1 ? "person" : "people"}${
+            ? `${activePeople.length} ${activePeople.length === 1 ? "employee" : "employees"}${
                 storeFilter === "all"
                   ? stores.length > 1
                     ? " across your stores"
@@ -170,7 +179,9 @@ export default function Employees() {
                       ? ` at ${stores[0]}`
                       : ""
                   : ` at ${storeFilter}`
-              }${missingCodes > 0 ? ` · ${missingCodes} without a clock code` : ""}`
+              }${missingCodes > 0 ? ` · ${missingCodes} without a clock code` : ""}${
+                showFormer && formerCount > 0 ? ` · ${formerCount} former` : ""
+              }`
             : undefined
         }
         actions={
@@ -183,6 +194,9 @@ export default function Employees() {
             <AddEmployeeDialog
               stores={stores}
               roles={roles}
+              defaultStore={
+                storeFilter !== "all" ? storeFilter : stores.length === 1 ? stores[0] : ""
+              }
               onSuccess={() => setAddOpen(false)}
             />
           </Dialog>
@@ -195,14 +209,18 @@ export default function Employees() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search people"
+                placeholder="Name or phone"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 h-9"
                 aria-label="Search employees"
               />
             </div>
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex items-center gap-3 ml-auto">
+              <label className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                <Switch checked={showFormer} onCheckedChange={setShowFormer} aria-label="Show former employees" />
+                Show former
+              </label>
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="h-9 w-[140px] sm:w-[180px] bg-card">
                   <SelectValue placeholder="All roles" />
@@ -219,6 +237,10 @@ export default function Employees() {
             </div>
           </div>
         </CardHeader>
+        <label className="sm:hidden flex items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm text-muted-foreground">
+          Show former employees
+          <Switch checked={showFormer} onCheckedChange={setShowFormer} />
+        </label>
         {selected.size > 0 && (
           <div className="border-b border-border bg-muted/50 px-4 py-2.5 flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex items-center gap-2 text-sm">
@@ -226,7 +248,7 @@ export default function Employees() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-muted-foreground"
+                className="h-9 sm:h-7 px-2 text-muted-foreground"
                 onClick={() => setSelected(new Set())}
               >
                 <X className="h-3.5 w-3.5 mr-1" /> Clear
@@ -270,16 +292,20 @@ export default function Employees() {
                 trigger={
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="h-9 text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive"
+                    variant="ghost"
+                    className="h-9 bg-card text-destructive ring-1 ring-inset ring-destructive/35 hover:bg-destructive/5 hover:text-destructive"
                     disabled={bulkDeleteM.isPending}
                   >
                     <Trash2 className="h-4 w-4 mr-1.5" />
                     {bulkDeleteM.isPending ? "Deleting…" : `Delete ${selected.size}`}
                   </Button>
                 }
-                title={`Permanently delete ${selected.size} employee${selected.size === 1 ? "" : "s"}?`}
-                description="This removes their profiles AND their punch history, payroll entries and scheduled shifts. A full snapshot of every deleted record is written to the activity log first, so nothing is lost forever — but this list can't be un-deleted from the app. If someone just stopped working here, consider deactivating from their profile instead."
+                title={`Delete ${selected.size} employee${selected.size === 1 ? "" : "s"}?`}
+                description={
+                  <DeleteEmployeeCopy
+                    who={selected.size === 1 ? "this employee" : `these ${selected.size} employees`}
+                  />
+                }
                 confirmLabel={`Delete ${selected.size} employee${selected.size === 1 ? "" : "s"}`}
                 onConfirm={() => bulkDeleteM.mutate({ ids: Array.from(selected) })}
               />
@@ -307,7 +333,7 @@ export default function Employees() {
                   <TableHead className="pl-4 sm:pl-2">Name</TableHead>
                   {showStore ? <TableHead className="hidden md:table-cell">Store</TableHead> : null}
                   <TableHead className="hidden md:table-cell">Phone</TableHead>
-                  <TableHead className="text-right">Pay rate</TableHead>
+                  <TableHead className="text-right">Pay</TableHead>
                   <TableHead className="w-10" aria-label="Open" />
                 </TableRow>
               </TableHeader>
@@ -325,7 +351,7 @@ export default function Employees() {
                   }
                   emptyHint={
                     (listQ.data?.length ?? 0) === 0
-                      ? "Add your team, or import a schedule and add new names from there."
+                      ? "Add your team here, or import a schedule and add new names from there."
                       : undefined
                   }
                 />
@@ -333,7 +359,7 @@ export default function Employees() {
                   <TableRow
                     key={emp.id}
                     data-state={selected.has(emp.id) ? "selected" : undefined}
-                    className="cursor-pointer"
+                    className={`cursor-pointer ${emp.active === 0 ? "opacity-60" : ""}`}
                     onClick={() => navigate(`/employees/${emp.id}`)}
                   >
                     <TableCell
@@ -359,6 +385,7 @@ export default function Employees() {
                           </Link>
                           <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
                             <span className="role-tag">{emp.role}</span>
+                            {emp.active === 0 ? <span className="chip-neutral py-0">Former</span> : null}
                             {showStore ? (
                               <span className="md:hidden">
                                 · {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}
@@ -382,8 +409,17 @@ export default function Employees() {
                       {emp.phone}
                     </TableCell>
                     <TableCell className="text-right tabular-nums font-medium">
-                      {fmtMoney(Number(emp.payRate))}
-                      <span className="text-muted-foreground font-normal">/hr</span>
+                      {emp.weeklyPay != null ? (
+                        <>
+                          {fmtMoney(Number(emp.weeklyPay))}
+                          <span className="text-muted-foreground font-normal">/wk</span>
+                        </>
+                      ) : (
+                        <>
+                          {fmtMoney(Number(emp.payRate))}
+                          <span className="text-muted-foreground font-normal">/hr</span>
+                        </>
+                      )}
                     </TableCell>
                     <TableCell className="pr-3 text-muted-foreground">
                       <ChevronRight className="h-4 w-4" />
@@ -402,36 +438,65 @@ export default function Employees() {
 function AddEmployeeDialog({
   stores,
   roles,
+  defaultStore,
   onSuccess,
 }: {
   stores: string[];
   roles: string[];
+  defaultStore: string;
   onSuccess: () => void;
 }) {
   const utils = trpc.useUtils();
   const create = trpc.employees.create.useMutation({
-    onSuccess: () => {
-      toast.success("Employee added");
+    onSuccess: (_d, vars) => {
+      toast.success(`${vars.fullName} added. Set a clock code from their profile.`);
       utils.employees.list.invalidate();
       utils.dashboard.summary.invalidate();
+      utils.attention.list.invalidate();
+      reset();
       onSuccess();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [payRate, setPayRate] = useState("");
   const [role, setRole] = useState<string>("");
-  const [storeLocation, setStoreLocation] = useState<string>("");
+  const [storeLocation, setStoreLocation] = useState<string>(defaultStore);
+  // Field errors show only after the first try, never while typing.
+  const [tried, setTried] = useState(false);
+  useEffect(() => {
+    if (!storeLocation && defaultStore) setStoreLocation(defaultStore);
+  }, [defaultStore, storeLocation]);
+  const reset = () => {
+    setFullName("");
+    setPhone("");
+    setPayRate("");
+    setRole("");
+    setStoreLocation(defaultStore);
+    setTried(false);
+  };
+
+  const rate = Number(payRate);
+  const invalid = {
+    fullName: !fullName.trim(),
+    phone: !phone.trim(),
+    payRate: payRate === "" || Number.isNaN(rate) || rate < 0 || rate > 1000,
+    role: !role,
+    storeLocation: !storeLocation,
+  };
+  const missing = [
+    invalid.fullName && "name",
+    invalid.phone && "phone",
+    invalid.payRate && "pay rate",
+    invalid.role && "role",
+    invalid.storeLocation && "store",
+  ].filter(Boolean) as string[];
 
   const submit = () => {
-    const rate = Number(payRate);
-    const rateValid = payRate !== "" && rate >= 0;
-    if (!fullName.trim() || !phone.trim() || !role || !storeLocation || !rateValid) {
-      toast.error("Please fill in every field.");
-      return;
-    }
+    setTried(true);
+    if (missing.length > 0) return;
     create.mutate({
       fullName: fullName.trim(),
       phone: phone.trim(),
@@ -444,12 +509,20 @@ function AddEmployeeDialog({
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Add new employee</DialogTitle>
+        <DialogTitle>Add employee</DialogTitle>
         <DialogDescription>
-          Just the essentials — they're added to the store roster instantly.
+          They can be scheduled and paid right away. Set their clock code from their profile.
         </DialogDescription>
       </DialogHeader>
-      <div className="grid gap-4 py-2">
+      <form
+        className="grid gap-4 py-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        id="add-employee-form"
+        noValidate
+      >
         <div className="grid gap-2">
           <Label htmlFor="emp-name">Full name</Label>
           <Input
@@ -457,15 +530,20 @@ function AddEmployeeDialog({
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             placeholder="Jane Doe"
+            autoComplete="off"
+            aria-invalid={tried && invalid.fullName}
           />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="emp-phone">Phone</Label>
           <Input
             id="emp-phone"
+            type="tel"
+            inputMode="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="(555) 123-4567"
+            aria-invalid={tried && invalid.phone}
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -474,18 +552,20 @@ function AddEmployeeDialog({
             <Input
               id="emp-rate"
               type="number"
+              inputMode="decimal"
               step="0.25"
               min="0"
               value={payRate}
               onChange={(e) => setPayRate(e.target.value)}
               placeholder="15.00"
+              aria-invalid={tried && invalid.payRate}
             />
           </div>
           <div className="grid gap-2">
-            <Label>Role</Label>
+            <Label htmlFor="emp-role">Role</Label>
             <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pick role" />
+              <SelectTrigger id="emp-role" className="w-full" aria-invalid={tried && invalid.role}>
+                <SelectValue placeholder="Pick a role" />
               </SelectTrigger>
               <SelectContent>
                 {roles.map((r) => (
@@ -497,24 +577,40 @@ function AddEmployeeDialog({
             </Select>
           </div>
         </div>
-        <div className="grid gap-2">
-          <Label>Store</Label>
-          <Select value={storeLocation} onValueChange={setStoreLocation}>
-            <SelectTrigger>
-              <SelectValue placeholder="Pick store" />
-            </SelectTrigger>
-            <SelectContent>
-              {stores.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+        {stores.length !== 1 ? (
+          <div className="grid gap-2">
+            <Label htmlFor="emp-store">Store</Label>
+            <Select value={storeLocation} onValueChange={setStoreLocation}>
+              <SelectTrigger
+                id="emp-store"
+                className="w-full"
+                aria-invalid={tried && invalid.storeLocation}
+              >
+                <SelectValue placeholder="Pick a store" />
+              </SelectTrigger>
+              <SelectContent>
+                {stores.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {tried && missing.length > 0 ? (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            Add their {missing.join(", ").replace(/, ([^,]*)$/, " and $1")} to continue.
+          </p>
+        ) : null}
+      </form>
       <DialogFooter>
-        <Button onClick={submit} disabled={create.isPending} className="w-full">
+        <DialogClose asChild>
+          <Button variant="outline" type="button">
+            Cancel
+          </Button>
+        </DialogClose>
+        <Button type="submit" form="add-employee-form" disabled={create.isPending}>
           {create.isPending ? "Adding…" : "Add employee"}
         </Button>
       </DialogFooter>

@@ -6,7 +6,7 @@
  * can review punches from previous months.
  */
 import { useEffect, useMemo, useState } from "react";
-import { consumeQueryFlag } from "@/lib/queryFlag";
+import { useQueryFlag } from "@/lib/queryFlag";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -97,9 +97,7 @@ export default function PunchesTab({
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   // Dashboard "Add a punch" shortcut lands here with ?add=1.
-  useEffect(() => {
-    if (consumeQueryFlag("add")) setAddOpen(true);
-  }, []);
+  useQueryFlag("add", () => setAddOpen(true));
   const [editPunch, setEditPunch] = useState<PunchRow | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 

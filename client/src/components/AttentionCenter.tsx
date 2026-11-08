@@ -54,7 +54,7 @@ function pendingFor(createdAt: Date | string) {
     timeZone: "America/Chicago",
   });
   return {
-    label: days >= 1 ? `waiting ${days}d` : hours >= 1 ? `waiting ${hours}h` : "new today",
+    label: days >= 1 ? `Waiting ${days}d` : hours >= 1 ? `Waiting ${hours}h` : "New today",
     since,
     days,
   };

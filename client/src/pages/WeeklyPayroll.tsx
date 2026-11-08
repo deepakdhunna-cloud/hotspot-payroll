@@ -9,6 +9,7 @@
  * the dashboard CTA and the alias from /time-clock can land on the right tab.
  */
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
   currentPayPeriodStart,
   fromDateInput,
@@ -64,6 +65,7 @@ export default function WeeklyPayroll() {
   }, [location]);
 
   const [weekStart, setWeekStart] = useState<Date>(readWeekFromQuery);
+  usePageTitle(tab === "punches" ? "Punches" : tab === "history" ? "Payroll history" : "Payroll");
   // Store scope lives in the top bar and follows the manager across pages.
   const { scope: storeFilter } = useStoreScope();
 

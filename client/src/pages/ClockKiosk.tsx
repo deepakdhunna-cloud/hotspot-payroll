@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import type { inferRouterOutputs } from "@trpc/server";
@@ -85,6 +86,7 @@ export default function ClockKiosk() {
       : null;
 
   const [store, setStore] = useState<Store | null>(initialStore);
+  usePageTitle(store ? `Time clock · ${store}` : "Time clock");
   useEffect(() => {
     const lockedStore = getKioskStore();
     if (lockedStore) {
@@ -305,7 +307,7 @@ export default function ClockKiosk() {
 
       {/* Flash overlay */}
       {flash && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
+        <div className="kiosk-scrim pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className={cn(
               "kiosk-flash-pop pointer-events-auto w-full max-w-md rounded-3xl p-8 text-white shadow-2xl",

@@ -32,8 +32,9 @@ import {
   updateAttentionText,
 } from "./db";
 import {
-  getCurrentPayPeriodStart,
-  getWeekStart,
+  lastClosedPayWeek,
+  payWeekBounds,
+  payWeekOf,
 } from "@shared/hotspot";
 import {
   buildAutoClockOutItem,
@@ -92,10 +93,12 @@ export async function computeAttentionCandidates(
   stores: string[],
   now = new Date()
 ): Promise<AttentionCandidate[]> {
-  const liveWeek = getWeekStart(now);
-  const closedWeek = getCurrentPayPeriodStart(now);
-  const closedWeekEnd = new Date(closedWeek);
-  closedWeekEnd.setUTCDate(closedWeekEnd.getUTCDate() + 7);
+  // Weeks are resolved in store-local time, and the closed week's clock
+  // hours use its real store-time bounds (a Wednesday-night shift belongs
+  // to the week it was worked, not the next one).
+  const liveWeek = payWeekOf(now);
+  const closedWeek = lastClosedPayWeek(now);
+  const closedBounds = payWeekBounds(closedWeek);
   const lookbackStart = new Date(
     now.getTime() - LONG_PUNCH_LOOKBACK_DAYS * 86_400_000
   );
@@ -111,7 +114,7 @@ export async function computeAttentionCandidates(
     listEmployees({ stores }),
     listOpenPunches(stores),
     listPunchesInRange(lookbackStart, now, stores),
-    hoursWorkedForWeekBulk(closedWeek, closedWeekEnd, stores),
+    hoursWorkedForWeekBulk(closedBounds.start, closedBounds.end, stores),
     getPayrollByWeek(closedWeek, stores),
     getShiftsForWeek(liveWeek, stores),
   ]);

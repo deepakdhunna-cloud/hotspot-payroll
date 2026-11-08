@@ -27,9 +27,11 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  Search,
   ShieldCheck,
   Users,
 } from "lucide-react";
+import { CommandMenu } from "./CommandMenu";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { BrandMark } from "./BrandMark";
@@ -231,6 +233,21 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     : baseMenuItems.filter(item => !item.adminOnly || isAdmin);
   // The CFO portal is a single page: no tab bar.
   const showTabBar = !isCfo;
+  // Command bar: Ctrl+K / ⌘K from anywhere.
+  const [cmdOpen, setCmdOpen] = React.useState(false);
+  const isMac =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  React.useEffect(() => {
+    if (isCfo) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isCfo]);
   // Highlight nested routes too (/employees/12 keeps Employees active).
   const isPathActive = (path: string) =>
     path === "/"
@@ -266,6 +283,21 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           ) : null}
 
           <div className="ml-auto flex items-center gap-1.5">
+            {!isCfo ? (
+              <button
+                type="button"
+                onClick={() => setCmdOpen(true)}
+                className="flex h-8 items-center gap-2 rounded-lg px-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white md:bg-white/[0.07] md:px-2.5 md:shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.08)]"
+                aria-label="Search pages, people and actions"
+                title={`Search (${isMac ? "⌘" : "Ctrl+"}K)`}
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden lg:inline">Search</span>
+                <kbd className="hidden lg:inline rounded border border-white/15 px-1 font-sans text-[10px] text-white/55">
+                  {isMac ? "⌘K" : "Ctrl K"}
+                </kbd>
+              </button>
+            ) : null}
             {!isCfo && <TopbarStoreScope className="w-36 md:w-40" />}
             {!isCfo && <AttentionBell onNavigate={() => setLocation("/")} />}
             {!isCfo && (
@@ -371,6 +403,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </main>
+
+      {!isCfo ? (
+        <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} isAdmin={isAdmin} />
+      ) : null}
 
       {showTabBar ? (
         <TabBar

@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Delete } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -18,7 +19,10 @@ const MAX_PIN = 8;
 export default function PinKeypad() {
   const utils = trpc.useUtils();
   const [pin, setPin] = useState("");
+  usePageTitle("Sign in");
   const [shake, setShake] = useState(false);
+  // Said in place, under the dots, so a wrong PIN is never silent.
+  const [error, setError] = useState<string | null>(null);
   const [location, setLocation] = useLocation();
 
   const verify = trpc.auth.verifyPin.useMutation({
@@ -46,7 +50,11 @@ export default function PinKeypad() {
       setPin("");
       setShake(true);
       setTimeout(() => setShake(false), 500);
-      toast.error(e.message || "Incorrect PIN");
+      setError(
+        /incorrect pin/i.test(e.message ?? "")
+          ? "That PIN didn't match. Try again."
+          : e.message || "That PIN didn't match. Try again.",
+      );
     },
   });
 
@@ -65,6 +73,7 @@ export default function PinKeypad() {
   const push = useCallback(
     (d: string) => {
       if (isPending) return;
+      setError(null);
       setPin((p) => (p.length >= MAX_PIN ? p : p + d));
     },
     [isPending],
@@ -112,7 +121,7 @@ export default function PinKeypad() {
 
           {/* PIN dots */}
           <div
-            className={`flex items-center justify-center gap-3 my-6 ${shake ? "animate-shake" : ""}`}
+            className={`flex items-center justify-center gap-3 mt-6 ${shake ? "animate-shake" : ""}`}
             role="status"
             style={{ minHeight: 24 }}
             aria-label={`${pin.length} digits entered`}
@@ -128,6 +137,15 @@ export default function PinKeypad() {
               />
             ))}
           </div>
+
+          <p
+            role="alert"
+            className={`mt-2 mb-4 min-h-5 text-center text-sm font-medium ${
+              error ? "text-destructive" : "text-transparent"
+            }`}
+          >
+            {error ?? "."}
+          </p>
 
           {/* Keypad */}
           <div className="grid grid-cols-3 gap-2.5 w-full">

@@ -6,6 +6,7 @@
  * added to the roster inline. Nothing touches payroll until commit.
  */
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
@@ -149,6 +150,7 @@ function ParseProgress() {
 }
 
 export default function ScheduleImport() {
+  usePageTitle("Schedule");
   const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
   const [schedStore, setSchedStore] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);

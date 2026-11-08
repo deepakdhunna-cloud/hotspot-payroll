@@ -1,32 +1,33 @@
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Home } from "lucide-react";
+import { usePageTitle } from "@/hooks/usePageTitle";
+import { ArrowLeft, Compass, Home } from "lucide-react";
 import { useLocation } from "wouter";
 
 /**
- * On-brand 404 — renders inside DashboardLayout's content column, so it
- * frames itself like a page, not a stranded full-screen card.
+ * 404, rendered inside the app's content column so it reads as a page with
+ * the nav still in reach, plus the two ways out people actually want.
  */
 export default function NotFound() {
+  usePageTitle("Page not found");
   const [, setLocation] = useLocation();
 
   return (
-    <div className="flex items-center justify-center py-20">
-      <div className="surface-card w-full max-w-lg px-8 py-10 text-center">
-        <span className="speed-lines mx-auto opacity-50" aria-hidden="true">
-          <i />
+    <div className="flex items-center justify-center py-16 md:py-24">
+      <div className="surface-card w-full max-w-md px-6 py-10 text-center sm:px-10">
+        <span className="icon-badge icon-badge-lg mx-auto" aria-hidden="true">
+          <Compass />
         </span>
-        <p className="eyebrow mt-5">Wrong aisle</p>
-        <h1 className="page-title mt-2">404</h1>
+        <h1 className="page-title mt-5">Page not found</h1>
         <p className="page-subtitle mx-auto">
-          This page doesn&apos;t exist — it may have been moved, or the link is
-          stale (a deleted employee profile is the usual culprit).
+          This link doesn&apos;t lead anywhere. It may be old, or it pointed to an
+          employee who has since been removed.
         </p>
-        <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-          <Button variant="outline" className="bg-card" onClick={() => window.history.back()}>
+        <div className="mt-8 flex flex-col-reverse justify-center gap-2 sm:flex-row">
+          <Button variant="outline" onClick={() => window.history.back()}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Go back
           </Button>
           <Button onClick={() => setLocation("/")}>
-            <Home className="mr-2 h-4 w-4" /> Dashboard
+            <Home className="mr-2 h-4 w-4" /> Go to dashboard
           </Button>
         </div>
       </div>

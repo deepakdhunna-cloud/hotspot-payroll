@@ -11,6 +11,7 @@
  * calls never ships person-level records).
  */
 import { KpiBand, KpiCell } from "@/components/KpiBand";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { PositionBreakdown } from "@/components/PositionBreakdown";
@@ -263,6 +264,7 @@ function WeeklyPayrollChart({
 }
 
 export default function CfoView() {
+  usePageTitle("Finance");
   const { user } = useAuth();
   const canView = user?.role === "admin" || user?.role === "cfo";
 

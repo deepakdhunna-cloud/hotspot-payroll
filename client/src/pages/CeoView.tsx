@@ -8,6 +8,7 @@
  * Tabs below hold the payroll detail, PIN management and the audit trail.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { AttentionCenter } from "@/components/AttentionCenter";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { STORE_ABBR, fmtMoney, fmtWeekRange, storeColor } from "@/lib/format";
+import { STORE_ABBR, fmtHours, fmtMoney, fmtWeekRange, storeColor } from "@/lib/format";
 import { inProgressPayWeekStart, fmtDateTime } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,7 @@ import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function CeoView() {
+  usePageTitle("Executive");
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
@@ -228,7 +230,7 @@ export default function CeoView() {
                 </span>
               ) : !isLiveWeek && savedCount > 0 ? (
                 <span className="chip-good">
-                  <CheckCircle2 className="h-3 w-3" /> payroll complete
+                  <CheckCircle2 className="h-3 w-3" /> Payroll complete
                 </span>
               ) : null
             }
@@ -237,10 +239,10 @@ export default function CeoView() {
             hue="blue"
             icon={<Clock />}
             label="Hours clocked"
-            value={agg.totalClockHours.toFixed(1)}
+            value={fmtHours(agg.totalClockHours)}
             sub={
               agg.totalScheduled > 0
-                ? `of ${agg.totalScheduled.toFixed(1)} scheduled`
+                ? `of ${fmtHours(agg.totalScheduled)} scheduled`
                 : "no schedule this week"
             }
             footer={
@@ -251,7 +253,7 @@ export default function CeoView() {
                 </span>
               ) : agg.totalScheduled > 0 ? (
                 <span className="chip-good">
-                  <CheckCircle2 className="h-3 w-3" /> within schedule
+                  <CheckCircle2 className="h-3 w-3" /> Within schedule
                 </span>
               ) : null
             }
@@ -280,7 +282,7 @@ export default function CeoView() {
               icon={<CheckCircle2 />}
               label="Saved to payroll"
               value={`${savedCount}/${rows.length}`}
-              sub={`${agg.totalHours.toFixed(1)} hours entered so far`}
+              sub={`${fmtHours(agg.totalHours)} hours entered so far`}
             />
           )}
           {isLiveWeek ? (
@@ -357,7 +359,7 @@ export default function CeoView() {
                         />
                       </p>
                       <p className="text-xs text-muted-foreground tabular-nums">
-                        {s.totalClockHours.toFixed(1)}h of {s.totalScheduled.toFixed(1)}h
+                        {fmtHours(s.totalClockHours)}h of {fmtHours(s.totalScheduled)}h
                       </p>
                       <div className="sk-track mt-1.5 h-2 rounded-full bg-[color-mix(in_oklab,var(--hue)_14%,transparent)] overflow-hidden">
                         <div
@@ -376,7 +378,7 @@ export default function CeoView() {
                       </span>
                     ) : (
                       <span className="chip-good">
-                        <CheckCircle2 className="h-3 w-3" /> on track
+                        <CheckCircle2 className="h-3 w-3" /> On track
                       </span>
                     )}
                   </CardContent>
@@ -489,14 +491,14 @@ export default function CeoView() {
                               {r.overClocked ? (
                                 <span className="chip-warn">
                                   <AlertTriangle className="h-3 w-3" />
-                                  over
+                                  Over schedule
                                 </span>
                               ) : r.hoursWorked > 0 ? (
                                 <span className="chip-good">
-                                  <CheckCircle2 className="h-3 w-3" /> saved
+                                  <CheckCircle2 className="h-3 w-3" /> Saved
                                 </span>
                               ) : r.clockHours > 0.25 ? (
-                                <span className="chip-neutral">not saved</span>
+                                <span className="chip-neutral">Not saved</span>
                               ) : (
                                 <span className="text-xs text-muted-foreground">—</span>
                               )}
@@ -675,6 +677,7 @@ function ActivityPanel() {
     "employees.update": "Edited employee",
     "employees.bulkUpdate": "Bulk-edited employees",
     "employees.deactivate": "Deactivated employee",
+    "employees.reactivate": "Reactivated employee",
     "employees.delete": "Deleted employee (snapshot kept)",
     "payroll.saveHours": "Saved payroll hours",
     "payroll.saveSchedule": "Saved scheduled hours",
