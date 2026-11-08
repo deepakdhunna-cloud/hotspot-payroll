@@ -19,8 +19,8 @@ export default function NotFound() {
         </span>
         <h1 className="page-title mt-5">Page not found</h1>
         <p className="page-subtitle mx-auto">
-          This link doesn&apos;t lead anywhere. It may be old, or it pointed to an
-          employee who has since been removed.
+          This link doesn&apos;t lead anywhere — it may be mistyped or out of
+          date.
         </p>
         <div className="mt-8 flex flex-col-reverse justify-center gap-2 sm:flex-row">
           <Button variant="outline" onClick={() => window.history.back()}>

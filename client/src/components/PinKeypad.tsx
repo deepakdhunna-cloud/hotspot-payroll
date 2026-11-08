@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Delete } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { toast } from "sonner";
+import { errorMessage } from "@/lib/errors";
 
 import { BrandMark } from "@/components/BrandMark";
 
@@ -27,13 +27,8 @@ export default function PinKeypad() {
 
   const verify = trpc.auth.verifyPin.useMutation({
     onSuccess: async (data) => {
-      toast.success(
-        data.role === "admin"
-          ? "Welcome, CEO"
-          : data.role === "cfo"
-            ? "Welcome, CFO"
-            : `Signed in to ${data.store}`,
-      );
+      // No "signed in" toast: the dashboard greeting and scope already say
+      // it, and a toast here sat on top of the account menu on phones.
       // Land each role on its own ground BEFORE the session hydrates, so
       // switching accounts never flashes a page the new role can't use.
       if (data.role === "cfo" && location !== "/cfo") {
@@ -53,7 +48,7 @@ export default function PinKeypad() {
       setError(
         /incorrect pin/i.test(e.message ?? "")
           ? "That PIN didn't match. Try again."
-          : e.message || "That PIN didn't match. Try again.",
+          : errorMessage(e, "That PIN didn't match. Try again."),
       );
     },
   });
@@ -114,9 +109,7 @@ export default function PinKeypad() {
           />
           <div className="flex flex-col items-center gap-1 text-center">
             <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
-            <p className="text-sm text-muted-foreground">
-              Enter your store PIN, or the CEO PIN.
-            </p>
+            <p className="text-sm text-muted-foreground">Enter your PIN.</p>
           </div>
 
           {/* PIN dots */}
@@ -177,7 +170,7 @@ export default function PinKeypad() {
           </div>
         </div>
 
-        <p className="text-xs text-white/45 text-center">
+        <p className="text-xs text-white/65 text-center">
           Hotspot Market · Payroll &amp; time clock
         </p>
       </div>

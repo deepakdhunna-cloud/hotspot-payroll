@@ -82,22 +82,23 @@ export function CommandMenu({
             <Wallet /> Run payroll
           </CommandItem>
           <CommandItem
-            value="open time clock kiosk tablet"
+            value="open the time clock kiosk tablet punch in"
             onSelect={() => {
               onOpenChange(false);
               window.open("/clock", "_blank", "noopener,noreferrer");
             }}
           >
-            <ExternalLink /> Open the time clock kiosk
+            <ExternalLink /> Open the time clock
+            <CommandShortcut className="tracking-normal">New tab</CommandShortcut>
           </CommandItem>
         </CommandGroup>
 
         <CommandSeparator />
         <CommandGroup heading="Go to">
-          <CommandItem value="dashboard home" onSelect={() => go("/")}>
+          <CommandItem value="dashboard home overview" onSelect={() => go("/")}>
             <LayoutDashboard /> Dashboard
           </CommandItem>
-          <CommandItem value="employees team roster" onSelect={() => go("/employees")}>
+          <CommandItem value="employees team roster people staff" onSelect={() => go("/employees")}>
             <Users /> Employees
           </CommandItem>
           <CommandItem value="payroll hours and pay" onSelect={() => go("/payroll")}>
@@ -142,6 +143,15 @@ export function CommandMenu({
                   </CommandShortcut>
                 </CommandItem>
               ))}
+            </CommandGroup>
+          </>
+        ) : peopleQ.isLoading || peopleQ.isError ? (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="People" forceMount>
+              <p className="px-2 py-2 text-xs text-muted-foreground" role="status">
+                {peopleQ.isError ? "Couldn't load people right now." : "Loading people…"}
+              </p>
             </CommandGroup>
           </>
         ) : null}

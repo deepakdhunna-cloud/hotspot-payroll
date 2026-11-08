@@ -36,12 +36,13 @@ export function BrandMark({
     return (
       <span
         className={cn(
-          "font-extrabold tracking-tight leading-none",
+          "font-extrabold italic tracking-tight leading-none",
           onInk ? "text-white" : "text-foreground",
           s.text,
           className,
         )}
-        style={{ fontFamily: "var(--font-display)" }}
+        role="img"
+        aria-label="Hotspot Market"
       >
         HOT<span className={onInk ? "text-[oklch(0.68_0.21_27)]" : "text-primary"}>SPOT</span>
       </span>

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
-import { fmtDuration } from "@/lib/payweek";
+import { fmtDayHeading, fmtDuration, fmtTime } from "@/lib/payweek";
+import { fmtHoursLabel } from "@/lib/format";
+import { errorMessage } from "@/lib/errors";
 import { getKioskStore, kioskPath, lockKioskToStore, markKioskTab } from "@/lib/kioskLock";
 
 /**
@@ -18,7 +20,9 @@ import { getKioskStore, kioskPath, lockKioskToStore, markKioskTab } from "@/lib/
  *    automatically, and ?exit is the escape for signed-out ones.
  *
  * After every punch the kiosk shows the employee's week so far — hours worked
- * against hours scheduled — and flags over-clocked time on the spot.
+ * against hours scheduled — and flags over-clocked time on the spot. The
+ * result card can be tapped away (or the next person just starts typing),
+ * so a line at shift change never waits on it. Times are store time.
  */
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +31,7 @@ import {
   AlertTriangle,
   Building2,
   CalendarClock,
+  CheckCircle2,
   Delete,
   LogIn,
   LogOut,
@@ -48,27 +53,40 @@ function decodeStoreFromUrl(raw: string | undefined): Store | null {
   }
 }
 
-function formatClock(d: Date) {
-  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-}
-function formatDate(d: Date) {
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-}
-
 // Derive the week-summary shape from the server so the contract has exactly
 // one source of truth.
-type WeekSummary = inferRouterOutputs<AppRouter>["clock"]["punch"]["week"];
+type PunchResult = inferRouterOutputs<AppRouter>["clock"]["punch"];
+type WeekSummary = PunchResult["week"];
 
 type FlashState =
   | {
       kind: "success";
       action: "in" | "out";
+      /** A second tap inside the server's repeat window — nothing changed. */
+      repeat: boolean;
       name: string;
       at: Date;
       durationHours?: number | null;
       week?: WeekSummary;
     }
   | { kind: "error"; message: string };
+
+/** How long each result stays up unless it's tapped away. */
+const FLASH_MS = { in: 6000, out: 9000, repeat: 5000, error: 5000 } as const;
+
+function announce(flash: FlashState | null): string {
+  if (!flash) return "";
+  if (flash.kind === "error") return `Try again. ${flash.message}`;
+  const time = fmtTime(flash.at);
+  if (flash.repeat) {
+    return flash.action === "in"
+      ? `${flash.name} is already clocked in, since ${time}.`
+      : `${flash.name} is already clocked out, at ${time}.`;
+  }
+  return flash.action === "in"
+    ? `Clocked in: ${flash.name} at ${time}.`
+    : `Clocked out: ${flash.name} at ${time}.`;
+}
 
 export default function ClockKiosk() {
   const [, params] = useRoute<{ store?: string }>("/clock/:store");
@@ -123,9 +141,19 @@ export default function ClockKiosk() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const [code, setCode] = useState("");
+  const [code, setCodeState] = useState("");
+  // The ref is the source of truth while typing, so two fast key presses
+  // between renders (USB number pads) never drop a digit.
+  const codeRef = useRef("");
+  const setCode = useCallback((next: string) => {
+    codeRef.current = next;
+    setCodeState(next);
+  }, []);
   const [flash, setFlash] = useState<FlashState | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One punch at a time: a second submit while one is in flight (double
+  // tap, a stray Enter) is dropped before it ever reaches the server.
+  const inFlight = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -133,60 +161,95 @@ export default function ClockKiosk() {
     };
   }, []);
 
+  const showFlash = useCallback((next: FlashState, ms: number) => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    setFlash(next);
+    flashTimer.current = setTimeout(() => setFlash(null), ms);
+  }, []);
+
+  const dismissFlash = useCallback(() => {
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = null;
+    setFlash(null);
+  }, []);
+
   const punch = trpc.clock.punch.useMutation({
     onSuccess: (data) => {
       setCode("");
-      setFlash({
-        kind: "success",
-        action: data.action,
-        name: data.employee.fullName,
-        at: new Date(data.at),
-        durationHours: data.durationHours,
-        week: data.week,
-      });
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      // Punch-out shows the week summary — give people time to read it.
-      flashTimer.current = setTimeout(() => setFlash(null), data.action === "out" ? 9000 : 6000);
+      const repeat = "repeat" in data && data.repeat === true;
+      showFlash(
+        {
+          kind: "success",
+          action: data.action,
+          repeat,
+          name: data.employee.fullName,
+          at: new Date(data.at),
+          durationHours: data.durationHours,
+          week: data.week,
+        },
+        repeat ? FLASH_MS.repeat : FLASH_MS[data.action],
+      );
     },
     onError: (err) => {
       setCode("");
-      setFlash({ kind: "error", message: err.message ?? "Code not recognized." });
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      flashTimer.current = setTimeout(() => setFlash(null), 5000);
+      showFlash(
+        { kind: "error", message: errorMessage(err, "Code not recognized at this store.") },
+        FLASH_MS.error,
+      );
     },
   });
+  const isPending = punch.isPending;
+  const { mutate } = punch;
 
-  const submit = (full: string) => {
-    if (!store) return;
-    if (full.length !== 4) return;
-    punch.mutate({ store, code: full });
-  };
+  const submit = useCallback(
+    (full: string) => {
+      if (!store || full.length !== 4 || inFlight.current) return;
+      inFlight.current = true;
+      mutate(
+        { store, code: full },
+        {
+          onSettled: () => {
+            inFlight.current = false;
+          },
+        },
+      );
+    },
+    [store, mutate],
+  );
 
-  const handleKey = (digit: string) => {
-    if (punch.isPending) return;
-    if (code.length >= 4) return;
-    const next = code + digit;
-    setCode(next);
-    if (next.length === 4) {
-      setTimeout(() => submit(next), 80);
-    }
-  };
-  const handleBackspace = () => {
-    if (punch.isPending) return;
-    setCode((c) => c.slice(0, -1));
-  };
+  const handleKey = useCallback(
+    (digit: string) => {
+      if (isPending || inFlight.current) return;
+      // The next person can start typing right away; their first digit
+      // clears the previous result.
+      if (flash) dismissFlash();
+      const current = codeRef.current;
+      if (current.length >= 4) return;
+      const next = current + digit;
+      setCode(next);
+      if (next.length === 4) {
+        setTimeout(() => submit(next), 80);
+      }
+    },
+    [isPending, flash, dismissFlash, submit, setCode],
+  );
+  const handleBackspace = useCallback(() => {
+    if (isPending || inFlight.current) return;
+    setCode(codeRef.current.slice(0, -1));
+  }, [isPending, setCode]);
 
   // Hardware keyboard support so a USB number pad on the tablet works too.
+  // Four digits submit on their own — there is deliberately no Enter key.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!store) return;
       if (/^[0-9]$/.test(e.key)) handleKey(e.key);
       else if (e.key === "Backspace") handleBackspace();
-      else if (e.key === "Enter" && code.length === 4) submit(code);
+      else if (e.key === "Escape") dismissFlash();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [store, code, punch.isPending]);
+  }, [store, handleKey, handleBackspace, dismissFlash]);
 
   const dots = useMemo(() => Array.from({ length: 4 }, (_, i) => i < code.length), [code]);
 
@@ -196,18 +259,15 @@ export default function ClockKiosk() {
         <div className="container max-w-5xl pt-12 pb-16">
           <div className="flex flex-col items-center text-center">
             <BrandMark size="lg" tone="ink" />
-            <h1
-              className="font-display mt-10 text-3xl font-bold tracking-tight text-white"
-            >
+            <h1 className="mt-10 text-3xl font-semibold tracking-tight text-white">
               Which store is this tablet at?
             </h1>
-            <p className="mt-2 text-white/60">
-              This device will remember it.
-            </p>
+            <p className="mt-2 text-white/70">This device will remember it.</p>
             <div className="mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
               {STORES.map((s) => (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => {
                     lockKioskToStore(s);
                     setStore(s);
@@ -216,12 +276,15 @@ export default function ClockKiosk() {
                   className="group flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] p-5 text-left transition-all hover:border-white/25 hover:bg-white/[0.08]"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-white/[0.08] p-3 text-white/70">
+                    <div className="rounded-xl bg-white/[0.08] p-3 text-white/75" aria-hidden>
                       <Building2 className="h-5 w-5" />
                     </div>
                     <div className="text-lg font-semibold text-white">{s}</div>
                   </div>
-                  <div className="text-white/40 transition-transform group-hover:translate-x-1 group-hover:text-white/80">
+                  <div
+                    className="text-white/50 transition-transform group-hover:translate-x-1 group-hover:text-white/80"
+                    aria-hidden
+                  >
                     →
                   </div>
                 </button>
@@ -242,6 +305,11 @@ export default function ClockKiosk() {
 
   return (
     <div className="ink-panel relative min-h-screen overflow-hidden">
+      {/* Screen readers hear every result, even though the card fades. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announce(flash)}
+      </div>
+
       {/* Header */}
       <div className="container max-w-3xl pt-8">
         <div className="flex items-center justify-between">
@@ -249,8 +317,8 @@ export default function ClockKiosk() {
           <LiveClock />
         </div>
 
-        <p className="mt-5 flex items-center gap-2 text-sm text-white/60">
-          <Building2 className="h-4 w-4" />
+        <p className="mt-5 flex items-center gap-2 text-sm text-white/70">
+          <Building2 className="h-4 w-4" aria-hidden />
           <span className="font-medium text-white/90">{store}</span>
         </p>
       </div>
@@ -260,16 +328,13 @@ export default function ClockKiosk() {
         <Card className="border-0 rounded-3xl bg-card text-card-foreground shadow-[0_1px_2px_rgb(0_0_0/0.3),0_24px_60px_-24px_rgb(0_0_0/0.7)]">
           <CardContent className="px-6 py-8">
             <div className="flex flex-col items-center">
-              <h1
-                className="font-display text-3xl font-bold tracking-tight"
-              >
-                Clock in or out
-              </h1>
-              <p className="mt-1 text-muted-foreground">
-                Enter your 4-digit code.
+              <h1 className="text-3xl font-semibold tracking-tight">Clock in or out</h1>
+              {/* Doubles as the status line, so checking a code adds no height. */}
+              <p className="mt-1 text-muted-foreground" role="status" aria-live="polite">
+                {isPending ? "Checking your code…" : "Enter your 4-digit code."}
               </p>
 
-              <div className="mt-6 flex items-center gap-4">
+              <div className="mt-6 flex items-center gap-4" aria-hidden>
                 {dots.map((filled, i) => (
                   <div
                     key={i}
@@ -280,6 +345,9 @@ export default function ClockKiosk() {
                   />
                 ))}
               </div>
+              <p className="sr-only" aria-live="polite">
+                {code.length > 0 ? `${code.length} of 4 digits entered` : ""}
+              </p>
 
               <div className="mt-8 grid w-full max-w-sm grid-cols-3 gap-3">
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
@@ -289,49 +357,66 @@ export default function ClockKiosk() {
                 ))}
                 <div />
                 <KeyButton onClick={() => handleKey("0")}>0</KeyButton>
-                <KeyButton onClick={handleBackspace} variant="muted" aria-label="Backspace">
-                  <Delete className="h-6 w-6" />
+                <KeyButton onClick={handleBackspace} variant="muted" aria-label="Delete last digit">
+                  <Delete className="h-6 w-6" aria-hidden />
                 </KeyButton>
               </div>
-              {punch.isPending && (
-                <div className="mt-4 text-sm text-muted-foreground">Checking…</div>
-              )}
             </div>
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-white/40">
-          Forget your code? Ask your manager — codes are managed from each employee profile.
+        <p className="mt-6 text-center text-sm text-white/70">
+          Forgot your code? Ask your manager — codes are set on each employee&apos;s profile.
         </p>
       </div>
 
-      {/* Flash overlay */}
+      {/* Result card: tap it (or start typing) to clear it early. */}
       {flash && (
         <div className="kiosk-scrim pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
           <div
             className={cn(
-              "kiosk-flash-pop pointer-events-auto w-full max-w-md rounded-3xl p-8 text-white shadow-2xl",
+              "kiosk-flash-pop pointer-events-auto w-full max-w-md cursor-pointer rounded-3xl p-8 text-white shadow-2xl",
               overlayClass,
             )}
+            onClick={dismissFlash}
           >
             {flash.kind === "success" ? (
               <div className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/20">
-                  {flash.action === "in" ? (
+                <div
+                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/20"
+                  aria-hidden
+                >
+                  {flash.repeat ? (
+                    <CheckCircle2 className="h-7 w-7" />
+                  ) : flash.action === "in" ? (
                     <LogIn className="h-7 w-7" />
                   ) : (
                     <LogOut className="h-7 w-7" />
                   )}
                 </div>
-                <div className="mt-4 text-sm font-semibold uppercase tracking-[0.18em]">
-                  {flash.action === "in" ? "Clocked In" : "Clocked Out"}
+                <div className="mt-4 text-base font-semibold text-white/90">
+                  {flash.repeat
+                    ? flash.action === "in"
+                      ? "Already clocked in"
+                      : "Already clocked out"
+                    : flash.action === "in"
+                      ? "Clocked in"
+                      : "Clocked out"}
                 </div>
                 <div className="mt-1 text-2xl font-bold">{flash.name}</div>
                 <div className="mt-2 text-white/90 tabular-nums">
-                  {formatClock(flash.at)} · {formatDate(flash.at)}
+                  {flash.repeat ? (flash.action === "in" ? "Since " : "At ") : ""}
+                  {fmtTime(flash.at)} · {fmtDayHeading(flash.at)}
                 </div>
 
-                {flash.action === "out" &&
+                {flash.repeat ? (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm">
+                    You&apos;re all set — no need to tap again.
+                  </div>
+                ) : null}
+
+                {!flash.repeat &&
+                flash.action === "out" &&
                 flash.durationHours !== undefined &&
                 flash.durationHours !== null ? (
                   <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm tabular-nums">
@@ -339,34 +424,37 @@ export default function ClockKiosk() {
                   </div>
                 ) : null}
 
-                {flash.action === "in" && flash.week && flash.week.todayShifts.length > 0 ? (
+                {!flash.repeat &&
+                flash.action === "in" &&
+                flash.week &&
+                flash.week.todayShifts.length > 0 ? (
                   <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm">
-                    <CalendarClock className="h-4 w-4" />
+                    <CalendarClock className="h-4 w-4" aria-hidden />
                     Today:{" "}
                     {flash.week.todayShifts
                       .map((s) =>
                         s.startLabel && s.endLabel
                           ? `${s.startLabel} – ${s.endLabel}`
-                          : `${s.hours.toFixed(1)}h`,
+                          : fmtHoursLabel(s.hours),
                       )
                       .join(", ")}
                   </div>
                 ) : null}
 
-                {flash.week && flash.week.scheduledHours > 0 ? (
+                {!flash.repeat && flash.week && flash.week.scheduledHours > 0 ? (
                   <div className="mt-4 rounded-2xl bg-white/10 px-4 py-3 text-sm">
-                    <div className="flex items-center justify-between tabular-nums">
+                    <div className="flex items-center justify-between gap-3 tabular-nums">
                       <span className="text-white/85">This week</span>
                       <span className="font-semibold">
-                        {flash.week.workedHours.toFixed(1)}h of{" "}
-                        {flash.week.scheduledHours.toFixed(1)}h scheduled
+                        {fmtHoursLabel(flash.week.workedHours)} of{" "}
+                        {fmtHoursLabel(flash.week.scheduledHours)} scheduled
                       </span>
                     </div>
                     {flash.week.overClocked ? (
                       <div className="mt-2 flex items-center justify-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        {flash.week.overClockedBy.toFixed(1)}h over schedule — your manager can
-                        see this
+                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+                        {fmtHoursLabel(flash.week.overClockedBy)} over schedule — your manager
+                        can see this
                       </div>
                     ) : null}
                   </div>
@@ -374,10 +462,20 @@ export default function ClockKiosk() {
               </div>
             ) : (
               <div className="text-center">
-                <div className="text-sm font-semibold uppercase tracking-[0.18em]">Try Again</div>
+                <div className="text-base font-semibold text-white/90">Try again</div>
                 <div className="mt-1 text-xl font-semibold">{flash.message}</div>
               </div>
             )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                dismissFlash();
+              }}
+              className="mx-auto mt-5 block rounded-full px-4 py-2 text-sm font-medium text-white/85 underline-offset-4 hover:text-white hover:underline"
+            >
+              Tap to close
+            </button>
           </div>
         </div>
       )}
@@ -398,12 +496,10 @@ function LiveClock() {
   }, []);
   return (
     <div className="text-right">
-      <div
-        className="font-display text-3xl font-semibold tabular-nums text-white"
-      >
-        {formatClock(now)}
+      <div className="text-3xl font-semibold tracking-tight tabular-nums text-white">
+        {fmtTime(now)}
       </div>
-      <div className="text-xs text-white/50">{formatDate(now)}</div>
+      <div className="text-xs text-white/70">{fmtDayHeading(now)}</div>
     </div>
   );
 }

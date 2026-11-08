@@ -21,6 +21,9 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         // Secondary action tinted in its section's hue (set with .hue-*).
         soft: "btn-raised btn-soft shadow-xs",
+        // The fix for one item in a list of many: clearly an action, quieter
+        // than the page's single primary button.
+        tint: "btn-tint font-semibold",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
