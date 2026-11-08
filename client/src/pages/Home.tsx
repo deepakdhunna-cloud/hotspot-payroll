@@ -741,8 +741,8 @@ function QuickAction({
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold">{label}</span>
-        <span className="block truncate text-xs text-muted-foreground">{hint}</span>
+        <span className="block text-sm font-semibold leading-tight sm:truncate">{label}</span>
+        <span className="hidden sm:block truncate text-xs text-muted-foreground">{hint}</span>
       </span>
       <ChevronRight className="hidden sm:block h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
     </Link>
