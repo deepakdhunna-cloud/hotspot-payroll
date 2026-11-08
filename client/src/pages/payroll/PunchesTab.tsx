@@ -157,15 +157,33 @@ export default function PunchesTab({
     return rowsAll.filter((r) => r.employeeName.toLowerCase().includes(q));
   }, [listQ.data, search]);
 
+  // Open punches show running time, so re-render once a minute while any
+  // are on screen; otherwise a page left open freezes at its first render.
+  const hasOpen = filteredRows.some((r) => r.clockOutAt === null);
+  const [minuteTick, setMinuteTick] = useState(0);
+  useEffect(() => {
+    if (!hasOpen) return;
+    const id = window.setInterval(() => setMinuteTick((t) => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, [hasOpen]);
+
+  // Same accounting as the per-day totals below: open punches count their
+  // running time, so the header and the day headers always agree.
   const totals = useMemo(() => {
     let openCount = 0;
     let hours = 0;
     for (const r of filteredRows) {
-      if (r.clockOutAt === null) openCount += 1;
-      else if (r.durationHours) hours += r.durationHours;
+      if (r.clockOutAt === null) {
+        openCount += 1;
+        hours += runningHours(r);
+      } else if (r.durationHours) {
+        hours += r.durationHours;
+      }
     }
     return { openCount, hours };
-  }, [filteredRows]);
+    // minuteTick: recompute running time each minute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRows, minuteTick]);
 
   // Span (days, inclusive) helps the user understand what they're looking at.
   const spanDays = Math.max(
