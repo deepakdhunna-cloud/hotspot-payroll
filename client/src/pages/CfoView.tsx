@@ -472,7 +472,7 @@ export default function CfoView() {
                         <TableCell className="font-medium">
                           {fmtWeekRange(new Date(w.weekStart))}
                           {w.estimated ? (
-                            <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <span className="ml-2 text-xs text-muted-foreground">
                               est.
                             </span>
                           ) : null}

@@ -687,7 +687,7 @@ export default function ScheduleImport() {
                     </div>
                     {rows[i].suggestions.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold mr-0.5">
+                        <span className="text-xs font-medium text-muted-foreground mr-0.5">
                           Same person?
                         </span>
                         {rows[i].suggestions.map((s) => (
@@ -1275,7 +1275,7 @@ function WeekScheduleBoard({
                     </TableRow>
                   ))}
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableCell className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <TableCell className="text-xs font-medium text-muted-foreground">
                     Coverage
                   </TableCell>
                   {dayTotals.map((t, i) => {
@@ -1476,7 +1476,7 @@ function EditWeekDialog({
 
         <div className="px-6 pt-4 pb-2">
           {/* Column voice — labels once, not per row */}
-          <div className="grid grid-cols-[7.5rem_1fr_1fr_5rem_2rem] gap-2 px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="grid grid-cols-[7.5rem_1fr_1fr_5rem_2rem] gap-2 px-1 pb-1.5 text-xs font-medium text-muted-foreground">
             <span>Day</span>
             <span>Start</span>
             <span>End</span>

@@ -28,8 +28,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, fmtWeekRange } from "@/lib/format";
-import { fmtDateTime, fmtDuration } from "@/lib/payweek";
-import { StatCard } from "@/components/StatCard";
+import { fmtDuration } from "@/lib/payweek";
+import { KpiBand, KpiCell } from "@/components/KpiBand";
+import { Money } from "@/components/Money";
+import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import {
@@ -51,19 +53,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   ArrowLeft,
-  ArrowRight,
-  Building2,
   CalendarDays,
-  Phone,
   Pencil,
-  DollarSign,
   Clock,
-  Briefcase,
   LogOut,
-  Timer,
   Trash2,
   KeyRound,
-  Trash,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
@@ -108,19 +103,18 @@ export default function EmployeeProfile() {
   const ytdHours = history.reduce((acc, h) => acc + Number(h.hoursWorked), 0);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/employees">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" /> Back to roster
-          </Button>
-        </Link>
-      </div>
+    <div className="space-y-5 md:space-y-6">
+      <Link
+        href="/employees"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" /> Employees
+      </Link>
 
       {empQ.isLoading && (
         <div className="space-y-4" role="status" aria-label="Loading employee">
-          <div className="h-24 animate-pulse rounded-xl bg-muted" />
-          <div className="h-44 animate-pulse rounded-xl bg-muted" />
+          <div className="h-16 animate-pulse rounded-xl bg-muted" />
+          <div className="h-28 animate-pulse rounded-xl bg-muted" />
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
         </div>
       )}
@@ -128,29 +122,29 @@ export default function EmployeeProfile() {
       {emp && (
         <>
           <PageHeader
-            eyebrow="Employee"
             title={
               <span className="flex items-center gap-3">
-                <InitialsBadge name={emp.fullName} />
+                <InitialsBadge name={emp.fullName} className="h-10 w-10 text-sm" />
                 <span className="min-w-0 truncate">{emp.fullName}</span>
               </span>
             }
             description={
-              <span className="flex items-center gap-2">
-                <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-                  {emp.role}
-                </span>
-                <span>·</span>
-                <span className="flex items-center gap-1">
-                  <Building2 className="h-3 w-3" /> {emp.storeLocation}
-                </span>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>{emp.role}</span>
+                <span aria-hidden="true">·</span>
+                <span>{emp.storeLocation}</span>
+                <span aria-hidden="true">·</span>
+                <a href={`tel:${emp.phone}`} className="tabular-nums hover:text-foreground">
+                  {emp.phone}
+                </a>
+                {emp.active === 0 ? <span className="chip-neutral">Inactive</span> : null}
               </span>
             }
             actions={
               <Dialog open={editOpen} onOpenChange={setEditOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Pencil className="h-4 w-4 mr-2" /> Edit profile
+                  <Button variant="outline">
+                    <Pencil className="h-4 w-4 mr-2" /> Edit
                   </Button>
                 </DialogTrigger>
                 <EditEmployeeDialog
@@ -163,46 +157,28 @@ export default function EmployeeProfile() {
             }
           />
 
-          <Card className="surface-card border-0 rise-in">
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6">
-              <Field
-                icon={<DollarSign className="h-4 w-4" />}
-                label={emp.weeklyPay != null ? "Set weekly pay" : "Pay rate"}
-                value={
-                  emp.weeklyPay != null
-                    ? `${fmtMoney(Number(emp.weeklyPay))}/wk`
-                    : `${fmtMoney(Number(emp.payRate))}/hr`
-                }
-              />
-              <Field icon={<Phone className="h-4 w-4" />} label="Phone" value={emp.phone} />
-              <Field icon={<Briefcase className="h-4 w-4" />} label="Role" value={emp.role} />
-              <Field icon={<Building2 className="h-4 w-4" />} label="Store" value={emp.storeLocation} />
-            </CardContent>
-          </Card>
-
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatCard
-              label="Hours on record"
-              value={`${ytdHours.toFixed(1)} h`}
-              sub="last 52 weeks"
-              icon={<Timer />}
-              style={{ animationDelay: "0ms" }}
+          <KpiBand>
+            <KpiCell
+              hero
+              label={emp.weeklyPay != null ? "Weekly pay" : "Pay rate"}
+              value={
+                emp.weeklyPay != null ? (
+                  <>
+                    {fmtMoney(Number(emp.weeklyPay))}
+                    <span className="text-base font-medium text-muted-foreground">/wk</span>
+                  </>
+                ) : (
+                  <>
+                    {fmtMoney(Number(emp.payRate))}
+                    <span className="text-base font-medium text-muted-foreground">/hr</span>
+                  </>
+                )
+              }
             />
-            <StatCard
-              label="Gross on record"
-              value={fmtMoney(ytdGross)}
-              sub="last 52 weeks"
-              icon={<DollarSign />}
-              style={{ animationDelay: "40ms" }}
-            />
-            <StatCard
-              label="Weeks recorded"
-              value={history.length}
-              sub="last 52 weeks"
-              icon={<CalendarDays />}
-              style={{ animationDelay: "80ms" }}
-            />
-          </section>
+            <KpiCell label="Hours" value={ytdHours.toFixed(1)} sub="last 52 weeks" />
+            <KpiCell label="Gross pay" value={<Money value={ytdGross} />} sub="last 52 weeks" />
+            <KpiCell label="Weeks paid" value={history.length} sub="last 52 weeks" />
+          </KpiBand>
 
           <ClockCodeCard
             employeeId={emp.id}
@@ -210,80 +186,71 @@ export default function EmployeeProfile() {
             hasCode={!!emp.clockCodeHash}
           />
 
-          <Card className="surface-card border-0 rise-in">
-            <CardHeader>
-              <CardTitle className="section-title flex items-center gap-2">
-                <Clock className="h-5 w-5 text-primary" /> Payroll history
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Week</TableHead>
-                      <TableHead className="text-right">Scheduled</TableHead>
-                      <TableHead className="text-right">Worked</TableHead>
-                      <TableHead className="text-right">Gross</TableHead>
-                      <TableHead className="text-right">Rate</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {history.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-10">
-                          No payroll history yet.
-                        </TableCell>
+          <div className="grid gap-5 md:gap-6 lg:grid-cols-[1fr_1.4fr] lg:items-start">
+            <Card className="surface-card border-0 gap-0 py-0">
+              <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
+                <CardTitle className="section-title">Payroll history</CardTitle>
+              </CardHeader>
+              <CardContent className="px-0 pb-2">
+                {history.length === 0 ? (
+                  <EmptyState
+                    icon={<CalendarDays />}
+                    title="No saved payroll yet"
+                    hint="Weeks appear here once their payroll is saved."
+                  />
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="pl-4 sm:pl-5">Week</TableHead>
+                        <TableHead className="text-right">Hours</TableHead>
+                        <TableHead className="text-right pr-4 sm:pr-5">Gross</TableHead>
                       </TableRow>
-                    )}
-                    {history.map((h) => (
-                      <TableRow key={h.id}>
-                        <TableCell className="font-medium">{fmtWeekRange(h.weekStart)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {Number(h.scheduledHours).toFixed(1)} h
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {Number(h.hoursWorked).toFixed(1)} h
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums font-semibold">
-                          {fmtMoney(Number(h.grossPay))}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
-                          {fmtMoney(Number(h.payRateSnapshot))}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {history.map((h) => (
+                        <TableRow key={h.id}>
+                          <TableCell className="pl-4 sm:pl-5 font-medium">
+                            {fmtWeekRange(h.weekStart)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(h.hoursWorked).toFixed(1)}
+                            <span className="text-muted-foreground">
+                              {" "}/ {Number(h.scheduledHours).toFixed(1)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-medium pr-4 sm:pr-5">
+                            {fmtMoney(Number(h.grossPay))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
-          <PunchHistoryCard
-            isLoading={punchesQ.isLoading}
-            punches={(punchesQ.data ?? []) as any[]}
-            employeeName={emp.fullName}
-          />
+            <PunchHistoryCard
+              isLoading={punchesQ.isLoading}
+              punches={(punchesQ.data ?? []) as any[]}
+              employeeName={emp.fullName}
+            />
+          </div>
 
           {/* Destructive action lives at the end of the page, away from the
-              everyday controls. Deactivate (inside Edit profile) is the safe
-              default for departures; Delete is for records created by mistake. */}
-          <Card className="border-destructive/25">
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">Remove this employee</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Deleting is permanent. If they simply left the team, use
-                  Deactivate inside Edit profile so payroll history stays intact.
-                </p>
-              </div>
-              <DeleteEmployeeButton
-                id={emp.id}
-                name={emp.fullName}
-                onDeleted={() => navigate("/employees")}
-              />
-            </CardContent>
-          </Card>
+              everyday controls. Deactivate (inside Edit) is the safe default
+              for departures; Delete is for records created by mistake. */}
+          <div className="flex flex-col gap-2 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Left the team? Use <span className="font-medium text-foreground">Edit → Deactivate</span>{" "}
+              to keep their payroll history. Delete only removes records added by mistake.
+            </p>
+            <DeleteEmployeeButton
+              id={emp.id}
+              name={emp.fullName}
+              onDeleted={() => navigate("/employees")}
+            />
+          </div>
         </>
       )}
     </div>
@@ -325,39 +292,30 @@ function ClockCodeCard({
   };
 
   return (
-    <Card className="surface-card border-0 rise-in">
-      <CardHeader>
-        <CardTitle className="section-title flex items-center gap-2">
-          <KeyRound className="h-5 w-5 text-primary" /> Time clock code
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="surface-card flex flex-col gap-3 px-4 sm:px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+            hasCode ? "bg-muted text-muted-foreground" : "bg-[oklch(0.62_0.15_65_/_0.14)] text-warning"
+          }`}
+        >
+          <KeyRound className="h-4 w-4" />
+        </span>
         <div>
-          <div className="text-sm text-muted-foreground">
+          <p className="text-sm font-medium">
+            {hasCode ? "Time clock code is set" : "No time clock code yet"}
+          </p>
+          <p className="text-sm text-muted-foreground">
             {hasCode
-              ? "This employee can clock in or out by entering their 4-digit code on the kiosk."
-              : "No clock code has been set yet. Assign one so this employee can use the kiosk."}
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            {hasCode ? (
-              <span className="chip-good">
-                <KeyRound className="h-3 w-3" /> •••• set
-              </span>
-            ) : (
-              <span className="chip-warn">
-                <KeyRound className="h-3 w-3" /> No code
-              </span>
-            )}
-            <span className="text-xs text-muted-foreground">
-              Codes are stored hashed — not visible after creation.
-            </span>
-          </div>
+              ? "They punch in and out with it at the kiosk. Codes are hidden once saved."
+              : "Set a 4-digit code so they can punch in at the kiosk."}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+      </div>
+        <div className="flex flex-wrap gap-2 pl-12 sm:pl-0">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline">
-                <Pencil className="h-4 w-4 mr-2" />
+              <Button size="sm" variant={hasCode ? "outline" : "default"}>
                 {hasCode ? "Change code" : "Set code"}
               </Button>
             </DialogTrigger>
@@ -398,12 +356,8 @@ function ClockCodeCard({
           {hasCode && (
             <ConfirmDialog
               trigger={
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                >
-                  <Trash className="h-4 w-4 mr-2" /> Clear code
+                <Button size="sm" variant="ghost" className="text-muted-foreground">
+                  Clear
                 </Button>
               }
               title={`Clear clock code for ${employeeName}?`}
@@ -414,8 +368,7 @@ function ClockCodeCard({
             />
           )}
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -444,113 +397,101 @@ function PunchHistoryCard({
     clockInAt: p.clockInAt,
     clockOutAt: p.clockOutAt,
   });
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? punches : punches.slice(0, 10);
+  const time = (d: Date | string) =>
+    new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   return (
-    <Card className="surface-card border-0 rise-in">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="section-title flex items-center gap-2">
-          <Clock className="h-5 w-5 text-primary" /> Recent punches
-        </CardTitle>
+    <Card className="surface-card border-0 gap-0 py-0">
+      <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
+        <CardTitle className="section-title">Recent punches</CardTitle>
         <Link
           href="/payroll?tab=punches"
-          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
         >
-          View all punches <ArrowRight className="h-3.5 w-3.5" />
+          All punches
         </Link>
       </CardHeader>
-      <CardContent className="px-0">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Clock in</TableHead>
-                <TableHead>Clock out</TableHead>
-                <TableHead className="text-right">Duration</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Note</TableHead>
-                <TableHead className="w-[110px] text-right">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center py-8 text-sm text-muted-foreground"
-                  >
-                    Loading punches…
-                  </TableCell>
-                </TableRow>
-              )}
-              {!isLoading && punches.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center py-8 text-sm text-muted-foreground"
-                  >
-                    No punches yet.
-                  </TableCell>
-                </TableRow>
-              )}
-              {punches.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="tabular-nums">{fmtDateTime(p.clockInAt)}</TableCell>
-                  <TableCell className="tabular-nums">
-                    {p.clockOutAt ? (
-                      fmtDateTime(p.clockOutAt)
-                    ) : (
-                      <span className="chip-good">
-                        <Clock className="h-3 w-3" /> Clocked in
-                      </span>
+      <CardContent className="px-0 pb-2">
+        {isLoading ? (
+          <div className="space-y-2 px-5 py-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-9 animate-pulse rounded-md bg-muted" />
+            ))}
+          </div>
+        ) : punches.length === 0 ? (
+          <EmptyState icon={<Clock />} title="No punches yet" />
+        ) : (
+          <ul className="divide-y divide-border">
+            {shown.map((p) => (
+              <li key={p.id} className="flex items-center gap-3 px-4 sm:px-5 py-2.5">
+                <div className="w-16 shrink-0">
+                  <p className="text-sm font-medium tabular-nums">
+                    {new Date(p.clockInAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(p.clockInAt).toLocaleDateString("en-US", { weekday: "short" })}
+                  </p>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm tabular-nums">
+                    {time(p.clockInAt)} – {p.clockOutAt ? time(p.clockOutAt) : (
+                      <span className="chip-good">on the clock</span>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {fmtDuration(p.durationHours)}
-                  </TableCell>
-                  <TableCell>
-                    {p.source === "manual" ? (
-                      <span className="chip-warn">
-                        <Pencil className="h-3 w-3" /> Manual
-                      </span>
-                    ) : (
-                      <span className="chip-neutral">
-                        <Clock className="h-3 w-3" /> Kiosk
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">
-                    {p.note ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className="inline-flex items-center gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground"
-                        onClick={() => setFixTimeFor(asQuickPunch(p))}
-                        aria-label="Fix this punch's times"
-                        title="Fix times"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {!p.clockOutAt ? (
-                        <Button
-                          size="sm"
-                          className="h-7 px-2.5 text-xs"
-                          onClick={() => setClockOutFor(asQuickPunch(p))}
-                          title="Clock out from here"
-                        >
-                          <LogOut className="mr-1 h-3 w-3" /> Clock out
-                        </Button>
-                      ) : null}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                  </p>
+                  {p.note || p.source === "manual" ? (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {p.source === "manual" ? "Entered by hand" : ""}
+                      {p.source === "manual" && p.note ? " · " : ""}
+                      {p.note ?? ""}
+                    </p>
+                  ) : null}
+                </div>
+                <span className="text-sm tabular-nums text-muted-foreground">
+                  {fmtDuration(p.durationHours)}
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={() => setFixTimeFor(asQuickPunch(p))}
+                    aria-label="Fix this punch's times"
+                    title="Fix times"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  {!p.clockOutAt ? (
+                    <Button
+                      size="sm"
+                      className="h-8 px-2.5"
+                      onClick={() => setClockOutFor(asQuickPunch(p))}
+                      title="Clock out from here"
+                    >
+                      <LogOut className="h-3.5 w-3.5 sm:mr-1" />
+                      <span className="hidden sm:inline">Clock out</span>
+                    </Button>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {punches.length > 10 ? (
+          <div className="px-4 sm:px-5 pt-1 pb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full h-8 text-muted-foreground"
+              onClick={() => setShowAll((v) => !v)}
+            >
+              {showAll ? "Show fewer" : `Show all ${punches.length}`}
+            </Button>
+          </div>
+        ) : null}
       </CardContent>
 
       <ClockOutDialog
@@ -587,8 +528,8 @@ function DeleteEmployeeButton({
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="destructive" size="sm">
-          <Trash2 className="h-4 w-4 mr-2" /> Delete
+        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/5 shrink-0">
+          <Trash2 className="h-4 w-4 mr-2" /> Delete employee
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -616,16 +557,6 @@ function DeleteEmployeeButton({
   );
 }
 
-function Field({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-        {icon} {label}
-      </div>
-      <div className="font-medium mt-1 truncate">{value}</div>
-    </div>
-  );
-}
 
 function EditEmployeeDialog({
   emp,

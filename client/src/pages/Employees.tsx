@@ -195,7 +195,7 @@ export default function Employees() {
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search name or phone"
+                placeholder="Search people"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 h-9"
@@ -359,6 +359,11 @@ export default function Employees() {
                           </Link>
                           <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
                             {emp.role}
+                            {showStore ? (
+                              <span className="md:hidden">
+                                · {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}
+                              </span>
+                            ) : null}
                             {!emp.clockCodeHash ? (
                               <span className="chip-warn py-0">
                                 <KeyRound className="h-3 w-3" /> No code

@@ -96,7 +96,7 @@ export default function WeeklyPayroll() {
       />
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)}>
-        <TabsList className="grid grid-cols-3 w-full sm:w-auto sm:inline-grid">
+        <TabsList className="grid grid-cols-3 w-full sm:w-auto sm:self-start">
           <TabsTrigger value="hours" className="gap-2">
             <ClipboardList className="h-4 w-4" /> Hours & pay
           </TabsTrigger>

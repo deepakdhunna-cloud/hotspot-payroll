@@ -6,7 +6,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fmtMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { Briefcase } from "lucide-react";
 
 export function PositionBreakdown({
   items,
@@ -34,24 +33,21 @@ export function PositionBreakdown({
   const total = rows.reduce((s, r) => s + r.gross, 0);
 
   return (
-    <Card className={cn("surface-card border-0", className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="section-title flex items-center gap-2">
-          <Briefcase className="h-4 w-4" />
-          By position
-        </CardTitle>
-        {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+    <Card className={cn("surface-card border-0 gap-0 py-0", className)}>
+      <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
+        <CardTitle className="section-title">Pay by role</CardTitle>
+        {sub ? <p className="text-sm text-muted-foreground">{sub}</p> : null}
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3.5 px-4 sm:px-5 pb-5">
         {rows.map((r) => (
           <div key={r.role} className="space-y-1">
             <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              <span className="font-semibold">{r.role}</span>
+              <span className="font-medium">{r.role}</span>
               <span className="text-xs text-muted-foreground">
                 {r.people} {r.people === 1 ? "person" : "people"} ·{" "}
                 <span className="tabular-nums">{r.hours.toFixed(1)}h</span>
               </span>
-              <span className="ml-auto tabular-nums font-semibold">
+              <span className="ml-auto tabular-nums font-medium">
                 {fmtMoney(r.gross)}
               </span>
               <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">
@@ -63,9 +59,10 @@ export function PositionBreakdown({
               aria-hidden="true"
             >
               <div
-                className="h-full rounded-full bg-primary/70"
+                className="h-full rounded-full"
                 style={{
                   width: `${maxGross > 0 ? Math.max(2, (r.gross / maxGross) * 100) : 0}%`,
+                  background: "var(--chart-1)",
                 }}
               />
             </div>

@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { StatCard } from "@/components/StatCard";
 import {
   Select,
   SelectContent,
@@ -21,14 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -47,10 +38,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Clock, Monitor, Pencil, Plus, Trash2, Search, UserCheck } from "lucide-react";
+import { Clock, Pencil, Plus, Trash2, Search, Timer } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { STORE_ABBR } from "@/lib/format";
 import {
-  fmtDateTime,
   fmtDuration,
   fromDateInput,
   shiftPayWeek,
@@ -184,257 +175,230 @@ export default function PunchesTab({
     ),
   );
 
+  const multiStore = new Set(filteredRows.map((r) => r.storeLocation)).size > 1;
+  const timeOf = (d: Date | string) =>
+    new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
   return (
-    <div className="space-y-6">
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <StatCard
-          label="Hours logged"
-          value={`${totals.hours.toFixed(1)} h`}
-          sub={`over ${spanDays} day${spanDays === 1 ? "" : "s"}`}
-          icon={<Clock />}
-        />
-        <StatCard
-          label="Currently clocked in"
-          value={totals.openCount}
-          icon={<UserCheck />}
-          style={{ animationDelay: "60ms" }}
-        />
-      </section>
+    <div className="space-y-4">
+      {/* Toolbar: find a punch, or add one */}
+      <div className="surface-card p-3 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+        <div className="relative md:flex-1 md:min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name"
+            aria-label="Search punches by employee name"
+            className="pl-9 h-9"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
+          <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+            <SelectTrigger className="h-9 w-full md:w-[200px]" aria-label="Employee">
+              <SelectValue placeholder="Everyone" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Everyone</SelectItem>
+              {employees.map((e: any) => (
+                <SelectItem key={e.id} value={String(e.id)}>
+                  {e.fullName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={rangeMode}
+            onValueChange={(v) => setRangeMode(v as "week" | "range")}
+          >
+            <SelectTrigger className="h-9 w-full md:w-[150px]" aria-label="Date range">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week">Selected week</SelectItem>
+              <SelectItem value="range">Custom dates</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {rangeMode === "range" && (
+          <div className="grid grid-cols-2 gap-2 md:flex md:items-center">
+            <Input
+              type="date"
+              aria-label="From"
+              value={toDateInput(rangeStart)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setRangeStart(fromDateInput(e.target.value));
+              }}
+              className="h-9 md:w-40"
+            />
+            <Input
+              type="date"
+              aria-label="To"
+              value={toDateInput(new Date(rangeEnd.getTime() - 86_400_000))}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                // Make the end inclusive of the picked day.
+                const d = fromDateInput(e.target.value);
+                d.setUTCDate(d.getUTCDate() + 1);
+                setRangeEnd(d);
+              }}
+              className="h-9 md:w-40"
+            />
+          </div>
+        )}
+        <Button onClick={() => setAddOpen(true)} className="h-9 md:ml-auto">
+          <Plus className="h-4 w-4 mr-1.5" /> Add punch
+        </Button>
+      </div>
 
-      <Card className="surface-card border-0">
-        <CardContent className="p-4 flex flex-col md:flex-row md:items-end md:flex-wrap gap-3">
-          <div className="grid gap-1.5">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Range
-            </Label>
-            <Select
-              value={rangeMode}
-              onValueChange={(v) => setRangeMode(v as "week" | "range")}
-            >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="week">Current week</SelectItem>
-                <SelectItem value="range">Custom range</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {rangeMode === "range" && (
-            <>
-              <div className="grid gap-1.5">
-                <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  From
-                </Label>
-                <Input
-                  type="date"
-                  value={toDateInput(rangeStart)}
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    setRangeStart(fromDateInput(e.target.value));
-                  }}
-                  className="w-40"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  To
-                </Label>
-                <Input
-                  type="date"
-                  value={toDateInput(rangeEnd)}
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    // Make the end inclusive of the picked day.
-                    const d = fromDateInput(e.target.value);
-                    d.setUTCDate(d.getUTCDate() + 1);
-                    setRangeEnd(d);
-                  }}
-                  className="w-40"
-                />
-              </div>
-            </>
-          )}
-          <div className="grid gap-1.5">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Employee
-            </Label>
-            <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Any employee" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any employee</SelectItem>
-                {employees.map((e: any) => (
-                  <SelectItem key={e.id} value={String(e.id)}>
-                    {e.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid gap-1.5 flex-1 min-w-[200px]">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Search
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by employee name…"
-                className="pl-8"
-              />
-            </div>
-          </div>
-          <div className="grid gap-1.5 ml-auto">
-            <Label
-              className="text-[11px] uppercase tracking-wider text-muted-foreground"
-              title="Anyone still on the clock past this many hours is clocked out automatically at the limit, and the attention center asks for a review."
-            >
-              Auto clock-out
-            </Label>
-            <Select
-              value={String(settingsQ.data?.autoClockOutHours ?? 0)}
-              onValueChange={(v) => setAutoM.mutate({ hours: Number(v) })}
-              disabled={!isAdmin || setAutoM.isPending || settingsQ.isLoading}
-            >
-              <SelectTrigger
-                className="w-[130px]"
-                title={
-                  isAdmin
-                    ? "Pick a limit longer than your longest real shift"
-                    : "Only the CEO account can change this"
-                }
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="0">Off</SelectItem>
-                {[8, 10, 12, 14, 16, 18, 20, 24].map((h) => (
-                  <SelectItem key={h} value={String(h)}>
-                    After {h}h
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-end">
-            <Button onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" /> Add punch
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="surface-card border-0">
-        <CardHeader>
+      <Card className="surface-card border-0 gap-0 py-0 overflow-hidden">
+        <CardHeader className="flex flex-row flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 sm:px-5 pt-4 pb-3 border-b border-border">
           <CardTitle className="section-title">Punches</CardTitle>
+          <p className="text-sm text-muted-foreground tabular-nums">
+            <span className="font-medium text-foreground">{totals.hours.toFixed(1)}h</span>{" "}
+            over {spanDays} day{spanDays === 1 ? "" : "s"}
+            {totals.openCount > 0 ? (
+              <>
+                {" · "}
+                <span className="font-medium text-success">{totals.openCount} on the clock</span>
+              </>
+            ) : null}
+          </p>
         </CardHeader>
         <CardContent className="px-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Store</TableHead>
-                  <TableHead>Clock in</TableHead>
-                  <TableHead>Clock out</TableHead>
-                  <TableHead className="text-right">Duration</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Note</TableHead>
-                  <TableHead className="w-[120px] text-right">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {listQ.isLoading && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center py-10 text-sm text-muted-foreground"
-                    >
-                      Loading punches…
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!listQ.isLoading && filteredRows.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center py-10 text-sm text-muted-foreground"
-                    >
-                      No punches for this filter.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {filteredRows.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-medium">
-                      {p.employeeName}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {STORE_ABBR[p.storeLocation] ?? p.storeLocation}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {fmtDateTime(p.clockInAt)}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {p.clockOutAt ? (
-                        fmtDateTime(p.clockOutAt)
-                      ) : (
-                        <span className="chip-good">
-                          <Clock className="h-3 w-3" /> Clocked in
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmtDuration(p.durationHours)}
-                    </TableCell>
-                    <TableCell>
-                      {p.source === "manual" ? (
-                        <span className="chip-warn">
-                          <Pencil className="h-3 w-3" /> Manual
-                        </span>
-                      ) : (
-                        <span className="chip-neutral">
-                          <Monitor className="h-3 w-3" /> Kiosk
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-[220px] text-xs text-muted-foreground truncate">
-                      {p.note ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
+          {listQ.isLoading ? (
+            <div className="space-y-2 p-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-10 animate-pulse rounded-md bg-muted" />
+              ))}
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <EmptyState
+              icon={<Clock />}
+              title="No punches here"
+              hint="Try another week or person, or add a punch by hand."
+            />
+          ) : (
+            dayGroups(filteredRows).map((g) => (
+              <section key={g.key}>
+                <header className="flex items-baseline justify-between bg-muted/50 px-4 sm:px-5 py-2 border-b border-border text-xs">
+                  <span className="font-medium text-foreground">{g.label}</span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {g.rows.length} punch{g.rows.length === 1 ? "" : "es"} · {g.hours.toFixed(1)}h
+                  </span>
+                </header>
+                <ul className="divide-y divide-border border-b border-border last:border-b-0">
+                  {g.rows.map((p) => (
+                    <li key={p.id} className="flex items-center gap-3 px-4 sm:px-5 py-2.5">
+                      <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-4">
+                        <p className="truncate text-sm font-medium sm:w-48 sm:shrink-0">
+                          {p.employeeName}
+                          {multiStore ? (
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                              {STORE_ABBR[p.storeLocation] ?? p.storeLocation}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-sm tabular-nums text-muted-foreground sm:text-foreground">
+                          {timeOf(p.clockInAt)} –{" "}
+                          {p.clockOutAt ? (
+                            <>
+                              {timeOf(p.clockOutAt)}
+                              {new Date(p.clockOutAt).toDateString() !==
+                              new Date(p.clockInAt).toDateString() ? (
+                                <span className="text-xs text-muted-foreground"> (next day)</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="chip-good">on the clock</span>
+                          )}
+                        </p>
+                        {p.source === "manual" || p.note ? (
+                          <p className="truncate text-xs text-muted-foreground sm:min-w-0 sm:flex-1">
+                            {p.source === "manual" ? (
+                              <span className="chip-neutral mr-1.5">
+                                <Pencil className="h-3 w-3" /> by hand
+                              </span>
+                            ) : null}
+                            {p.note ?? ""}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={`w-14 text-right text-sm tabular-nums ${
+                          p.clockOutAt ? "text-muted-foreground" : "text-success"
+                        }`}
+                      >
+                        {fmtDuration(p.clockOutAt ? p.durationHours : runningHours(p))}
+                      </span>
+                      <div className="flex shrink-0">
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8"
+                          className="h-8 w-8 text-muted-foreground"
                           onClick={() => setEditPunch(p)}
-                          aria-label="Edit punch"
+                          aria-label={`Edit ${p.employeeName}'s punch`}
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-8 w-8 text-destructive hover:text-destructive/80"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           onClick={() => setDeleteId(p.id)}
-                          aria-label="Delete punch"
+                          aria-label={`Delete ${p.employeeName}'s punch`}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
         </CardContent>
       </Card>
+
+      {/* Store-wide rule, set by the CEO; shown to managers so they know it */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground">
+        <Timer className="h-4 w-4" />
+        <span>Auto clock-out</span>
+        {isAdmin ? (
+          <Select
+            value={String(settingsQ.data?.autoClockOutHours ?? 0)}
+            onValueChange={(v) => setAutoM.mutate({ hours: Number(v) })}
+            disabled={setAutoM.isPending || settingsQ.isLoading}
+          >
+            <SelectTrigger
+              className="h-8 w-[130px] bg-card"
+              title="Anyone still on the clock past this many hours is clocked out at the limit and flagged for review. Pick a limit longer than your longest real shift."
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Off</SelectItem>
+              {[8, 10, 12, 14, 16, 18, 20, 24].map((h) => (
+                <SelectItem key={h} value={String(h)}>
+                  After {h}h
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="font-medium text-foreground">
+            {settingsQ.data?.autoClockOutHours
+              ? `after ${settingsQ.data.autoClockOutHours}h`
+              : "off"}
+          </span>
+        )}
+        <span className="text-xs">
+          {isAdmin
+            ? "Forgotten punches close at the limit and land in Needs attention."
+            : "Set by the CEO account."}
+        </span>
+      </div>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <AddPunchDialog
@@ -728,3 +692,34 @@ function EditPunchDialog({
   );
 }
 
+
+/** Group punches (newest first) by the local day they started on. */
+function dayGroups(rows: PunchRow[]) {
+  const groups: { key: string; label: string; rows: PunchRow[]; hours: number }[] = [];
+  for (const r of rows) {
+    const d = new Date(r.clockInAt);
+    const key = d.toDateString();
+    let g = groups[groups.length - 1];
+    if (!g || g.key !== key) {
+      g = {
+        key,
+        label: d.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "short",
+          day: "numeric",
+        }),
+        rows: [],
+        hours: 0,
+      };
+      groups.push(g);
+    }
+    g.rows.push(r);
+    g.hours += r.clockOutAt ? (r.durationHours ?? 0) : runningHours(r);
+  }
+  return groups;
+}
+
+/** Hours so far on a punch that's still open. */
+function runningHours(r: PunchRow) {
+  return Math.max(0, (Date.now() - new Date(r.clockInAt).getTime()) / 3_600_000);
+}

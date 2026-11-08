@@ -8,7 +8,6 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -21,7 +20,9 @@ import {
 import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
 import { PositionBreakdown } from "@/components/PositionBreakdown";
-import { StatCard } from "@/components/StatCard";
+import { KpiBand, KpiCell } from "@/components/KpiBand";
+import { Money } from "@/components/Money";
+import { TableStateRows } from "@/components/QueryStates";
 import {
   currentPayPeriodStart,
   fromDateInput,
@@ -29,13 +30,7 @@ import {
   startOfPayWeek,
   toDateInput,
 } from "@/lib/payweek";
-import {
-  CalendarRange,
-  ClipboardList,
-  Clock,
-  DollarSign,
-  FileSpreadsheet,
-} from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 
 export default function HistoryTab({
@@ -158,161 +153,125 @@ export default function HistoryTab({
     }
   };
 
+  const lastClosed = currentPayPeriodStart().getTime();
+  const activePreset =
+    endWeek.getTime() === lastClosed
+      ? [4, 8, 13].find((w) => weekCount === w) ?? null
+      : null;
+  const multiStore = new Set(employees.map((e) => e.storeLocation)).size > 1;
+  const positionItems = employees
+    .map((e) => ({ role: e.role, hours: e.hours, gross: e.gross }))
+    .filter((it) => it.hours > 0 || it.gross > 0);
+
   return (
-    <div className="space-y-6">
-      <Card className="surface-card border-0">
-        <CardContent className="p-4 flex flex-col md:flex-row md:items-end md:flex-wrap gap-3">
-          <div className="grid gap-1.5">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              From pay week
-            </Label>
-            <Input
-              type="date"
-              value={toDateInput(startWeek)}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                changeStart(startOfPayWeek(fromDateInput(e.target.value)));
-              }}
-              className="w-44"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              To pay week
-            </Label>
-            <Input
-              type="date"
-              value={toDateInput(endWeek)}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                changeEnd(startOfPayWeek(fromDateInput(e.target.value)));
-              }}
-              className="w-44"
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Quick range
-            </Label>
-            <div className="flex gap-1.5">
-              {[4, 8, 13].map((w) => (
-                <Button
-                  key={w}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9"
-                  onClick={() => applyPreset(w)}
-                  title={`Last ${w} closed pay weeks`}
-                >
-                  Last {w} weeks
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-              <CalendarRange className="h-3 w-3" />
-              {weekCount} pay week{weekCount === 1 ? "" : "s"}
-            </span>
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              disabled={!rangeQ.data || employees.length === 0}
-              title="Download this range as an .xlsx spreadsheet (opens in Google Sheets)"
+    <div className="space-y-5 md:space-y-6">
+      {/* Toolbar: pick a range, then export it */}
+      <div className="surface-card p-3 flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="inline-flex w-full sm:w-auto items-center gap-0.5 rounded-lg bg-muted p-0.5">
+          {[4, 8, 13].map((w) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => applyPreset(w)}
+              title={`Last ${w} closed pay weeks`}
+              className={`h-8 flex-1 sm:flex-none rounded-md px-3 text-xs font-medium whitespace-nowrap transition-colors ${
+                activePreset === w
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export .xlsx
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+              {w} weeks
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Input
+            type="date"
+            aria-label="From pay week"
+            value={toDateInput(startWeek)}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              changeStart(startOfPayWeek(fromDateInput(e.target.value)));
+            }}
+            className="h-9 w-full sm:w-40"
+          />
+          <span>to</span>
+          <Input
+            type="date"
+            aria-label="To pay week"
+            value={toDateInput(endWeek)}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              changeEnd(startOfPayWeek(fromDateInput(e.target.value)));
+            }}
+            className="h-9 w-full sm:w-40"
+          />
+        </div>
+        <Button
+          variant="outline"
+          className="h-9 lg:ml-auto"
+          onClick={handleExport}
+          disabled={!rangeQ.data || employees.length === 0}
+          title="Download this range as an .xlsx spreadsheet (opens in Google Sheets)"
+        >
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export {weekCount} week{weekCount === 1 ? "" : "s"}
+        </Button>
+      </div>
 
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard
-          label="Range total hours"
-          value={`${totals.hours.toFixed(1)} h`}
-          icon={<Clock />}
-        />
-        <StatCard
-          label="Range total gross"
-          value={fmtMoney(totals.gross)}
-          icon={<DollarSign />}
-          style={{ animationDelay: "60ms" }}
-        />
-        <StatCard
-          label="Payroll entries"
-          value={totals.weeks}
-          sub="employee-weeks in range"
-          icon={<ClipboardList />}
-          style={{ animationDelay: "120ms" }}
-        />
-      </section>
+      <KpiBand className="grid-cols-2 xl:grid-cols-3">
+        <KpiCell hero label="Gross pay" value={<Money value={totals.gross} />} sub={`${fmtWeekRange(startWeek)} → ${fmtWeekRange(endWeek)}`} />
+        <KpiCell label="Hours" value={totals.hours.toFixed(1)} sub={`over ${weekCount} pay week${weekCount === 1 ? "" : "s"}`} />
+        <KpiCell label="Paid weeks" value={totals.weeks} sub="one per person per week" />
+      </KpiBand>
 
-      <PositionBreakdown
-        items={employees
-          .map((e) => ({ role: e.role, hours: e.hours, gross: e.gross }))
-          .filter((it) => it.hours > 0 || it.gross > 0)}
-        sub={`saved payroll split by role · ${fmtWeekRange(startWeek)} → ${fmtWeekRange(endWeek)}`}
-      />
-
-      <Card className="surface-card border-0">
-        <CardHeader>
-          <CardTitle className="section-title">Per employee</CardTitle>
+      <Card className="surface-card border-0 gap-0 py-0">
+        <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
+          <CardTitle className="section-title">By employee</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Store</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Weeks paid</TableHead>
-                  <TableHead className="text-right">Total hours</TableHead>
-                  <TableHead className="text-right">Avg hrs/wk</TableHead>
-                  <TableHead className="text-right">Total gross</TableHead>
+                  <TableHead className="pl-4 sm:pl-5">Employee</TableHead>
+                  {multiStore ? <TableHead className="hidden md:table-cell">Store</TableHead> : null}
+                  <TableHead className="hidden md:table-cell text-right">Weeks</TableHead>
+                  <TableHead className="text-right">Hours</TableHead>
+                  <TableHead className="hidden sm:table-cell text-right">Avg / week</TableHead>
+                  <TableHead className="text-right pr-4 sm:pr-5">Gross</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rangeQ.isLoading && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center py-10 text-sm text-muted-foreground"
-                    >
-                      Loading history…
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!rangeQ.isLoading && employees.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center py-10 text-sm text-muted-foreground"
-                    >
-                      No saved payroll entries in this range yet.
-                    </TableCell>
-                  </TableRow>
-                )}
+                <TableStateRows
+                  colSpan={multiStore ? 6 : 5}
+                  isLoading={rangeQ.isLoading}
+                  isError={rangeQ.isError}
+                  onRetry={() => rangeQ.refetch()}
+                  isEmpty={!rangeQ.isLoading && employees.length === 0}
+                  emptyTitle="No saved payroll in this range"
+                  emptyHint="Weeks show up here once their payroll is saved."
+                />
                 {employees.map((e) => (
                   <TableRow key={e.employeeId}>
-                    <TableCell className="font-medium">
-                      {e.employeeName}
+                    <TableCell className="pl-4 sm:pl-5">
+                      <p className="font-medium">{e.employeeName}</p>
+                      <p className="text-xs text-muted-foreground">{e.role}</p>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {STORE_ABBR[e.storeLocation] ?? e.storeLocation}
-                    </TableCell>
-                    <TableCell className="text-xs">{e.role}</TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    {multiStore ? (
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                        {STORE_ABBR[e.storeLocation] ?? e.storeLocation}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="hidden md:table-cell text-right tabular-nums">
                       {e.weekCount}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {e.hours.toFixed(2)}
+                      {e.hours.toFixed(1)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {(e.weekCount > 0 ? e.hours / e.weekCount : 0).toFixed(2)}
+                    <TableCell className="hidden sm:table-cell text-right tabular-nums text-muted-foreground">
+                      {(e.weekCount > 0 ? e.hours / e.weekCount : 0).toFixed(1)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-semibold">
+                    <TableCell className="text-right tabular-nums font-medium pr-4 sm:pr-5">
                       {fmtMoney(e.gross)}
                     </TableCell>
                   </TableRow>
@@ -321,17 +280,16 @@ export default function HistoryTab({
               {employees.length > 0 && (
                 <TableFooter>
                   <TableRow>
-                    <TableCell colSpan={3} className="font-semibold">
-                      Totals
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="pl-4 sm:pl-5 font-medium">Total</TableCell>
+                    {multiStore ? <TableCell className="hidden md:table-cell" /> : null}
+                    <TableCell className="hidden md:table-cell text-right tabular-nums">
                       {totals.weeks}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-semibold">
-                      {totals.hours.toFixed(2)}
+                    <TableCell className="text-right tabular-nums font-medium">
+                      {totals.hours.toFixed(1)}
                     </TableCell>
-                    <TableCell />
-                    <TableCell className="text-right tabular-nums font-semibold">
+                    <TableCell className="hidden sm:table-cell" />
+                    <TableCell className="text-right tabular-nums font-medium pr-4 sm:pr-5">
                       {fmtMoney(totals.gross)}
                     </TableCell>
                   </TableRow>
@@ -341,6 +299,8 @@ export default function HistoryTab({
           </div>
         </CardContent>
       </Card>
+
+      <PositionBreakdown items={positionItems} />
     </div>
   );
 }
