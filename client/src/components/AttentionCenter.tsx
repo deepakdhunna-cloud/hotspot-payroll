@@ -139,13 +139,15 @@ export function AttentionCenter({ className }: { className?: string }) {
     return (
       <p
         className={cn(
-          "flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground",
+          "hue-green tint-surface flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm text-muted-foreground",
           className,
         )}
       >
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+        <span className="icon-badge icon-badge-sm">
+          <CheckCircle2 />
+        </span>
         <span>
-          <span className="font-medium text-foreground">All clear.</span> Punches,
+          <span className="font-semibold hue-text">All clear.</span> Punches,
           schedules and payroll all check out.
         </span>
       </p>
@@ -157,8 +159,10 @@ export function AttentionCenter({ className }: { className?: string }) {
       className={cn("surface-card overflow-hidden rise-in", className)}
       aria-label="Needs attention"
     >
-      <header className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b border-border bg-[oklch(0.62_0.15_65_/_0.06)]">
-        <ShieldAlert className="h-4 w-4 text-warning" />
+      <header className="hue-amber tint-surface flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b">
+        <span className="icon-badge icon-badge-sm">
+          <ShieldAlert />
+        </span>
         <h2 className="section-title">Needs attention</h2>
         <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[11px] font-semibold tabular-nums text-white">
           {items.length}

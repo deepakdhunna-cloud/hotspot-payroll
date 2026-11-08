@@ -31,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
+import { STORE_ABBR, fmtMoney, fmtWeekRange, storeColor } from "@/lib/format";
 import { inProgressPayWeekStart, fmtDateTime } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -47,11 +47,16 @@ import {
   Eye,
   EyeOff,
   History,
+  KeyRound,
+  LayoutDashboard,
+  Radio,
   RefreshCw,
   Satellite,
   ShieldCheck,
+  Users,
+  Wallet,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export default function CeoView() {
@@ -184,11 +189,21 @@ export default function CeoView() {
       <Tabs defaultValue="overview" className="gap-4 md:gap-5">
         <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
           <TabsList className="w-max md:self-start">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="payroll">Payroll</TabsTrigger>
-            <TabsTrigger value="managers">Access &amp; PINs</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-            <TabsTrigger value="portal">Live portal</TabsTrigger>
+            <TabsTrigger value="overview" className="hue-red">
+              <LayoutDashboard className="hue-text" /> Overview
+            </TabsTrigger>
+            <TabsTrigger value="payroll" className="hue-green">
+              <Wallet className="hue-text" /> Payroll
+            </TabsTrigger>
+            <TabsTrigger value="managers" className="hue-amber">
+              <KeyRound className="hue-text" /> Access &amp; PINs
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="hue-teal">
+              <History className="hue-text" /> Activity
+            </TabsTrigger>
+            <TabsTrigger value="portal" className="hue-blue">
+              <Radio className="hue-text" /> Live portal
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -201,6 +216,7 @@ export default function CeoView() {
         <KpiBand>
           <KpiCell
             hero
+            icon={<Wallet />}
             label={isLiveWeek ? "Labor cost so far" : "Gross payroll"}
             value={<Money value={isLiveWeek ? liveLabor : agg.totalGross} />}
             sub={isLiveWeek ? `earned this week · ${focusLabel}` : `saved for that week · ${focusLabel}`}
@@ -218,6 +234,8 @@ export default function CeoView() {
             }
           />
           <KpiCell
+            hue="blue"
+            icon={<Clock />}
             label="Hours clocked"
             value={agg.totalClockHours.toFixed(1)}
             sub={
@@ -240,6 +258,8 @@ export default function CeoView() {
           />
           {isLiveWeek ? (
             <KpiCell
+              hue="green"
+              icon={<Users />}
               label="On the clock now"
               value={agg.clockedInCount}
               sub={
@@ -256,6 +276,8 @@ export default function CeoView() {
             />
           ) : (
             <KpiCell
+              hue="teal"
+              icon={<CheckCircle2 />}
               label="Saved to payroll"
               value={`${savedCount}/${rows.length}`}
               sub={`${agg.totalHours.toFixed(1)} hours entered so far`}
@@ -263,12 +285,16 @@ export default function CeoView() {
           )}
           {isLiveWeek ? (
             <KpiCell
+              hue="teal"
+              icon={<CheckCircle2 />}
               label="Payroll saved"
               value={<Money value={agg.totalGross} />}
               sub="fills in once the week is paid"
             />
           ) : (
             <KpiCell
+              hue="violet"
+              icon={<Wallet />}
               label="Net pay (est.)"
               value={<Money value={agg.totalNet} />}
               sub={`≈ ${fmtMoney(agg.totalFederal + agg.totalState)} withheld (est.)`}
@@ -297,22 +323,25 @@ export default function CeoView() {
                     }
                   }}
                   className={cn(
-                    "surface-card border-0 gap-0 py-0 cursor-pointer transition-all select-none",
+                    "tint-surface rounded-xl border gap-0 py-0 cursor-pointer transition-all select-none overflow-hidden",
                     focused
-                      ? "ring-2 ring-foreground"
+                      ? "ring-2 ring-[var(--hue)] shadow-md"
                       : storeFilter !== "all"
                         ? "opacity-55 hover:opacity-90"
-                        : "hover:border-foreground/20",
+                        : "hover:-translate-y-px hover:shadow-md",
                   )}
+                  style={{ ["--hue" as string]: storeColor(store) } as React.CSSProperties}
                   title={
                     focused
                       ? "Tap to show all stores"
                       : `Tap to focus on ${store}`
                   }
                 >
+                  <div className="h-1 w-full" style={{ background: "var(--hue)" }} aria-hidden="true" />
                   <CardContent className="p-4 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium">
+                      <span className="flex items-center gap-2 truncate text-sm font-semibold">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: "var(--hue)" }} />
                         {STORE_ABBR[store] ?? store}
                       </span>
                       {isLiveWeek && s.clockedInCount > 0 ? (
@@ -330,6 +359,15 @@ export default function CeoView() {
                       <p className="text-xs text-muted-foreground tabular-nums">
                         {s.totalClockHours.toFixed(1)}h of {s.totalScheduled.toFixed(1)}h
                       </p>
+                      <div className="mt-1.5 h-1.5 rounded-full bg-[color-mix(in_oklab,var(--hue)_14%,transparent)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${s.totalScheduled > 0 ? Math.min(100, (s.totalClockHours / s.totalScheduled) * 100) : 0}%`,
+                            background: "var(--hue)",
+                          }}
+                        />
+                      </div>
                     </div>
                     {s.overClockedCount > 0 ? (
                       <span className="chip-warn">
@@ -351,6 +389,9 @@ export default function CeoView() {
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
           <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-teal">
+              <History />
+            </span>
             Last 8 pay weeks{storeFilter !== "all" ? ` · ${focusLabel}` : ""}
           </CardTitle>
           <span className="hidden sm:inline text-xs text-muted-foreground">tap a week to open it</span>
@@ -374,6 +415,9 @@ export default function CeoView() {
           <Card className="surface-card border-0 gap-0 py-0">
             <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
               <CardTitle className="section-title">
+                <span className="icon-badge icon-badge-sm hue-green">
+                  <Wallet />
+                </span>
                 Payroll by employee{storeFilter !== "all" ? ` · ${storeFilter}` : ""}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
@@ -508,7 +552,12 @@ function ManagersPanel() {
   return (
     <Card className="surface-card border-0 gap-0 py-0">
       <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
-        <CardTitle className="section-title">Access PINs</CardTitle>
+        <CardTitle className="section-title">
+          <span className="icon-badge icon-badge-sm hue-amber">
+            <KeyRound />
+          </span>
+          Access PINs
+        </CardTitle>
         <p className="text-sm text-muted-foreground">
           Changing a PIN signs out every device that used the old one. Do it when a device
           is lost or a manager leaves.

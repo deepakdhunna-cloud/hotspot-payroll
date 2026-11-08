@@ -28,7 +28,17 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
-import { ShieldCheck } from "lucide-react";
+import {
+  BarChart3,
+  CalendarClock,
+  Clock,
+  Landmark,
+  ShieldCheck,
+  Store,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "wouter";
 
@@ -325,11 +335,14 @@ export default function CfoView() {
         <KpiBand className="grid-cols-2 xl:grid-cols-3">
           <KpiCell
             hero
+            icon={<Wallet />}
             label="Last week payroll"
             value={<Money value={m.last.gross} />}
             sub={`${fmtWeekRange(new Date(m.last.weekStart))}${m.last.estimated ? " · estimated from time clock" : " · saved payroll"}`}
           />
           <KpiCell
+            hue="teal"
+            icon={<TrendingUp />}
             label="Week over week"
             value={
               m.wow === null ? (
@@ -351,16 +364,22 @@ export default function CfoView() {
             }
           />
           <KpiCell
+            hue="violet"
+            icon={<BarChart3 />}
             label="5-week average"
             value={<Money value={m.avg} />}
             sub="per closed pay week"
           />
           <KpiCell
+            hue="blue"
+            icon={<Clock />}
             label="Cost per worked hour"
             value={`$${m.lastCostPerHour.toFixed(2)}`}
             sub={`5-week average $${m.avgCostPerHour.toFixed(2)}`}
           />
           <KpiCell
+            hue="green"
+            icon={<CalendarClock />}
             label="This week, projected"
             value={<Money value={projected ?? 0} />}
             sub={
@@ -370,6 +389,8 @@ export default function CfoView() {
             }
           />
           <KpiCell
+            hue="amber"
+            icon={<Users />}
             label="People paid last week"
             value={m.last.peoplePaid}
             sub={
@@ -384,6 +405,9 @@ export default function CfoView() {
       <Card className="surface-card border-0">
         <CardHeader className="pb-2">
           <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-violet">
+              <BarChart3 />
+            </span>
             Weekly payroll, last 5 closed weeks
           </CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -435,7 +459,12 @@ export default function CfoView() {
       {weeks.length > 0 ? (
         <Card className="surface-card border-0">
           <CardHeader>
-            <CardTitle className="section-title">Week by week</CardTitle>
+            <CardTitle className="section-title">
+              <span className="icon-badge icon-badge-sm hue-teal">
+                <CalendarClock />
+              </span>
+              Week by week
+            </CardTitle>
           </CardHeader>
           <CardContent className="px-0">
             <div className="overflow-x-auto">
@@ -546,7 +575,12 @@ export default function CfoView() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           <Card className="surface-card border-0">
             <CardHeader>
-              <CardTitle className="section-title">Store economics</CardTitle>
+              <CardTitle className="section-title">
+                <span className="icon-badge icon-badge-sm hue-blue">
+                  <Store />
+                </span>
+                Store economics
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
                 Last closed week ({fmtWeekRange(new Date(m.last.weekStart))}) beside
                 each store&apos;s 5-week average. A store whose time clock isn&apos;t
@@ -663,6 +697,9 @@ export default function CfoView() {
             <Card className="surface-card border-0">
               <CardHeader className="pb-2">
                 <CardTitle className="section-title">
+                  <span className="icon-badge icon-badge-sm hue-amber">
+                    <Landmark />
+                  </span>
                   Withholding snapshot
                 </CardTitle>
               </CardHeader>
