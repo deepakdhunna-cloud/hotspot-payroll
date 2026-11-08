@@ -245,8 +245,9 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <header className="topbar sticky top-0 z-50 border-b border-white/[0.06]">
-        <div className="flex h-14 items-center gap-2 px-4 lg:px-6">
+      {/* Floating glass nav: content scrolls under it, blurred */}
+      <header className="sticky top-0 z-50 px-2 pt-2 sm:px-3 sm:pt-3">
+        <div className="topbar mx-auto flex h-14 max-w-[1400px] items-center gap-2 rounded-2xl px-3 lg:px-4">
           <button
             onClick={() => setLocation(roleHome)}
             className="shrink-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"

@@ -179,16 +179,16 @@ export function AttentionCenter({ className }: { className?: string }) {
       className={cn("attention-card rise-in", className)}
       aria-label="Needs attention"
     >
-      <header className="attention-head flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 sm:px-5 py-3.5">
-        <span className="attention-beacon icon-badge" aria-hidden="true">
+      <header className="attention-head flex flex-wrap items-center gap-x-3 gap-y-1 px-4 sm:px-5 pt-4 pb-3">
+        <span className="attention-beacon attention-icon" aria-hidden="true">
           <ShieldAlert />
         </span>
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold leading-tight text-white flex items-center gap-2">
+          <h2 className="text-[15px] font-semibold leading-tight flex items-center gap-2">
             Needs attention
             <span className="attention-count">{items.length}</span>
           </h2>
-          <p className="text-xs text-white/60 leading-snug">
+          <p className="text-xs text-muted-foreground leading-snug">
             Each stays here until someone signs it off
           </p>
         </div>

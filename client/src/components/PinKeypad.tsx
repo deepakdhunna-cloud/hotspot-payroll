@@ -100,7 +100,7 @@ export default function PinKeypad() {
             className="absolute inset-x-0 top-0 h-1"
             style={{
               background:
-                "linear-gradient(90deg, var(--brand-red-bright), oklch(0.7 0.18 45) 55%, oklch(0.78 0.15 75))",
+                "linear-gradient(90deg, var(--brand-red), var(--brand-red-bright) 50%, var(--brand-orange))",
             }}
           />
           <div className="flex flex-col items-center gap-1 text-center">

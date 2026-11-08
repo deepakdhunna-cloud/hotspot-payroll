@@ -289,7 +289,7 @@ export default function PunchesTab({
             ) : null}
           </p>
         </CardHeader>
-        <CardContent className="px-0">
+        <CardContent className="px-0 pt-0">
           {listQ.isLoading ? (
             <div className="space-y-2 p-4">
               {[0, 1, 2, 3].map((i) => (
