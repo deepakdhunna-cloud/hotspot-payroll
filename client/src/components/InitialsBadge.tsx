@@ -2,17 +2,19 @@
  * Deterministic initials avatar — the detail that turns a generic roster
  * table into a designed one (Stripe/Gusto do exactly this). Hue is derived
  * from the name so each person keeps their color everywhere; the palette is
- * the validated categorical set, never brand red (red = state, not people).
+ * the muted series set, never brand red (red = actions, not people).
  */
 import { cn } from "@/lib/utils";
 
+// The muted series palette (see --chart-* in index.css), one lightness
+// and chroma, so no person's badge shouts louder than another's.
 const PALETTE = [
-  { bg: "#2a78d61f", fg: "#1d5eae" }, // blue
-  { bg: "#0083001c", fg: "#046a04" }, // green
-  { bg: "#e87ba42b", fg: "#a83a68" }, // magenta
-  { bg: "#eda10026", fg: "#8a5f00" }, // amber
-  { bg: "#1baf7a24", fg: "#0d7c55" }, // aqua
-  { bg: "#6366f11f", fg: "#4649c9" }, // indigo
+  { bg: "oklch(0.56 0.11 252 / 0.13)", fg: "oklch(0.42 0.1 252)" }, // steel blue
+  { bg: "oklch(0.6 0.09 185 / 0.15)", fg: "oklch(0.42 0.07 185)" }, // teal
+  { bg: "oklch(0.55 0.11 340 / 0.13)", fg: "oklch(0.44 0.1 340)" }, // plum
+  { bg: "oklch(0.7 0.12 75 / 0.18)", fg: "oklch(0.47 0.09 70)" }, // ochre
+  { bg: "oklch(0.58 0.09 145 / 0.15)", fg: "oklch(0.42 0.07 145)" }, // sage
+  { bg: "oklch(0.55 0.07 40 / 0.13)", fg: "oklch(0.43 0.07 40)" }, // clay
 ];
 
 function hashName(name: string): number {

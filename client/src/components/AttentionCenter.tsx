@@ -139,7 +139,7 @@ export function AttentionCenter({ className }: { className?: string }) {
     return (
       <p
         className={cn(
-          "hue-green tint-surface flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm text-muted-foreground",
+          "callout-good flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-muted-foreground",
           className,
         )}
       >
@@ -147,7 +147,7 @@ export function AttentionCenter({ className }: { className?: string }) {
           <CheckCircle2 />
         </span>
         <span>
-          <span className="font-semibold hue-text">All clear.</span> Punches,
+          <span className="font-semibold callout-title">All clear.</span> Punches,
           schedules and payroll all check out.
         </span>
       </p>
@@ -159,7 +159,7 @@ export function AttentionCenter({ className }: { className?: string }) {
       className={cn("surface-card overflow-hidden rise-in", className)}
       aria-label="Needs attention"
     >
-      <header className="hue-amber tint-surface flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-b">
+      <header className="callout-warn flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3 border-0 border-b">
         <span className="icon-badge icon-badge-sm">
           <ShieldAlert />
         </span>

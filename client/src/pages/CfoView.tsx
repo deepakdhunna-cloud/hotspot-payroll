@@ -405,7 +405,7 @@ export default function CfoView() {
       <Card className="surface-card border-0">
         <CardHeader className="pb-2">
           <CardTitle className="section-title">
-            <span className="icon-badge icon-badge-sm hue-violet">
+            <span className="icon-badge icon-badge-sm">
               <BarChart3 />
             </span>
             Weekly payroll, last 5 closed weeks
@@ -460,7 +460,7 @@ export default function CfoView() {
         <Card className="surface-card border-0">
           <CardHeader>
             <CardTitle className="section-title">
-              <span className="icon-badge icon-badge-sm hue-teal">
+              <span className="icon-badge icon-badge-sm">
                 <CalendarClock />
               </span>
               Week by week
@@ -576,7 +576,7 @@ export default function CfoView() {
           <Card className="surface-card border-0">
             <CardHeader>
               <CardTitle className="section-title">
-                <span className="icon-badge icon-badge-sm hue-blue">
+                <span className="icon-badge icon-badge-sm">
                   <Store />
                 </span>
                 Store economics
@@ -697,7 +697,7 @@ export default function CfoView() {
             <Card className="surface-card border-0">
               <CardHeader className="pb-2">
                 <CardTitle className="section-title">
-                  <span className="icon-badge icon-badge-sm hue-amber">
+                  <span className="icon-badge icon-badge-sm">
                     <Landmark />
                   </span>
                   Withholding snapshot

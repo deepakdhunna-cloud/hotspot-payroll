@@ -97,14 +97,14 @@ export default function WeeklyPayroll() {
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)}>
         <TabsList className="grid grid-cols-3 w-full sm:w-auto sm:self-start">
-          <TabsTrigger value="hours" className="gap-2 hue-green">
-            <ClipboardList className="h-4 w-4 hue-text" /> Hours & pay
+          <TabsTrigger value="hours" className="gap-2">
+            <ClipboardList className="h-4 w-4" /> Hours & pay
           </TabsTrigger>
-          <TabsTrigger value="punches" className="gap-2 hue-blue">
-            <Clock className="h-4 w-4 hue-text" /> Punches
+          <TabsTrigger value="punches" className="gap-2">
+            <Clock className="h-4 w-4" /> Punches
           </TabsTrigger>
-          <TabsTrigger value="history" className="gap-2 hue-teal">
-            <HistoryIcon className="h-4 w-4 hue-text" /> History
+          <TabsTrigger value="history" className="gap-2">
+            <HistoryIcon className="h-4 w-4" /> History
           </TabsTrigger>
         </TabsList>
 

@@ -273,7 +273,7 @@ export default function PunchesTab({
       <Card className="surface-card border-0 gap-0 py-0 overflow-hidden">
         <CardHeader className="flex flex-row flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 sm:px-5 pt-4 pb-3 border-b border-border">
           <CardTitle className="section-title">
-            <span className="icon-badge icon-badge-sm hue-blue">
+            <span className="icon-badge icon-badge-sm">
               <Clock />
             </span>
             Punches
@@ -305,8 +305,8 @@ export default function PunchesTab({
           ) : (
             dayGroups(filteredRows).map((g) => (
               <section key={g.key}>
-                <header className="hue-blue tint-surface flex items-baseline justify-between px-4 sm:px-5 py-2 border-b text-xs">
-                  <span className="font-semibold hue-text">{g.label}</span>
+                <header className="flex items-baseline justify-between bg-muted/70 px-4 sm:px-5 py-2 border-b border-border text-xs">
+                  <span className="font-semibold text-foreground">{g.label}</span>
                   <span className="text-muted-foreground tabular-nums">
                     {g.rows.length} punch{g.rows.length === 1 ? "" : "es"} · {g.hours.toFixed(1)}h
                   </span>

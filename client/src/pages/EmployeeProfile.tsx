@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { fmtMoney, fmtWeekRange, roleHue } from "@/lib/format";
+import { fmtMoney, fmtWeekRange } from "@/lib/format";
 import { fmtDuration } from "@/lib/payweek";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { Money } from "@/components/Money";
@@ -132,7 +132,7 @@ export default function EmployeeProfile() {
             }
             description={
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className={`role-tag hue-${roleHue(emp.role)}`}>{emp.role}</span>
+                <span className="role-tag">{emp.role}</span>
                 <span>{emp.storeLocation}</span>
                 <span aria-hidden="true">·</span>
                 <a href={`tel:${emp.phone}`} className="tabular-nums hover:text-foreground">
@@ -192,7 +192,7 @@ export default function EmployeeProfile() {
             <Card className="surface-card border-0 gap-0 py-0">
               <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
                 <CardTitle className="section-title">
-                  <span className="icon-badge icon-badge-sm hue-green">
+                  <span className="icon-badge icon-badge-sm">
                     <Wallet />
                   </span>
                   Payroll history
@@ -300,7 +300,7 @@ function ClockCodeCard({
 
   return (
     <div
-      className={`${hasCode ? "hue-green" : "hue-amber"} tint-surface rounded-xl border flex flex-col gap-3 px-4 sm:px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between`}
+      className={`${hasCode ? "surface-card" : "callout-warn rounded-xl"} flex flex-col gap-3 px-4 sm:px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between`}
     >
       <div className="flex items-center gap-3">
         <span className="icon-badge">
@@ -320,7 +320,7 @@ function ClockCodeCard({
         <div className="flex flex-wrap gap-2 pl-12 sm:pl-0">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant={hasCode ? "soft" : "default"}>
+              <Button size="sm" variant={hasCode ? "outline" : "default"}>
                 {hasCode ? "Change code" : "Set code"}
               </Button>
             </DialogTrigger>
@@ -410,12 +410,12 @@ function PunchHistoryCard({
     <Card className="surface-card border-0 gap-0 py-0">
       <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
         <CardTitle className="section-title">
-          <span className="icon-badge icon-badge-sm hue-blue">
+          <span className="icon-badge icon-badge-sm">
             <Clock />
           </span>
           Recent punches
         </CardTitle>
-        <Button size="sm" variant="soft" className="hue-blue h-8" asChild>
+        <Button size="sm" variant="outline" className=" h-8" asChild>
           <Link href="/payroll?tab=punches">All punches</Link>
         </Button>
       </CardHeader>
