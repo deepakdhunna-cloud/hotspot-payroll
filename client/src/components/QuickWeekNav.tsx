@@ -1,6 +1,7 @@
 /**
- * Pay-week command control: one-tap jumps to the live week and last closed
- * week, chevrons for stepping, and a calendar popover for anything older.
+ * Pay-week control: a segmented track with one-tap jumps to the live week and
+ * the last closed week, chevrons for stepping, and a calendar popover for
+ * anything older (the date segment lights up when an older week is picked).
  * Weeks are always Thursday → Wednesday; picking any date snaps to its
  * pay-week Thursday.
  */
@@ -34,50 +35,45 @@ export function QuickWeekNav({
   const isLive = weekStart.getTime() === live.getTime();
   const isLastClosed = weekStart.getTime() === lastClosed.getTime();
 
+  const seg = (active: boolean) =>
+    cn(
+      "h-8 rounded-md px-2.5 sm:px-3 text-xs font-medium whitespace-nowrap transition-colors",
+      active
+        ? "bg-card text-foreground shadow-sm"
+        : "text-muted-foreground hover:text-foreground",
+    );
+
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-lg border border-border bg-card shadow-sm overflow-hidden",
+        "inline-flex max-w-full items-center gap-0.5 rounded-lg bg-muted p-0.5",
         className,
       )}
     >
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-8 rounded-none"
+        className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-card/70"
         onClick={() => onChange(shiftPayWeek(weekStart, -1))}
         aria-label="Previous pay week"
       >
         <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <button
-        onClick={() => onChange(new Date(live))}
-        className={cn(
-          "h-9 px-3 text-xs font-semibold border-x border-border transition-colors",
-          isLive
-            ? "bg-primary text-primary-foreground"
-            : "hover:bg-accent text-muted-foreground",
-        )}
-      >
+      <button onClick={() => onChange(new Date(live))} className={seg(isLive)}>
         This week
       </button>
-      <button
-        onClick={() => onChange(new Date(lastClosed))}
-        className={cn(
-          "h-9 px-3 text-xs font-semibold transition-colors",
-          isLastClosed
-            ? "bg-primary text-primary-foreground"
-            : "hover:bg-accent text-muted-foreground",
-        )}
-      >
+      <button onClick={() => onChange(new Date(lastClosed))} className={seg(isLastClosed)}>
         Last week
       </button>
 
       <Popover>
         <PopoverTrigger asChild>
           <button
-            className="flex h-9 items-center gap-2 border-l border-border px-3 text-sm font-medium tabular-nums hover:bg-accent transition-colors"
+            className={cn(
+              seg(!isLive && !isLastClosed),
+              "flex items-center gap-1.5 tabular-nums",
+            )}
             aria-label="Pick pay week"
           >
             <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
@@ -106,7 +102,7 @@ export function QuickWeekNav({
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-8 rounded-none border-l border-border"
+        className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-card/70"
         onClick={() => onChange(shiftPayWeek(weekStart, 1))}
         disabled={isLive}
         aria-label="Next pay week"

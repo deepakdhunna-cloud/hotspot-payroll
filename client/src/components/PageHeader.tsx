@@ -1,8 +1,8 @@
 /**
- * Shared page header. Hierarchy: brand speed-lines + red eyebrow set the
- * section, a condensed signage title carries the page, one muted line of
- * context below. Controls (week nav, store filter, CTA) sit right-aligned
- * and wrap under the title on narrow screens.
+ * Shared page header: a plain title, at most one short line of context, and
+ * the page's controls on the right (they wrap under the title on narrow
+ * screens). An eyebrow is only for context the title can't carry, such as a
+ * store name on a multi-store view.
  */
 import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -12,31 +12,26 @@ export function PageHeader({
   title,
   description,
   actions,
-  icon,
   className,
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
+  /** @deprecated kept so older call sites compile; no longer rendered. */
   icon?: ReactNode;
   className?: string;
 }) {
   return (
     <header
       className={cn(
-        "flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between pb-5 border-b border-border",
+        "flex flex-col gap-4 md:flex-row md:items-end md:justify-between",
         className,
       )}
     >
       <div className="min-w-0">
-        <div className="flex items-center gap-2.5">
-          <span className="speed-lines shrink-0" aria-hidden="true">
-            <i />
-          </span>
-          {eyebrow ? <div className="eyebrow">{eyebrow}</div> : null}
-        </div>
-        <h1 className="page-title mt-2">{title}</h1>
+        {eyebrow ? <div className="eyebrow mb-1">{eyebrow}</div> : null}
+        <h1 className="page-title">{title}</h1>
         {description ? <p className="page-subtitle">{description}</p> : null}
       </div>
       {actions ? (

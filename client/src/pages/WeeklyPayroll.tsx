@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   currentPayPeriodStart,
   fromDateInput,
+  inProgressPayWeekStart,
   startOfPayWeek,
 } from "@/lib/payweek";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
@@ -37,13 +38,19 @@ function readTabFromQuery(): TabKey {
   return "hours";
 }
 
-/** Dashboard CTAs deep-link a week via ?week=YYYY-MM-DD; snap it to Thursday. */
+/**
+ * Dashboard CTAs deep-link a week via ?week=YYYY-MM-DD; snap it to Thursday.
+ * With no week given, Punches opens on the live week (that's where today's
+ * punches are) and Hours & pay on the last closed week (the one to pay).
+ */
 function readWeekFromQuery(): Date {
   if (typeof window !== "undefined") {
-    const w = new URLSearchParams(window.location.search).get("week");
+    const params = new URLSearchParams(window.location.search);
+    const w = params.get("week");
     if (w && /^\d{4}-\d{2}-\d{2}$/.test(w)) {
       return startOfPayWeek(fromDateInput(w));
     }
+    if (params.get("tab") === "punches") return inProgressPayWeekStart();
   }
   return currentPayPeriodStart();
 }
@@ -79,10 +86,8 @@ export default function WeeklyPayroll() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Payroll"
-        icon={<ClipboardList className="h-5 w-5" />}
-        title="Payroll & time clock"
-        description="Thursday–Wednesday pay period. Hours auto-fill from the kiosk. Saved entries are kept permanently."
+        title="Payroll"
+        description="Pay weeks run Thursday to Wednesday. Hours fill in from the time clock."
         actions={
           tab !== "history" ? (
             <QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />
@@ -91,7 +96,7 @@ export default function WeeklyPayroll() {
       />
 
       <Tabs value={tab} onValueChange={(v) => switchTab(v as TabKey)}>
-        <TabsList className="grid grid-cols-3 w-full max-w-md">
+        <TabsList className="grid grid-cols-3 w-full sm:w-auto sm:inline-grid">
           <TabsTrigger value="hours" className="gap-2">
             <ClipboardList className="h-4 w-4" /> Hours & pay
           </TabsTrigger>

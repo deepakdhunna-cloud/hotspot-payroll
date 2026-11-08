@@ -26,13 +26,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, STORE_ABBR } from "@/lib/format";
-import { KeyRound, Phone, Plus, Search, Users, ArrowRight, Trash2, X } from "lucide-react";
+import { KeyRound, Plus, Search, ArrowRight, Trash2, X, ChevronRight } from "lucide-react";
+import { TableStateRows } from "@/components/QueryStates";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
+import { consumeQueryFlag } from "@/lib/queryFlag";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -44,6 +45,10 @@ export default function Employees() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  // Dashboard "Add employee" shortcut lands here with ?add=1.
+  useEffect(() => {
+    if (consumeQueryFlag("add")) setAddOpen(true);
+  }, []);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkStore, setBulkStore] = useState<string>("");
   const [bulkRole, setBulkRole] = useState<string>("");
@@ -73,6 +78,10 @@ export default function Employees() {
 
   const stores = scopeQ.data?.stores ?? [];
   const roles = optionsQ.data?.roles ?? [];
+  const missingCodes = (listQ.data ?? []).filter((e) => !e.clockCodeHash).length;
+  // A store column only earns its place when the list spans several stores.
+  const showStore = storeFilter === "all" && stores.length > 1;
+  const [, navigate] = useLocation();
   const utils = trpc.useUtils();
 
   const bulkDeleteM = trpc.employees.bulkDelete.useMutation({
@@ -150,10 +159,20 @@ export default function Employees() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Roster"
-        icon={<Users className="h-5 w-5" />}
         title="Employees"
-        description="Profiles, pay rates, and store assignments. Click a row to open the full profile."
+        description={
+          listQ.data
+            ? `${listQ.data.length} ${listQ.data.length === 1 ? "person" : "people"}${
+                storeFilter === "all"
+                  ? stores.length > 1
+                    ? " across your stores"
+                    : stores[0]
+                      ? ` at ${stores[0]}`
+                      : ""
+                  : ` at ${storeFilter}`
+              }${missingCodes > 0 ? ` · ${missingCodes} without a clock code` : ""}`
+            : undefined
+        }
         actions={
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
@@ -170,21 +189,22 @@ export default function Employees() {
         }
       />
 
-      <Card className="surface-card border-0 rise-in">
-        <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+      <Card className="surface-card border-0 gap-0 py-0 overflow-hidden">
+        <CardHeader className="px-3 sm:px-4 py-3 border-b border-border">
+          <div className="flex gap-2 items-center">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by name or phone..."
+                placeholder="Search name or phone"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
+                className="pl-9 h-9"
+                aria-label="Search employees"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 ml-auto">
               <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="h-9 w-[180px] bg-card shadow-sm">
+                <SelectTrigger className="h-9 w-[140px] sm:w-[180px] bg-card">
                   <SelectValue placeholder="All roles" />
                 </SelectTrigger>
                 <SelectContent>
@@ -200,10 +220,9 @@ export default function Employees() {
           </div>
         </CardHeader>
         {selected.size > 0 && (
-          <div className="mx-6 mb-4 rounded-xl border border-primary/30 bg-primary/5 shadow-sm px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="border-b border-border bg-muted/50 px-4 py-2.5 flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex items-center gap-2 text-sm">
-              <Badge className="bg-primary text-primary-foreground">{selected.size}</Badge>
-              <span className="font-medium">selected</span>
+              <span className="font-medium tabular-nums">{selected.size} selected</span>
               <Button
                 variant="ghost"
                 size="sm"
@@ -271,8 +290,8 @@ export default function Employees() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[44px] pl-4">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="hidden sm:table-cell w-[44px] pl-4">
                     <Checkbox
                       checked={
                         filtered.length > 0 && selected.size === filtered.length
@@ -285,87 +304,84 @@ export default function Employees() {
                       aria-label="Select all"
                     />
                   </TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Store</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Clock code</TableHead>
+                  <TableHead className="pl-4 sm:pl-2">Name</TableHead>
+                  {showStore ? <TableHead className="hidden md:table-cell">Store</TableHead> : null}
+                  <TableHead className="hidden md:table-cell">Phone</TableHead>
                   <TableHead className="text-right">Pay rate</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-10" aria-label="Open" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {listQ.isLoading && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground">
-                      Loading…
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!listQ.isLoading && filtered.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-10 text-sm text-muted-foreground">
-                      No employees match your filters.
-                    </TableCell>
-                  </TableRow>
-                )}
+                <TableStateRows
+                  colSpan={6}
+                  isLoading={listQ.isLoading}
+                  isError={listQ.isError}
+                  onRetry={() => listQ.refetch()}
+                  isEmpty={!listQ.isLoading && filtered.length === 0}
+                  emptyTitle={
+                    (listQ.data?.length ?? 0) === 0
+                      ? "No employees yet"
+                      : "Nobody matches your search"
+                  }
+                  emptyHint={
+                    (listQ.data?.length ?? 0) === 0
+                      ? "Add your team, or import a schedule and add new names from there."
+                      : undefined
+                  }
+                />
                 {filtered.map((emp) => (
                   <TableRow
                     key={emp.id}
                     data-state={selected.has(emp.id) ? "selected" : undefined}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/employees/${emp.id}`)}
                   >
-                    <TableCell className="pl-4">
+                    <TableCell
+                      className="hidden sm:table-cell pl-4"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Checkbox
                         checked={selected.has(emp.id)}
                         onCheckedChange={() => toggleOne(emp.id)}
                         aria-label={`Select ${emp.fullName}`}
                       />
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <InitialsBadge name={emp.fullName} size="sm" />
-                        <Link
-                          href={`/employees/${emp.id}`}
-                          className="font-medium hover:text-primary"
-                        >
-                          {emp.fullName}
-                        </Link>
+                    <TableCell className="pl-4 sm:pl-2 py-2.5">
+                      <div className="flex items-center gap-3">
+                        <InitialsBadge name={emp.fullName} />
+                        <div className="min-w-0">
+                          <Link
+                            href={`/employees/${emp.id}`}
+                            className="block font-medium truncate"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {emp.fullName}
+                          </Link>
+                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+                            {emp.role}
+                            {!emp.clockCodeHash ? (
+                              <span className="chip-warn py-0">
+                                <KeyRound className="h-3 w-3" /> No code
+                              </span>
+                            ) : null}
+                          </p>
+                        </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="font-normal">
-                        {emp.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        {emp.phone}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {emp.clockCodeHash ? (
-                        <span className="chip-good">
-                          <KeyRound className="h-3 w-3" /> set
-                        </span>
-                      ) : (
-                        <span className="chip-neutral">
-                          <KeyRound className="h-3 w-3" /> none
-                        </span>
-                      )}
+                    {showStore ? (
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                        {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground tabular-nums">
+                      {emp.phone}
                     </TableCell>
                     <TableCell className="text-right tabular-nums font-medium">
-                      {fmtMoney(Number(emp.payRate))}/hr
+                      {fmtMoney(Number(emp.payRate))}
+                      <span className="text-muted-foreground font-normal">/hr</span>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Link href={`/employees/${emp.id}`}>
-                        <Button size="sm" variant="ghost">
-                          View profile
-                        </Button>
-                      </Link>
+                    <TableCell className="pr-3 text-muted-foreground">
+                      <ChevronRight className="h-4 w-4" />
                     </TableCell>
                   </TableRow>
                 ))}

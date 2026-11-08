@@ -70,7 +70,7 @@ export function WeekTrend({
               }`}
               className={cn(
                 "group flex flex-col items-center justify-end gap-1 flex-1 h-full rounded-md px-0.5 pt-1 transition-colors",
-                isSelected ? "bg-primary/8" : "hover:bg-accent",
+                isSelected ? "bg-muted" : "hover:bg-muted/60",
               )}
               aria-label={`Week of ${fmtWeekRange(ws)}`}
             >
@@ -89,18 +89,15 @@ export function WeekTrend({
                 style={{ height: `${BAR_AREA}px` }}
               >
                 <div
-                  className={cn(
-                    "w-full rounded-t-[5px] transition-all group-hover:opacity-100",
-                    isSelected &&
-                      "ring-2 ring-primary ring-offset-1 ring-offset-card",
-                  )}
+                  className="w-full rounded-[4px] transition-all"
                   style={{
                     height: `${h}px`,
                     background:
-                      w.clockHours > 0
-                        ? "linear-gradient(180deg, #5b9be0, var(--chart-1) 60%)"
-                        : "var(--border)",
-                    opacity: isSelected || isLive ? 1 : 0.55,
+                      w.clockHours <= 0
+                        ? "var(--border)"
+                        : isSelected
+                          ? "var(--chart-1)"
+                          : "color-mix(in oklab, var(--chart-1) 38%, var(--card))",
                   }}
                 />
                 {schedH !== null ? (
@@ -141,13 +138,11 @@ export function WeekTrend({
         })}
       </div>
       {(hasSchedule || hasSaved) && (
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground leading-none">
+        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground leading-none">
           <span className="inline-flex items-center gap-1">
             <span
               className="inline-block h-2 w-2.5 rounded-[2px]"
-              style={{
-                background: "linear-gradient(180deg, #5b9be0, var(--chart-1))",
-              }}
+              style={{ background: "var(--chart-1)" }}
             />
             hours clocked
           </span>
