@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { fmtMoney, fmtWeekRange } from "@/lib/format";
+import { fmtMoney, fmtWeekRange, roleHue } from "@/lib/format";
 import { fmtDuration } from "@/lib/payweek";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { Money } from "@/components/Money";
@@ -59,6 +59,8 @@ import {
   LogOut,
   Trash2,
   KeyRound,
+  Wallet,
+  CalendarCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams, useLocation } from "wouter";
@@ -130,8 +132,7 @@ export default function EmployeeProfile() {
             }
             description={
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span>{emp.role}</span>
-                <span aria-hidden="true">·</span>
+                <span className={`role-tag hue-${roleHue(emp.role)}`}>{emp.role}</span>
                 <span>{emp.storeLocation}</span>
                 <span aria-hidden="true">·</span>
                 <a href={`tel:${emp.phone}`} className="tabular-nums hover:text-foreground">
@@ -160,24 +161,25 @@ export default function EmployeeProfile() {
           <KpiBand>
             <KpiCell
               hero
+              icon={<Wallet />}
               label={emp.weeklyPay != null ? "Weekly pay" : "Pay rate"}
               value={
                 emp.weeklyPay != null ? (
                   <>
                     {fmtMoney(Number(emp.weeklyPay))}
-                    <span className="text-base font-medium text-muted-foreground">/wk</span>
+                    <span className="text-base font-medium opacity-70">/wk</span>
                   </>
                 ) : (
                   <>
                     {fmtMoney(Number(emp.payRate))}
-                    <span className="text-base font-medium text-muted-foreground">/hr</span>
+                    <span className="text-base font-medium opacity-70">/hr</span>
                   </>
                 )
               }
             />
-            <KpiCell label="Hours" value={ytdHours.toFixed(1)} sub="last 52 weeks" />
-            <KpiCell label="Gross pay" value={<Money value={ytdGross} />} sub="last 52 weeks" />
-            <KpiCell label="Weeks paid" value={history.length} sub="last 52 weeks" />
+            <KpiCell hue="blue" icon={<Clock />} label="Hours" value={ytdHours.toFixed(1)} sub="last 52 weeks" />
+            <KpiCell hue="green" icon={<Wallet />} label="Gross pay" value={<Money value={ytdGross} />} sub="last 52 weeks" />
+            <KpiCell hue="teal" icon={<CalendarCheck />} label="Weeks paid" value={history.length} sub="last 52 weeks" />
           </KpiBand>
 
           <ClockCodeCard
@@ -189,7 +191,12 @@ export default function EmployeeProfile() {
           <div className="grid gap-5 md:gap-6 lg:grid-cols-[1fr_1.4fr] lg:items-start">
             <Card className="surface-card border-0 gap-0 py-0">
               <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
-                <CardTitle className="section-title">Payroll history</CardTitle>
+                <CardTitle className="section-title">
+                  <span className="icon-badge icon-badge-sm hue-green">
+                    <Wallet />
+                  </span>
+                  Payroll history
+                </CardTitle>
               </CardHeader>
               <CardContent className="px-0 pb-2">
                 {history.length === 0 ? (
@@ -292,14 +299,12 @@ function ClockCodeCard({
   };
 
   return (
-    <div className="surface-card flex flex-col gap-3 px-4 sm:px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      className={`${hasCode ? "hue-green" : "hue-amber"} tint-surface rounded-xl border flex flex-col gap-3 px-4 sm:px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between`}
+    >
       <div className="flex items-center gap-3">
-        <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-            hasCode ? "bg-muted text-muted-foreground" : "bg-[oklch(0.62_0.15_65_/_0.14)] text-warning"
-          }`}
-        >
-          <KeyRound className="h-4 w-4" />
+        <span className="icon-badge">
+          <KeyRound />
         </span>
         <div>
           <p className="text-sm font-medium">
@@ -315,7 +320,7 @@ function ClockCodeCard({
         <div className="flex flex-wrap gap-2 pl-12 sm:pl-0">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant={hasCode ? "outline" : "default"}>
+              <Button size="sm" variant={hasCode ? "soft" : "default"}>
                 {hasCode ? "Change code" : "Set code"}
               </Button>
             </DialogTrigger>
@@ -404,13 +409,15 @@ function PunchHistoryCard({
   return (
     <Card className="surface-card border-0 gap-0 py-0">
       <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
-        <CardTitle className="section-title">Recent punches</CardTitle>
-        <Link
-          href="/payroll?tab=punches"
-          className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-        >
-          All punches
-        </Link>
+        <CardTitle className="section-title">
+          <span className="icon-badge icon-badge-sm hue-blue">
+            <Clock />
+          </span>
+          Recent punches
+        </CardTitle>
+        <Button size="sm" variant="soft" className="hue-blue h-8" asChild>
+          <Link href="/payroll?tab=punches">All punches</Link>
+        </Button>
       </CardHeader>
       <CardContent className="px-0 pb-2">
         {isLoading ? (

@@ -23,7 +23,7 @@ import { Money } from "@/components/Money";
 import { PositionBreakdown } from "@/components/PositionBreakdown";
 import { TableStateRows } from "@/components/QueryStates";
 import { trpc } from "@/lib/trpc";
-import { fmtMoney, fmtWeekRange, STORE_ABBR } from "@/lib/format";
+import { fmtMoney, fmtWeekRange, roleHue, STORE_ABBR } from "@/lib/format";
 import { exportXlsx } from "@/lib/xlsx";
 import { cn } from "@/lib/utils";
 import {
@@ -36,6 +36,7 @@ import {
   Pencil,
   Save,
   Undo2,
+  Wallet,
 } from "lucide-react";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -578,16 +579,21 @@ export default function HoursAndPayTab({
       <KpiBand className="grid-cols-2 xl:grid-cols-3">
         <KpiCell
           hero
+          icon={<Wallet />}
           label="Gross pay"
           value={<Money value={totals.grossTotal} />}
           sub={`week of ${fmtWeekRange(weekStart)}`}
         />
         <KpiCell
+          hue="blue"
+          icon={<Clock />}
           label="Hours"
           value={totals.hoursTotal.toFixed(1)}
           sub="entered for the week"
         />
         <KpiCell
+          hue="green"
+          icon={<Check />}
           label="Saved"
           value={`${savedCount} of ${rows.length}`}
           sub={
@@ -602,11 +608,17 @@ export default function HoursAndPayTab({
 
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-3">
-          <CardTitle className="section-title">Hours worked</CardTitle>
+          <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-blue">
+              <Clock />
+            </span>
+            Hours worked
+          </CardTitle>
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="outline"
+              variant="soft"
               size="sm"
+              className="hue-green"
               onClick={handleExport}
               disabled={rows.length === 0}
               title="Download this week as an .xlsx spreadsheet (opens in Google Sheets)"
@@ -790,7 +802,7 @@ export default function HoursAndPayTab({
                       <TableCell className="sticky left-0 z-10 bg-card font-medium">
                         <div>{v.emp.fullName}</div>
                         <div className="text-xs font-normal text-muted-foreground">
-                          {v.emp.role}
+                          <span className={`role-tag hue-${roleHue(v.emp.role)}`}>{v.emp.role}</span>
                           {multiStore
                             ? ` · ${STORE_ABBR[v.emp.storeLocation] ?? v.emp.storeLocation}`
                             : ""}

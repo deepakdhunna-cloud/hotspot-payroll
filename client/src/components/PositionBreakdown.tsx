@@ -4,7 +4,8 @@
  * the two always agree. Bars are proportional to gross, biggest first.
  */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, roleHue } from "@/lib/format";
+import { Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function PositionBreakdown({
@@ -35,14 +36,19 @@ export function PositionBreakdown({
   return (
     <Card className={cn("surface-card border-0 gap-0 py-0", className)}>
       <CardHeader className="px-4 sm:px-5 pt-4 pb-3">
-        <CardTitle className="section-title">Pay by role</CardTitle>
+        <CardTitle className="section-title">
+          <span className="icon-badge icon-badge-sm hue-green">
+            <Wallet />
+          </span>
+          Pay by role
+        </CardTitle>
         {sub ? <p className="text-sm text-muted-foreground">{sub}</p> : null}
       </CardHeader>
       <CardContent className="space-y-3.5 px-4 sm:px-5 pb-5">
         {rows.map((r) => (
-          <div key={r.role} className="space-y-1">
+          <div key={r.role} className={`space-y-1 hue-${roleHue(r.role)}`}>
             <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              <span className="font-medium">{r.role}</span>
+              <span className="role-tag">{r.role}</span>
               <span className="text-xs text-muted-foreground">
                 {r.people} {r.people === 1 ? "person" : "people"} ·{" "}
                 <span className="tabular-nums">{r.hours.toFixed(1)}h</span>
@@ -62,7 +68,8 @@ export function PositionBreakdown({
                 className="h-full rounded-full"
                 style={{
                   width: `${maxGross > 0 ? Math.max(2, (r.gross / maxGross) * 100) : 0}%`,
-                  background: "var(--chart-1)",
+                  background:
+                    "linear-gradient(90deg, color-mix(in oklab, var(--hue) 55%, white), var(--hue))",
                 }}
               />
             </div>

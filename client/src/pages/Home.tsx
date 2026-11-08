@@ -25,7 +25,7 @@ import { WeekTrend } from "@/components/WeekTrend";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { STORE_ABBR, fmtMoney, fmtWeekRange } from "@/lib/format";
+import { STORE_ABBR, fmtMoney, fmtWeekRange, roleHue } from "@/lib/format";
 import {
   fmtDuration,
   inProgressPayWeekStart,
@@ -42,9 +42,15 @@ import {
   Clock,
   LogOut,
   Pencil,
+  ClipboardCheck,
+  History,
+  TrendingUp,
   UserPlus,
+  UserRound,
+  Users,
   Wallet,
 } from "lucide-react";
+import type { Hue } from "@/components/KpiBand";
 import {
   ClockOutDialog,
   FixTimeDialog,
@@ -181,10 +187,10 @@ export default function Home() {
 
       {/* Every everyday action, one tap from home */}
       <nav aria-label="Quick actions" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <QuickAction href="/payroll?tab=punches&add=1" icon={<Clock />} label="Add a punch" />
-        <QuickAction href="/employees?add=1" icon={<UserPlus />} label="Add employee" />
-        <QuickAction href="/schedule-import" icon={<CalendarDays />} label="Import schedule" />
-        <QuickAction href="/payroll" icon={<Wallet />} label="Run payroll" />
+        <QuickAction href="/payroll?tab=punches&add=1" icon={<Clock />} label="Add a punch" hue="blue" />
+        <QuickAction href="/employees?add=1" icon={<UserPlus />} label="Add employee" hue="amber" />
+        <QuickAction href="/schedule-import" icon={<CalendarDays />} label="Import schedule" hue="violet" />
+        <QuickAction href="/payroll" icon={<Wallet />} label="Run payroll" hue="green" />
       </nav>
 
       {/* KPI band — one strip, one dominant number per mode */}
@@ -194,6 +200,7 @@ export default function Home() {
         <KpiBand>
           <KpiCell
             hero
+            icon={<Clock />}
             label="Hours clocked"
             value={totals.totalHours.toFixed(1)}
             sub={
@@ -221,11 +228,15 @@ export default function Home() {
             }
           />
           <KpiCell
+            hue="green"
+            icon={<Wallet />}
             label="Labor cost so far"
             value={<Money value={totals.totalGross} />}
             sub="earned this week"
           />
           <KpiCell
+            hue="teal"
+            icon={<TrendingUp />}
             label="Projected payroll"
             value={<Money value={totals.totalProjectedGross} />}
             sub="worked + still scheduled"
@@ -245,6 +256,8 @@ export default function Home() {
             }
           />
           <KpiCell
+            hue="violet"
+            icon={<CalendarDays />}
             label="Planned payroll"
             value={<Money value={totals.totalScheduledCost} />}
             sub={totals.totalScheduledCost > 0 ? "if the week goes to schedule" : "import a schedule to see it"}
@@ -254,6 +267,7 @@ export default function Home() {
         <KpiBand>
           <KpiCell
             hero
+            icon={<Wallet />}
             label="Payroll saved"
             value={<Money value={totals.totalSavedGross} />}
             sub={`${savedCount} of ${employees.length} people saved`}
@@ -271,6 +285,8 @@ export default function Home() {
             }
           />
           <KpiCell
+            hue="blue"
+            icon={<Clock />}
             label="Hours worked"
             value={totals.totalHours.toFixed(1)}
             sub={
@@ -294,11 +310,15 @@ export default function Home() {
             }
           />
           <KpiCell
+            hue="teal"
+            icon={<ClipboardCheck />}
             label="Hours entered"
             value={totals.totalEntered.toFixed(1)}
             sub="saved to payroll"
           />
           <KpiCell
+            hue="green"
+            icon={<Wallet />}
             label="Labor cost"
             value={<Money value={totals.totalGross} />}
             sub="earned that week"
@@ -308,7 +328,7 @@ export default function Home() {
 
       {/* Finalize CTA for a closed week with unsaved rows */}
       {!isLiveWeek && unsaved.length > 0 ? (
-        <div className="surface-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="hue-amber tint-surface rounded-xl border flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-medium">
               {unsaved.length} {unsaved.length === 1 ? "person has" : "people have"} hours
@@ -332,7 +352,10 @@ export default function Home() {
           <Card className="surface-card border-0 gap-0 py-0">
             <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
               <CardTitle className="section-title">
-                <span className="relative flex h-2 w-2">
+                <span className="icon-badge icon-badge-sm hue-green">
+                  <Users />
+                </span>
+                <span className="relative flex h-2 w-2 order-last">
                   {clockedIn.length > 0 ? (
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-60" />
                   ) : null}
@@ -347,12 +370,9 @@ export default function Home() {
                   {clockedIn.length}
                 </span>
               </CardTitle>
-              <Link
-                href="/payroll?tab=punches"
-                className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                All punches
-              </Link>
+              <Button size="sm" variant="soft" className="hue-green h-8" asChild>
+                <Link href="/payroll?tab=punches">All punches</Link>
+              </Button>
             </CardHeader>
             <CardContent className="px-4 sm:px-5 pb-4">
               {clockedIn.length === 0 ? (
@@ -378,7 +398,7 @@ export default function Home() {
                               {c.fullName}
                             </Link>
                             <p className="truncate text-xs text-muted-foreground">
-                              {c.role}
+                              <span className={`role-tag hue-${roleHue(c.role)}`}>{c.role}</span>
                               {stores.length > 1
                                 ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
                                 : ""}{" "}
@@ -449,7 +469,12 @@ export default function Home() {
         ) : (
           <Card className="surface-card border-0 gap-0 py-0">
             <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
-              <CardTitle className="section-title">Most hours this week</CardTitle>
+              <CardTitle className="section-title">
+                <span className="icon-badge icon-badge-sm hue-blue">
+                  <Clock />
+                </span>
+                Most hours this week
+              </CardTitle>
             </CardHeader>
             <CardContent className="px-4 sm:px-5 pb-4">
               {employees.filter((e) => e.clockHours > 0).length === 0 ? (
@@ -486,13 +511,15 @@ export default function Home() {
 
         <Card className="surface-card border-0 gap-0 py-0 flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
-            <CardTitle className="section-title">Scheduled hours by day</CardTitle>
-            <Link
-              href="/schedule-import"
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Schedule
-            </Link>
+            <CardTitle className="section-title">
+              <span className="icon-badge icon-badge-sm hue-violet">
+                <CalendarDays />
+              </span>
+              Scheduled hours by day
+            </CardTitle>
+            <Button size="sm" variant="soft" className="hue-violet h-8" asChild>
+              <Link href="/schedule-import">Schedule</Link>
+            </Button>
           </CardHeader>
           <CardContent className="px-4 sm:px-5 pb-4 flex-1 flex flex-col justify-center">
             {!data?.hasDaySchedule ? (
@@ -529,8 +556,8 @@ export default function Home() {
                             d.totalHours <= 0
                               ? "var(--border)"
                               : isToday
-                                ? "var(--chart-1)"
-                                : "color-mix(in oklab, var(--chart-1) 38%, var(--card))",
+                                ? "linear-gradient(180deg, oklch(0.62 0.2 300), var(--c-violet))"
+                                : "color-mix(in oklab, var(--c-violet) 30%, var(--card))",
                         }}
                       />
                       <span
@@ -551,9 +578,12 @@ export default function Home() {
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
           <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-amber">
+              <UserRound />
+            </span>
             {isLiveWeek ? "This week by employee" : "Week by employee"}
           </CardTitle>
-          <Button size="sm" variant="outline" className="h-8" asChild>
+          <Button size="sm" variant="soft" className="hue-green h-8" asChild>
             <Link href={`/payroll?week=${toDateInput(weekStart)}`}>
               {isLiveWeek ? "Open payroll" : "Enter hours"}
             </Link>
@@ -594,7 +624,7 @@ export default function Home() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{emp.fullName}</p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {emp.role}
+                            <span className={`role-tag hue-${roleHue(emp.role)}`}>{emp.role}</span>
                             {stores.length > 1
                               ? ` · ${STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}`
                               : ""}
@@ -616,7 +646,9 @@ export default function Home() {
                             className="h-full rounded-full"
                             style={{
                               width: `${pct * 100}%`,
-                              background: emp.overClocked ? "var(--warning)" : "var(--chart-1)",
+                              background: emp.overClocked
+                                ? "var(--warning)"
+                                : "linear-gradient(90deg, color-mix(in oklab, var(--c-blue) 70%, white), var(--c-blue))",
                             }}
                           />
                         </div>
@@ -655,7 +687,12 @@ export default function Home() {
       {/* Eight-week filmstrip — older payroll is one click away */}
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="flex flex-row items-center justify-between px-4 sm:px-5 pt-4 pb-2">
-          <CardTitle className="section-title">Last 8 pay weeks</CardTitle>
+          <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-teal">
+              <History />
+            </span>
+            Last 8 pay weeks
+          </CardTitle>
           <span className="hidden sm:inline text-xs text-muted-foreground">
             tap a week to open it
           </span>
@@ -690,20 +727,20 @@ function QuickAction({
   href,
   icon,
   label,
+  hue,
 }: {
   href: string;
   icon: React.ReactNode;
   label: string;
+  hue: Hue;
 }) {
   return (
     <Link
       href={href}
-      className="group flex h-12 items-center gap-2 sm:gap-2.5 rounded-xl border border-border bg-card px-2.5 sm:px-3.5 text-sm font-medium shadow-[0_1px_2px_rgb(16_24_40_/_0.04)] transition-colors hover:border-foreground/20 hover:bg-muted/40"
+      className={`hue-${hue} tint-surface group flex h-14 items-center gap-2.5 rounded-xl border px-2.5 sm:px-3.5 text-sm font-semibold shadow-[0_1px_2px_rgb(16_24_40_/_0.05)] transition-all hover:-translate-y-px hover:shadow-md`}
     >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:text-foreground [&>svg]:h-4 [&>svg]:w-4">
-        {icon}
-      </span>
-      <span className="truncate">{label}</span>
+      <span className="icon-badge transition-transform group-hover:scale-105">{icon}</span>
+      <span className="truncate hue-text">{label}</span>
     </Link>
   );
 }

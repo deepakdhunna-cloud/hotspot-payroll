@@ -30,7 +30,7 @@ import {
   startOfPayWeek,
   toDateInput,
 } from "@/lib/payweek";
-import { FileSpreadsheet } from "lucide-react";
+import { CalendarCheck, Clock, FileSpreadsheet, UserRound, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 export default function HistoryTab({
@@ -208,8 +208,8 @@ export default function HistoryTab({
           />
         </div>
         <Button
-          variant="outline"
-          className="h-9 lg:ml-auto"
+          variant="soft"
+          className="h-9 lg:ml-auto hue-green"
           onClick={handleExport}
           disabled={!rangeQ.data || employees.length === 0}
           title="Download this range as an .xlsx spreadsheet (opens in Google Sheets)"
@@ -219,14 +219,19 @@ export default function HistoryTab({
       </div>
 
       <KpiBand className="grid-cols-2 xl:grid-cols-3">
-        <KpiCell hero label="Gross pay" value={<Money value={totals.gross} />} sub={`${fmtWeekRange(startWeek)} → ${fmtWeekRange(endWeek)}`} />
-        <KpiCell label="Hours" value={totals.hours.toFixed(1)} sub={`over ${weekCount} pay week${weekCount === 1 ? "" : "s"}`} />
-        <KpiCell label="Paid weeks" value={totals.weeks} sub="one per person per week" />
+        <KpiCell hero icon={<Wallet />} label="Gross pay" value={<Money value={totals.gross} />} sub={`${fmtWeekRange(startWeek)} → ${fmtWeekRange(endWeek)}`} />
+        <KpiCell hue="blue" icon={<Clock />} label="Hours" value={totals.hours.toFixed(1)} sub={`over ${weekCount} pay week${weekCount === 1 ? "" : "s"}`} />
+        <KpiCell hue="teal" icon={<CalendarCheck />} label="Paid weeks" value={totals.weeks} sub="one per person per week" />
       </KpiBand>
 
       <Card className="surface-card border-0 gap-0 py-0">
         <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
-          <CardTitle className="section-title">By employee</CardTitle>
+          <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-amber">
+              <UserRound />
+            </span>
+            By employee
+          </CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">

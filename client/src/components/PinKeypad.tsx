@@ -94,7 +94,15 @@ export default function PinKeypad() {
       <div className="w-full max-w-[22rem] flex flex-col items-center gap-8">
         <BrandMark size="lg" tone="ink" />
 
-        <div className="w-full rounded-2xl bg-card text-card-foreground p-6 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]">
+        <div className="relative w-full overflow-hidden rounded-2xl bg-card text-card-foreground p-6 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]">
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 h-1"
+            style={{
+              background:
+                "linear-gradient(90deg, var(--brand-red-bright), oklch(0.7 0.18 45) 55%, oklch(0.78 0.15 75))",
+            }}
+          />
           <div className="flex flex-col items-center gap-1 text-center">
             <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
             <p className="text-sm text-muted-foreground">

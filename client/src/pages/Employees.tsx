@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
-import { fmtMoney, STORE_ABBR } from "@/lib/format";
+import { fmtMoney, roleHue, STORE_ABBR } from "@/lib/format";
 import { KeyRound, Plus, Search, ArrowRight, Trash2, X, ChevronRight } from "lucide-react";
 import { TableStateRows } from "@/components/QueryStates";
 import { useEffect, useMemo, useState } from "react";
@@ -358,7 +358,7 @@ export default function Employees() {
                             {emp.fullName}
                           </Link>
                           <p className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
-                            {emp.role}
+                            <span className={`role-tag hue-${roleHue(emp.role)}`}>{emp.role}</span>
                             {showStore ? (
                               <span className="md:hidden">
                                 · {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}

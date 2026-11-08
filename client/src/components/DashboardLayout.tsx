@@ -350,9 +350,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main id="main-content" className="flex-1">
+      <main id="main-content" className="relative flex-1">
+        <div className="page-wash" aria-hidden="true" />
         <div
-          className={`mx-auto w-full max-w-[1180px] px-4 md:px-6 pt-6 md:pt-8 ${
+          className={`relative mx-auto w-full max-w-[1180px] px-4 md:px-6 pt-6 md:pt-8 ${
             showTabBar ? "pb-24 md:pb-10" : "pb-10"
           }`}
         >

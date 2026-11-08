@@ -457,7 +457,7 @@ export default function ScheduleImport() {
               </Select>
             ) : null}
             {hasSchedule && !uploadOpen ? (
-              <Button variant="outline" onClick={() => setShowUpload(true)}>
+              <Button variant="soft" className="hue-violet" onClick={() => setShowUpload(true)}>
                 <Upload className="h-4 w-4 mr-2" /> Replace schedule
               </Button>
             ) : null}
@@ -497,10 +497,10 @@ export default function ScheduleImport() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={onDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer px-6 py-10 text-center ${
+                className={`hue-violet relative border-2 border-dashed rounded-xl transition-colors cursor-pointer px-6 py-10 text-center ${
                   dragOver
-                    ? "border-foreground/40 bg-muted"
-                    : "border-border hover:border-foreground/30 hover:bg-muted/50"
+                    ? "border-[var(--c-violet)] bg-[color-mix(in_oklab,var(--c-violet)_12%,transparent)]"
+                    : "border-[color-mix(in_oklab,var(--c-violet)_35%,transparent)] bg-[color-mix(in_oklab,var(--c-violet)_5%,transparent)] hover:bg-[color-mix(in_oklab,var(--c-violet)_9%,transparent)]"
                 }`}
               >
                 <input
@@ -512,9 +512,9 @@ export default function ScheduleImport() {
                 />
                 {!file ? (
                   <div className="flex flex-col items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                      <Upload className="h-5 w-5 text-muted-foreground" />
-                    </div>
+                    <span className="icon-badge icon-badge-lg">
+                      <Upload />
+                    </span>
                     <div>
                       <p className="font-medium">
                         Drop the schedule for {fmtWeekRange(weekStart)}, or tap to choose a file
@@ -1126,7 +1126,12 @@ function WeekScheduleBoard({
     <Card className="surface-card border-0 gap-0 py-0">
       <CardHeader className="px-4 sm:px-5 pt-4 pb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <CardTitle className="section-title">Week of {fmtWeekRange(weekStart)}</CardTitle>
+          <CardTitle className="section-title">
+            <span className="icon-badge icon-badge-sm hue-violet">
+              <CalendarDays />
+            </span>
+            Week of {fmtWeekRange(weekStart)}
+          </CardTitle>
           <p className="text-sm text-muted-foreground mt-0.5">
             {shifts.length > 0
               ? "Tap a pencil to change someone's shifts. Changes flow to payroll and the dashboard."
@@ -1136,8 +1141,9 @@ function WeekScheduleBoard({
         <div className="flex flex-wrap items-center gap-2">
           {sourceImport?.fileUrl ? (
             <Button
-              variant="outline"
+              variant="soft"
               size="sm"
+              className="hue-violet"
               onClick={() =>
                 window.open(sourceImport.fileUrl!, "_blank", "noopener,noreferrer")
               }
@@ -1309,7 +1315,7 @@ function WeekScheduleBoard({
                         style={{
                           background:
                             t > 0
-                              ? `color-mix(in oklab, var(--chart-1) ${Math.round((t / maxDay) * 16)}%, transparent)`
+                              ? `color-mix(in oklab, var(--c-violet) ${Math.round(6 + (t / maxDay) * 16)}%, transparent)`
                               : undefined,
                         }}
                       >
