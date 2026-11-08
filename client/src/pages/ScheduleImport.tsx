@@ -467,7 +467,7 @@ export default function ScheduleImport() {
 
       {/* Step 1 — upload (the page's hero when the week has no schedule) */}
       {uploadOpen ? (
-      <Card className="surface-card border-0 gap-0 py-0">
+      <Card className="surface-card gap-0 py-0">
         {hasSchedule ? (
           <div className="flex items-center justify-between px-4 sm:px-6 pt-4">
             <p className="section-title">Replace this week&apos;s schedule</p>
@@ -583,7 +583,7 @@ export default function ScheduleImport() {
         <div ref={resultsRef} className="space-y-6 scroll-mt-20">
           {/* Wrong-week guard: the file's printed dates vs the selected week */}
           {weekWarning && (
-            <Card className="surface-card border-0 border-l-4 border-l-warning rise-in">
+            <Card className="surface-card border-l-4 border-l-warning rise-in">
               <CardContent className="p-4 flex flex-wrap items-center gap-3">
                 <AlertCircle className="h-5 w-5 text-warning shrink-0" />
                 <div className="flex-1 min-w-60">
@@ -648,7 +648,7 @@ export default function ScheduleImport() {
 
           {/* Roster scan — near-misses link with one click, new people get added */}
           {unmatchedIndices.length > 0 ? (
-            <Card className="surface-card border-0 border-l-4 border-l-warning rise-in">
+            <Card className="surface-card border-l-4 border-l-warning rise-in">
               <CardHeader className="pb-3">
                 <CardTitle className="section-title flex items-center gap-2">
                   <UserPlus className="h-4 w-4 text-warning" />
@@ -781,7 +781,7 @@ export default function ScheduleImport() {
           )}
 
           {/* Review & commit */}
-          <Card className="surface-card border-0 rise-in">
+          <Card className="surface-card rise-in">
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle className="section-title">Review &amp; commit</CardTitle>
@@ -926,8 +926,8 @@ export default function ScheduleImport() {
       {/* Import history: where the original files live */}
       {!rows && !parseM.isPending && (importsQ.data ?? []).length > 0 && (
         <div>
-          <Card className="surface-card border-0 gap-0 py-0">
-            <CardHeader className="px-4 sm:px-5 pt-4 pb-1">
+          <Card className="surface-card gap-0 py-0">
+            <CardHeader className="card-head px-4 sm:px-5 py-3">
               <CardTitle className="section-title">Recent uploads</CardTitle>
             </CardHeader>
             <CardContent className="px-4 sm:px-5 pb-3">
@@ -1123,8 +1123,8 @@ function WeekScheduleBoard({
   const addable = employees.filter((e) => !scheduledIds.has(e.id));
 
   return (
-    <Card className="surface-card border-0 gap-0 py-0">
-      <CardHeader className="px-4 sm:px-5 pt-4 pb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <Card className="surface-card gap-0 py-0">
+      <CardHeader className="card-head px-4 sm:px-5 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">

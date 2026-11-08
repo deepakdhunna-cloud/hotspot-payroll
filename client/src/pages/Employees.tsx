@@ -189,7 +189,7 @@ export default function Employees() {
         }
       />
 
-      <Card className="surface-card border-0 gap-0 py-0 overflow-hidden">
+      <Card className="surface-card gap-0 py-0 overflow-hidden">
         <CardHeader className="px-3 sm:px-4 py-3 border-b border-border">
           <div className="flex gap-2 items-center">
             <div className="relative flex-1 max-w-md">

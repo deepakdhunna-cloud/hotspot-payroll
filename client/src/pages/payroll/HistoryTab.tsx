@@ -167,7 +167,7 @@ export default function HistoryTab({
     <div className="space-y-5 md:space-y-6">
       {/* Toolbar: pick a range, then export it */}
       <div className="surface-card p-3 flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="inline-flex w-full sm:w-auto items-center gap-0.5 rounded-lg bg-muted p-0.5">
+        <div className="sk-track inline-flex w-full sm:w-auto items-center gap-0.5 rounded-lg bg-muted p-0.5">
           {[4, 8, 13].map((w) => (
             <button
               key={w}
@@ -176,7 +176,7 @@ export default function HistoryTab({
               title={`Last ${w} closed pay weeks`}
               className={`h-8 flex-1 sm:flex-none rounded-md px-3 text-xs font-medium whitespace-nowrap transition-colors ${
                 activePreset === w
-                  ? "bg-card text-foreground shadow-sm"
+                  ? "sk-seg-on bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -224,8 +224,8 @@ export default function HistoryTab({
         <KpiCell hue="teal" icon={<CalendarCheck />} label="Paid weeks" value={totals.weeks} sub="one per person per week" />
       </KpiBand>
 
-      <Card className="surface-card border-0 gap-0 py-0">
-        <CardHeader className="px-4 sm:px-5 pt-4 pb-2">
+      <Card className="surface-card gap-0 py-0">
+        <CardHeader className="card-head px-4 sm:px-5 py-3">
           <CardTitle className="section-title">
             <span className="icon-badge icon-badge-sm">
               <UserRound />

@@ -89,7 +89,7 @@ export function WeekTrend({
                 style={{ height: `${BAR_AREA}px` }}
               >
                 <div
-                  className="w-full rounded-[4px] transition-all"
+                  className="sk-bar w-full rounded-[4px] transition-all"
                   style={{
                     height: `${h}px`,
                     background:
