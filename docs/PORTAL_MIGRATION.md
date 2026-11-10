@@ -152,10 +152,11 @@ Wednesday**; every `weekStart` is a Thursday at 00:00 UTC.
 | `payroll_entries` | one employee's pay for one week | `weekStart`, `hoursWorked`, `scheduledHours`, `payRateSnapshot` (rate at the time), `grossPay`, `notes` (`fixed-pay` = set-pay week, `schedule-only` = created by a schedule import). `overtimePay` is always 0 |
 | `schedule_shifts` | one scheduled shift on one day | `employeeId`, `weekStart`, `shiftDate`, `startLabel`/`endLabel` as printed, `hours`, `importId` → schedule_imports |
 | `schedule_imports` | one uploaded schedule | `uploadedBy`, `weekStart`, `filename`, `status`, counts. `fileUrl` may point at retired Manus storage |
-| `audit_log` | one recorded action (append-only) | `actorScope` (ceo, cfo, store name or kiosk), `action`, `entityType`/`entityId`, `detail` (JSON text; deletes keep a snapshot of what was removed), `ip` |
+| `audit_log` | one recorded action (append-only) | `actorScope` (a sign-in profile's `pinScope`, or kiosk/system/anonymous), `action`, `entityType`/`entityId`, `detail` (JSON text; deletes keep a snapshot of what was removed), `ip` |
 | `attention_items` | one alert or task | `refKey` (unique), `kind`, `status` open/resolved, `resolution` |
 | `app_settings` | one setting | `key`/`value`, e.g. `auto_clockout_hours` |
-| `pin_codes` | one sign-in PIN (credentials only) | `scope` (ceo, cfo or a store name), `pinHash` |
+| `pin_codes` | one sign-in PIN (credentials only) | `scope` (= `access_profiles.pinScope`), `pinHash` |
+| `access_profiles` | one sign-in profile | `name`, `role` (admin = CEO, cfo = read-only finance, manager), `stores` (JSON list, managers only), `pinScope` → pin_codes, `active` (1/0), `deletedAt` (removed logins are kept so the audit log can name them) |
 | `users`, `manager_stores` | legacy sign-in tables from the original template | usually empty |
 
 ## Security

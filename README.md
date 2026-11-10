@@ -4,9 +4,17 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
 
 ## What's inside
 
-- **PIN sign-in** — one PIN per store (manager scope) plus a CEO master PIN.
-  Sessions last 7 days; rotating a PIN instantly revokes every session that
-  used the old one. Brute-force attempts are rate-limited and logged.
+- **Sign-in profiles** — Executive → **Profiles & PINs**. Each login is a
+  profile with its own name, PIN and access level: **CEO** (everything),
+  **CFO** (read-only Finance page) or **Manager** (only the stores ticked on
+  the profile — one or several; multi-store managers switch with the store
+  picker). Profiles can be renamed, re-scoped, turned off or removed, and
+  every change applies on that person's next click. The original seven logins
+  (CEO, CFO and one per store) carried over as profiles with their PINs.
+  Sessions last 7 days; changing a PIN instantly revokes every session that
+  used the old one. The last CEO profile can't be turned off or demoted, and
+  nobody can lock themselves out. Brute-force attempts are rate-limited and
+  logged.
 - **Manager dashboard** — live "on the clock" list, hours vs schedule, pace
   projection, day-by-day schedule coverage, over-clock alerts, gross pay.
 - **Schedule import** — upload a Homebase schedule (PDF/photo); every shift is
@@ -25,8 +33,9 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
   `audit_log` (deletes keep a JSON snapshot), employee deletion is
   transactional, and schedule uploads are kept as import records.
 
-Store isolation is enforced server-side on every procedure: a store PIN can
-only ever read or write its own store's data; the CEO PIN sees everything.
+Store isolation is enforced server-side on every procedure: a manager profile
+can only ever read or write the stores on its profile; CEO profiles see
+everything; CFO profiles only read company-wide finance.
 
 ## Portal integration (this site is the system of record)
 

@@ -7,28 +7,53 @@ import { PIN_COOKIE_NAME, PIN_SESSION_TTL_MS } from "@shared/const";
 import { pinCodes } from "../../drizzle/schema";
 import { STORES, type Store } from "../../shared/hotspot";
 import { getDb } from "../db";
+import {
+  LEGACY_SCOPES,
+  ensureAccessProfiles as seedAccessProfiles,
+  getProfileByScope,
+  hasAnyProfile,
+  isLiveProfile,
+  legacyProfileFor,
+  listProfiles,
+  normalizeStores,
+  toSessionProfile,
+  type ProfileRole,
+  type SessionProfile,
+} from "../accessProfiles";
 import { ENV } from "./env";
 
-export type PinScope = "ceo" | "cfo" | Store;
+/**
+ * A PIN scope is the key of one row in pin_codes: "ceo", "cfo" or a store
+ * name for the seven logins that predate profiles, "profile:<hex>" for every
+ * profile created since. It is also the identity written to the audit log.
+ */
+export type PinScope = string;
 export type PinSession = {
   scope: PinScope;
+  /** The sign-in profile behind this session (null only without a DB). */
+  profileId: number | null;
+  /** The profile's display name ("CEO", "Raj", "HM 11 Manager"…). */
+  name: string | null;
   /**
-   * admin = CEO (everything) · manager = one store's operations ·
+   * admin = CEO (everything) · manager = operations for `stores` ·
    * cfo = READ-ONLY company-wide financials (the CFO portal). The cfo
    * role owns no stores, so every store-scoped mutation check fails for
    * it by construction.
    */
-  role: "admin" | "manager" | "cfo";
-  store: Store | null; // null = all stores (CEO / CFO)
+  role: ProfileRole;
+  /** The stores a manager may use; [] for CEO and CFO. */
+  stores: Store[];
+  /** The one store of a single-store manager, else null (all / several). */
+  store: Store | null;
   issuedAt: number;
 };
 
 /**
- * Default PINs created on first boot if the table is empty.
- * The CEO can change any of these from the Settings panel — and should:
- * rotating a PIN also revokes every session issued before the rotation.
+ * Default PINs for the seven original logins, created only on a brand-new
+ * database. The CEO can change any of these from Executive → Profiles — and
+ * should: changing a PIN also revokes every session issued before it.
  */
-const DEFAULT_PINS: Record<PinScope, string> = {
+const DEFAULT_PINS: Record<string, string> = {
   ceo: "9999",
   cfo: "8888",
   "Hotspot Market 11": "1111",
@@ -38,7 +63,8 @@ const DEFAULT_PINS: Record<PinScope, string> = {
   "Hotspot Travel Center": "7777",
 };
 
-export const ALL_SCOPES: PinScope[] = ["ceo", "cfo", ...STORES];
+/** The seven original logins (CEO, CFO and one per store). */
+export const ALL_SCOPES: PinScope[] = [...LEGACY_SCOPES];
 
 // Fail fast in production if the signing secret is missing: falling back to a
 // public string would let anyone forge an admin session cookie.
@@ -128,37 +154,60 @@ export function isValidPin(pin: string) {
   return /^\d{4,8}$/.test(pin);
 }
 
-/** Create default PIN rows on first run; idempotent. */
-export async function ensureDefaultPins(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  const existing = await db.select().from(pinCodes);
-  // Seed by MISSING SCOPE, never by row count: when a store is added later
-  // (e.g. Hotspot Market 17), its PIN must be created even though rows exist.
-  const haveScopes = new Set(existing.map((r) => r.scope));
-  const missing = ALL_SCOPES.filter((scope) => !haveScopes.has(scope));
-  if (missing.length === 0) return;
-  for (const scope of missing) {
-    await db.insert(pinCodes).values({
-      scope,
-      pinHash: await hashPinScrypt(DEFAULT_PINS[scope], scope),
-    });
-  }
-  console.log("[PinAuth] Default PINs ensured");
+/**
+ * First-boot setup: make sure every login is a profile (carrying over the
+ * original seven PINs, or creating them with their defaults on a fresh
+ * database). Idempotent and runs once; see accessProfiles.ts.
+ */
+export async function ensureAccessProfiles(): Promise<void> {
+  await seedAccessProfiles(scope => hashPinScrypt(DEFAULT_PINS[scope]!, scope));
+  invalidateProfileCache();
+}
+
+/** MySQL "table doesn't exist" — drizzle may wrap the driver error. */
+function isMissingTable(error: unknown): boolean {
+  const e = error as { code?: string; cause?: { code?: string } } | null;
+  return e?.code === "ER_NO_SUCH_TABLE" || e?.cause?.code === "ER_NO_SUCH_TABLE";
 }
 
 /**
- * Verify a submitted PIN against any scope. Returns the matched scope, or null.
- * Legacy sha256 rows are upgraded to scrypt in place after a successful match.
+ * The profiles that may sign in right now, keyed by PIN scope. Until the
+ * profiles table exists and is populated (a failed migration, or the
+ * moments before the first-boot seed) the original seven logins keep
+ * working exactly as they always did.
  */
-export async function verifyPin(pin: string): Promise<PinScope | null> {
+async function liveProfilesByScope(): Promise<Map<string, SessionProfile>> {
+  const legacy = () =>
+    new Map(LEGACY_SCOPES.map(scope => [scope, legacyProfileFor(scope)!] as const));
+  let rows;
+  try {
+    rows = await listProfiles({ includeDeleted: true });
+  } catch (error) {
+    if (!isMissingTable(error)) throw error;
+    console.warn("[PinAuth] No profiles table yet; using the original logins");
+    return legacy();
+  }
+  if (rows.length === 0) return legacy();
+  return new Map(
+    rows.filter(isLiveProfile).map(row => [row.pinScope, toSessionProfile(row)] as const),
+  );
+}
+
+/**
+ * Verify a submitted PIN against every profile that may sign in. Returns the
+ * matched profile, or null. PINs of turned-off or removed profiles never
+ * match. Legacy sha256 rows are upgraded to scrypt in place after a match.
+ */
+export async function verifyPin(pin: string): Promise<SessionProfile | null> {
   const clean = normalizePin(pin);
   if (!isValidPin(clean)) return null;
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(pinCodes);
+  const [rows, live] = await Promise.all([db.select().from(pinCodes), liveProfilesByScope()]);
   for (const row of rows) {
-    const scope = row.scope as PinScope;
+    const profile = live.get(row.scope);
+    if (!profile) continue;
+    const scope = row.scope;
     if (!(await checkPinHash(clean, scope, row.pinHash))) continue;
     if (!row.pinHash.startsWith(SCRYPT_PREFIX)) {
       // Upgrade the stored hash without touching updatedAt-based revocation:
@@ -172,7 +221,7 @@ export async function verifyPin(pin: string): Promise<PinScope | null> {
         console.warn("[PinAuth] Hash upgrade failed (non-fatal):", error);
       }
     }
-    return scope;
+    return profile;
   }
   return null;
 }
@@ -197,17 +246,87 @@ function getSecret() {
   return new TextEncoder().encode(ENV.cookieSecret || "hotspot-fallback-secret");
 }
 
-export async function signPinSession(scope: PinScope): Promise<string> {
+export async function signPinSession(profile: SessionProfile): Promise<string> {
   const exp = Math.floor((Date.now() + PIN_SESSION_TTL_MS) / 1000);
+  // Role, stores and name ride along only as a fallback for when the
+  // database can't be reached; normally every request re-reads the profile,
+  // so a change the CEO makes applies on the very next click.
   return new SignJWT({
-    scope,
-    role: scope === "ceo" ? "admin" : scope === "cfo" ? "cfo" : "manager",
-    store: scope === "ceo" || scope === "cfo" ? null : scope,
+    scope: profile.pinScope,
+    pid: profile.id,
+    name: profile.name,
+    role: profile.role,
+    stores: profile.stores,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setExpirationTime(exp)
     .setIssuedAt()
     .sign(getSecret());
+}
+
+/**
+ * Who is behind a PIN scope right now. `undefined` = the database can't be
+ * reached (dev/test), so the caller falls back to the token's own claims;
+ * `null` = this login was turned off or removed. Cached briefly, and
+ * dropped the moment the CEO edits a profile.
+ */
+const PROFILE_CACHE_TTL_MS = 15_000;
+const profileCache = new Map<
+  string,
+  { profile: SessionProfile | null; fetchedAt: number }
+>();
+
+export function invalidateProfileCache(scope?: PinScope) {
+  if (scope) profileCache.delete(scope);
+  else profileCache.clear();
+}
+
+async function profileForScope(scope: PinScope): Promise<SessionProfile | null | undefined> {
+  const cached = profileCache.get(scope);
+  if (cached && Date.now() - cached.fetchedAt < PROFILE_CACHE_TTL_MS) {
+    return cached.profile;
+  }
+  const db = await getDb();
+  if (!db) return undefined;
+  let profile: SessionProfile | null;
+  try {
+    const row = await getProfileByScope(scope);
+    if (row) {
+      profile = isLiveProfile(row) ? toSessionProfile(row) : null;
+    } else {
+      // Not a profile: only one of the original logins, and only while the
+      // profiles table is still empty (see liveProfilesByScope).
+      profile = (await hasAnyProfile()) ? null : legacyProfileFor(scope);
+    }
+  } catch (error) {
+    if (!isMissingTable(error)) {
+      // Unknown failure: refuse this request, but don't cache the refusal.
+      console.warn("[PinAuth] Profile lookup failed:", error);
+      return null;
+    }
+    profile = legacyProfileFor(scope);
+  }
+  profileCache.set(scope, { profile, fetchedAt: Date.now() });
+  return profile;
+}
+
+/** Session claims from a token alone (no database to ask). */
+function profileFromClaims(scope: PinScope, payload: Record<string, unknown>): SessionProfile | null {
+  const role = payload.role as ProfileRole | undefined;
+  if (role !== "admin" && role !== "cfo" && role !== "manager") return null;
+  const claimed = Array.isArray(payload.stores)
+    ? (payload.stores as unknown[]).filter((s): s is string => typeof s === "string")
+    : typeof payload.store === "string"
+      ? [payload.store]
+      : [];
+  return {
+    id: typeof payload.pid === "number" ? payload.pid : null,
+    name:
+      typeof payload.name === "string" ? payload.name : (legacyProfileFor(scope)?.name ?? ""),
+    role,
+    stores: role === "manager" ? normalizeStores(claimed) : [],
+    pinScope: scope,
+  };
 }
 
 /**
@@ -246,19 +365,51 @@ export async function verifyPinSession(req: Request): Promise<PinSession | null>
   try {
     const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
     const scope = payload.scope as PinScope | undefined;
-    const role = payload.role as PinSession["role"] | undefined;
-    const store = (payload.store as Store | null | undefined) ?? null;
-    if (!scope || !role) return null;
+    if (!scope || typeof scope !== "string") return null;
     const issuedAt = Number(payload.iat ?? 0) * 1000;
 
     const rotatedAt = await pinRotatedAt(scope);
     // 5s of tolerance covers the login that immediately follows a rotation.
     if (rotatedAt !== null && issuedAt + 5_000 < rotatedAt) return null;
 
-    return { scope, role, store, issuedAt };
+    const resolved = await profileForScope(scope);
+    const profile =
+      resolved === undefined
+        ? profileFromClaims(scope, payload as Record<string, unknown>)
+        : resolved;
+    if (!profile) return null;
+    // A manager with no stores has nothing to work on — never a live session.
+    if (profile.role === "manager" && profile.stores.length === 0) return null;
+
+    return sessionFromProfile(profile, issuedAt);
   } catch {
     return null;
   }
+}
+
+export function sessionFromProfile(profile: SessionProfile, issuedAt: number): PinSession {
+  const stores = profile.role === "manager" ? profile.stores : [];
+  return {
+    scope: profile.pinScope,
+    profileId: profile.id,
+    name: profile.name || null,
+    role: profile.role,
+    stores,
+    store: stores.length === 1 ? stores[0] : null,
+    issuedAt,
+  };
+}
+
+/**
+ * The stores a session may work in. CEO: every store. CFO: none (its reads
+ * are explicitly company-wide). Manager: the profile's stores. Sessions
+ * built by hand without `stores` (older tests) fall back to `store`.
+ */
+export function sessionStores(session: Pick<PinSession, "role" | "store"> & { stores?: Store[] }): Store[] {
+  if (session.role === "admin") return [...STORES];
+  if (session.role !== "manager") return [];
+  if (session.stores) return session.stores;
+  return session.store ? [session.store] : [];
 }
 
 /** Public helper for read-only summary of which scopes have PINs set (no hashes returned). */

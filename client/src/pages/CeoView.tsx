@@ -5,17 +5,14 @@
  * right now; closed week = what was saved and the withholding estimates).
  * Middle: one card per store — click a card to focus every number on that
  * store, click again to zoom back out. Eight-week filmstrip for history.
- * Tabs below hold the payroll detail, PIN management and the audit trail.
+ * Tabs below hold the payroll detail, sign-in profiles and the audit trail.
  * The open tab and the chosen week live in the URL (?tab=, ?week=), so a
  * refresh, Back or a shared link lands on the same view.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { AttentionCenter } from "@/components/AttentionCenter";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InitialsBadge } from "@/components/InitialsBadge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Money } from "@/components/Money";
 import { PageHeader } from "@/components/PageHeader";
 import { QuickWeekNav } from "@/components/QuickWeekNav";
@@ -23,6 +20,7 @@ import { BlockState, TableStateRows } from "@/components/QueryStates";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { useStoreScope } from "@/contexts/StoreScopeContext";
 import { WeekTrend } from "@/components/WeekTrend";
+import { ProfilesPanel } from "./ceo/ProfilesPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -61,7 +59,6 @@ import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertTriangle,
-  Building2,
   CheckCircle2,
   ChevronDown,
   Clock,
@@ -78,11 +75,10 @@ import {
   Radio,
   RefreshCw,
   Satellite,
-  ShieldCheck,
   Users,
   Wallet,
 } from "lucide-react";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 /* ------------------------------ URL state ------------------------------ */
@@ -290,7 +286,7 @@ export default function CeoView() {
               <Wallet /> Payroll
             </TabsTrigger>
             <TabsTrigger value="pins">
-              <KeyRound /> Access &amp; PINs
+              <KeyRound /> Profiles &amp; PINs
             </TabsTrigger>
             <TabsTrigger value="activity">
               <History /> Activity
@@ -590,7 +586,7 @@ export default function CeoView() {
         </TabsContent>
 
         <TabsContent value="pins">
-          <PinsPanel />
+          <ProfilesPanel />
         </TabsContent>
 
         <TabsContent value="activity">
@@ -960,347 +956,34 @@ function StatusChips({
   );
 }
 
-/* ------------------------------ PINs tab ------------------------------ */
+/* ------------------------------ Activity helpers ------------------------------ */
 
-/** Plain-language name, reach and icon for each login. */
-function pinMeta(scope: string, fallback: string) {
-  if (scope === "ceo") {
-    return {
-      title: "CEO master PIN",
-      short: "the CEO PIN",
-      reach: "Every store, payroll, PINs and settings",
-      icon: <ShieldCheck className="h-4 w-4" />,
-    };
-  }
-  if (scope === "cfo") {
-    return {
-      title: "CFO PIN",
-      short: "the CFO PIN",
-      reach: "Read-only Finance page",
-      icon: <Landmark className="h-4 w-4" />,
-    };
-  }
-  if (STORE_ABBR[scope]) {
-    return {
-      title: `${scope} manager PIN`,
-      short: `${storeShort(scope)}'s manager PIN`,
-      reach: `Managers at ${scope} only`,
-      icon: <Building2 className="h-4 w-4" />,
-    };
-  }
-  return {
-    title: fallback,
-    short: fallback,
-    reach: "",
-    icon: <KeyRound className="h-4 w-4" />,
-  };
+/** Which login an old "Changed a PIN" entry (before profiles) was about. */
+function legacyPinTitle(scope: string): string {
+  if (scope === "ceo") return "CEO master PIN";
+  if (scope === "cfo") return "CFO PIN";
+  if (STORE_ABBR[scope]) return `${scope} manager PIN`;
+  return scope;
 }
 
-function PinsPanel() {
-  const pinsQ = trpc.ceo.listPins.useQuery();
-  const utils = trpc.useUtils();
-  const updatePin = trpc.ceo.updatePin.useMutation();
-  const [openScope, setOpenScope] = useState<string | null>(null);
-
-  return (
-    <Card className="surface-card gap-0 py-0">
-      <CardHeader className="card-head px-4 sm:px-5 py-3">
-        <CardTitle className="section-title">
-          <span className="icon-badge icon-badge-sm">
-            <KeyRound />
-          </span>
-          Access PINs
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Each login has its own PIN. Changing one signs out every device that
-          used the old PIN, so do it when a device is lost or someone with the
-          PIN leaves.
-        </p>
-      </CardHeader>
-      <CardContent className="p-0">
-        {pinsQ.isPending || pinsQ.isError ? (
-          <div className="p-4 sm:p-5">
-            <BlockState
-              isLoading={pinsQ.isPending && !pinsQ.isError}
-              isError={pinsQ.isError}
-              onRetry={() => pinsQ.refetch()}
-              skeletonClassName="h-56"
-            >
-              {null}
-            </BlockState>
-          </div>
-        ) : (
-          <ul className="divide-y divide-border">
-            {pinsQ.data.map(row => (
-              <PinRow
-                key={row.scope}
-                scope={row.scope}
-                label={row.label}
-                isSet={row.isSet}
-                updatedAt={row.updatedAt}
-                open={openScope === row.scope}
-                onOpenChange={o => setOpenScope(o ? row.scope : null)}
-                saving={updatePin.isPending}
-                onSave={(pin, done) =>
-                  updatePin.mutate(
-                    { scope: row.scope as any, pin },
-                    {
-                      onSuccess: () => {
-                        utils.ceo.listPins.invalidate();
-                        done(null);
-                      },
-                      onError: e => done(errorMessage(e)),
-                    }
-                  )
-                }
-              />
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
+/** "HM 11, HM 13 and Travel" for an activity-log line. */
+function storeList(stores: unknown): string {
+  if (!Array.isArray(stores)) return "";
+  const names = stores.map(s => storeShort(String(s)));
+  return listWords(names);
 }
 
-function PinRow({
-  scope,
-  label,
-  isSet,
-  updatedAt,
-  open,
-  onOpenChange,
-  onSave,
-  saving,
-}: {
-  scope: string;
-  label: string;
-  isSet: boolean;
-  updatedAt: Date | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** `done(null)` on success, `done(message)` on failure. */
-  onSave: (pin: string, done: (error: string | null) => void) => void;
-  saving: boolean;
-}) {
-  const meta = pinMeta(scope, label);
-  const [pin, setPin] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [show, setShow] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const rowRef = useRef<HTMLLIElement>(null);
-  const changeRef = useRef<HTMLButtonElement>(null);
-  const wasOpen = useRef(false);
+const ROLE_WORDS: Record<string, string> = {
+  admin: "CEO",
+  cfo: "CFO",
+  manager: "Manager",
+};
 
-  // Closing the form always forgets what was typed, and hands focus back to
-  // this row's button (unless the person has already moved on elsewhere).
-  useEffect(() => {
-    if (!open) {
-      setPin("");
-      setConfirm("");
-      setShow(false);
-      setError(null);
-      const active = document.activeElement;
-      if (
-        wasOpen.current &&
-        (!active ||
-          active === document.body ||
-          rowRef.current?.contains(active))
-      ) {
-        changeRef.current?.focus();
-      }
-    }
-    wasOpen.current = open;
-  }, [open]);
-
-  const idBase = `pin-${scope.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  const pinValid = /^\d{4,8}$/.test(pin);
-  const matches = pin === confirm;
-  const canSave = pinValid && matches && !saving;
-  const hint =
-    pin.length > 0 && !pinValid && confirm.length === 0
-      ? "Use 4 to 8 digits."
-      : confirm.length > 0 && confirm.length >= pin.length && !matches
-        ? "The two PINs don't match."
-        : null;
-  const signOutLine =
-    scope === "ceo"
-      ? "This signs out every device using the CEO PIN, including this one. You'll sign in again with the new PIN."
-      : `This signs out every device using ${meta.short} right away. Anyone who uses it must sign in again with the new PIN.`;
-
-  const digitsOnly = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 8);
-
-  return (
-    <li ref={rowRef} className="px-4 sm:px-5 py-3.5">
-      <div className="flex items-start gap-3 sm:items-center">
-        <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-          aria-hidden="true"
-        >
-          {meta.icon}
-        </span>
-        <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium leading-5">{meta.title}</p>
-            <p className="text-xs text-muted-foreground">
-              {meta.reach}
-              {meta.reach ? " · " : ""}
-              {isSet && updatedAt
-                ? `changed ${fmtDateTime(updatedAt)}`
-                : isSet
-                  ? "set"
-                  : "not set yet"}
-            </p>
-          </div>
-          <div className="mt-2 flex items-center gap-2 sm:mt-0 sm:shrink-0">
-            {isSet ? (
-              <span className="chip-good">Active</span>
-            ) : (
-              <span className="chip-warn">Not set</span>
-            )}
-            {open ? null : (
-              <Button
-                ref={changeRef}
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-9 sm:h-8"
-                aria-expanded={false}
-                aria-controls={`${idBase}-form`}
-                aria-label={`${isSet ? "Change" : "Set"} ${meta.title}`}
-                onClick={() => onOpenChange(true)}
-              >
-                {isSet ? "Change PIN" : "Set PIN"}
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {open ? (
-        <form
-          id={`${idBase}-form`}
-          className="mt-3 rounded-xl border border-border bg-muted/30 p-3 sm:p-4 space-y-3"
-          onSubmit={e => e.preventDefault()}
-          noValidate
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor={`${idBase}-new`}>New PIN</Label>
-              <Input
-                id={`${idBase}-new`}
-                type={show ? "text" : "password"}
-                inputMode="numeric"
-                autoComplete="new-password"
-                autoFocus
-                maxLength={8}
-                placeholder="4 to 8 digits"
-                value={pin}
-                aria-invalid={
-                  pin.length > 0 && !pinValid && confirm.length > 0
-                    ? true
-                    : undefined
-                }
-                onChange={e => {
-                  setPin(digitsOnly(e.target.value));
-                  setError(null);
-                }}
-                className="h-10 bg-card tabular-nums tracking-widest"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor={`${idBase}-confirm`}>Type it again</Label>
-              <Input
-                id={`${idBase}-confirm`}
-                type={show ? "text" : "password"}
-                inputMode="numeric"
-                autoComplete="new-password"
-                maxLength={8}
-                placeholder="Same PIN"
-                value={confirm}
-                aria-invalid={
-                  hint === "The two PINs don't match." ? true : undefined
-                }
-                aria-describedby={`${idBase}-hint`}
-                onChange={e => {
-                  setConfirm(digitsOnly(e.target.value));
-                  setError(null);
-                }}
-                className="h-10 bg-card tabular-nums tracking-widest"
-              />
-            </div>
-          </div>
-
-          <p
-            id={`${idBase}-hint`}
-            role={error ? "alert" : undefined}
-            className={cn(
-              "min-h-4 text-xs",
-              error || hint ? "delta-bad font-medium" : "text-muted-foreground"
-            )}
-          >
-            {error ?? hint ?? signOutLine}
-          </p>
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-9 sm:h-8 text-muted-foreground"
-              aria-pressed={show}
-              onClick={() => setShow(s => !s)}
-            >
-              {show ? (
-                <EyeOff className="h-3.5 w-3.5" />
-              ) : (
-                <Eye className="h-3.5 w-3.5" />
-              )}
-              {show ? "Hide digits" : "Show digits"}
-            </Button>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 sm:h-8"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              <ConfirmDialog
-                disabled={!canSave}
-                title={`Change ${meta.title}?`}
-                description={signOutLine}
-                confirmLabel="Change PIN"
-                onConfirm={() =>
-                  onSave(pin, err => {
-                    if (err) {
-                      setError(err);
-                      return;
-                    }
-                    toast.success(
-                      `${meta.title} changed. Devices using the old PIN were signed out.`
-                    );
-                    onOpenChange(false);
-                  })
-                }
-                trigger={
-                  <Button
-                    type="submit"
-                    size="sm"
-                    className="h-9 sm:h-8"
-                    disabled={!canSave}
-                  >
-                    {saving ? "Saving…" : "Save PIN"}
-                  </Button>
-                }
-              />
-            </div>
-          </div>
-        </form>
-      ) : null}
-    </li>
-  );
+/** "Manager · HM 11 and HM 13" / "CEO". */
+function accessWords(role: unknown, stores: unknown): string {
+  const r = ROLE_WORDS[String(role)] ?? String(role ?? "");
+  const where = role === "manager" ? storeList(stores) : "";
+  return where ? `${r} · ${where}` : r;
 }
 
 /* ------------------------------ Activity tab ------------------------------ */
@@ -1333,6 +1016,11 @@ const ACTION_LABELS: Record<string, string> = {
   "attention.resolve": "Signed off an alert",
   "settings.autoClockOut": "Changed automatic clock-out",
   "ceo.updatePin": "Changed a PIN",
+  "profiles.create": "Added a sign-in profile",
+  "profiles.update": "Changed a sign-in profile",
+  "profiles.setPin": "Changed a PIN",
+  "profiles.setActive": "Turned a sign-in on or off",
+  "profiles.remove": "Removed a sign-in profile",
   "portal.syncNow": "Pushed a snapshot to the portal",
   "export.full": "Downloaded the full data export",
 };
@@ -1348,7 +1036,13 @@ const FIELD_WORDS: Record<string, string> = {
   notes: "notes",
 };
 
-function actorName(scope: string, detail: Record<string, any> | null): string {
+function actorName(
+  scope: string,
+  detail: Record<string, any> | null,
+  profileNames: Map<string, string>
+): string {
+  const profile = profileNames.get(scope);
+  if (profile) return profile;
   if (scope === "ceo") return "CEO";
   if (scope === "cfo") return "CFO";
   if (scope === "kiosk") {
@@ -1529,9 +1223,31 @@ function summarize(
           ? `After ${fmtHoursLabel(num(d.hours), 0)}`
           : "Turned off";
       case "ceo.updatePin":
-        return d?.scope
-          ? pinMeta(String(d.scope), String(d.scope)).title
+        return d?.scope ? legacyPinTitle(String(d.scope)) : null;
+      case "profiles.create":
+        return join(d?.name, accessWords(d?.role, d?.stores));
+      case "profiles.update": {
+        const before = d?.before ?? {};
+        const after = d?.after ?? {};
+        const changes: string[] = [];
+        if (before.name && after.name && before.name !== after.name) {
+          changes.push(`renamed from ${before.name}`);
+        }
+        const beforeAccess = accessWords(before.role, before.stores);
+        const afterAccess = accessWords(after.role, after.stores);
+        if (beforeAccess !== afterAccess) {
+          changes.push(`${beforeAccess} → ${afterAccess}`);
+        }
+        return join(d?.name, changes.join(" · ") || "no change");
+      }
+      case "profiles.setPin":
+        return d?.name ? `${d.name}'s PIN` : null;
+      case "profiles.setActive":
+        return d?.name
+          ? `${d.name} · ${d.active ? "sign-in turned on" : "sign-in turned off"}`
           : null;
+      case "profiles.remove":
+        return join(d?.name, accessWords(d?.role, d?.stores));
       case "portal.syncNow":
         return d?.ok ? "Delivered" : `Failed${d?.error ? `: ${d.error}` : ""}`;
       case "export.full":
@@ -1578,6 +1294,20 @@ function ActivityPanel() {
     if (!Number.isFinite(n)) return "Employee";
     return nameById.get(n) ?? `Employee #${n}`;
   };
+  // Who did it: every sign-in profile's name, removed ones included.
+  const profileNamesQ = trpc.profiles.names.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+  });
+  const profileNames = useMemo(
+    () =>
+      new Map(
+        (profileNamesQ.data ?? []).map(p => [
+          p.scope,
+          p.removed ? `${p.name} (removed)` : p.name,
+        ])
+      ),
+    [profileNamesQ.data]
+  );
 
   const [filter, setFilter] = useState<ActivityFilter>("changes");
   const [openId, setOpenId] = useState<number | null>(null);
@@ -1725,7 +1455,7 @@ function ActivityPanel() {
                               {fmtTime(e.createdAt)}
                             </span>
                             <span className="truncate text-sm font-medium">
-                              {actorName(e.actorScope, d)}
+                              {actorName(e.actorScope, d, profileNames)}
                             </span>
                           </span>
                           <span className="min-w-0 text-sm">

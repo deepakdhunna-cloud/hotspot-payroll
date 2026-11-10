@@ -166,7 +166,8 @@ export default function Home() {
   }, [data?.scheduleDays, weekStart]);
   const maxDayHours = Math.max(1, ...dayStrip.map((d) => d.totalHours));
 
-  const firstName = isAdmin ? "" : (greetingQ.data?.name ?? "").split(" ")[0];
+  // A named profile ("Good morning, Raj"); the original CEO login has none.
+  const firstName = (greetingQ.data?.name ?? "").split(" ")[0];
   // Greeting and date follow store time, like everything else on the page.
   const hour = Number(
     new Date().toLocaleString("en-US", {
@@ -177,11 +178,16 @@ export default function Home() {
   );
   const greeting =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-  const scopeLabel = isAdmin
-    ? storeFilter === "all"
-      ? "All stores"
-      : storeFilter
-    : (user?.store ?? "");
+  const scopeLabel =
+    storeFilter !== "all"
+      ? storeFilter
+      : isAdmin
+        ? "All stores"
+        : stores.length === 1
+          ? stores[0]
+          : stores.length > 1
+            ? "All my stores"
+            : "";
   const todayLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",

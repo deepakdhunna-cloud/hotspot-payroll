@@ -4,8 +4,9 @@ import { useCallback, useMemo } from "react";
 
 /**
  * Backwards-compatible useAuth hook for the PIN-gated app.
- * `user` is shaped so existing UI keeps working — `user.role` is "admin" or "manager",
- * `user.name` is a friendly label, and `user.store` is the assigned store (or null for CEO).
+ * `user.role` is "admin" (CEO), "cfo" or "manager"; `user.name` is the
+ * sign-in profile's name; `user.stores` are a manager's stores (one or
+ * several) and `user.store` is set only when there is exactly one.
  */
 export function useAuth() {
   const utils = trpc.useUtils();
@@ -41,13 +42,16 @@ export function useAuth() {
       ? {
           role: session.role,
           store: session.store,
+          stores: session.stores ?? (session.store ? [session.store] : []),
           scope: session.scope,
+          profileId: session.profileId ?? null,
           name:
-            session.role === "admin"
+            session.name ||
+            (session.role === "admin"
               ? "CEO"
               : session.role === "cfo"
                 ? "CFO"
-                : (session.store ?? "Manager"),
+                : (session.store ?? "Manager")),
         }
       : null;
     return {

@@ -170,6 +170,33 @@ export type PinCode = typeof pinCodes.$inferSelect;
 export type InsertPinCode = typeof pinCodes.$inferInsert;
 
 /**
+ * Sign-in profiles: one row per login (a person or a shared login), each
+ * with its own PIN. The PIN hash lives in `pin_codes`, keyed by this row's
+ * `pinScope`, so PIN rotation/revocation works exactly as before.
+ * - role "admin"   = CEO: every store, Executive, Finance, profiles
+ * - role "cfo"     = read-only Finance portal
+ * - role "manager" = day-to-day operations for the stores in `stores`
+ * Profiles are never hard-deleted (`deletedAt`), so the activity log can
+ * still name who did what after a login is removed.
+ */
+export const accessProfiles = mysqlTable("access_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  role: mysqlEnum("role", ["admin", "cfo", "manager"]).notNull(),
+  /** JSON array of store names this profile may use (managers only). */
+  stores: text("stores"),
+  /** Key of this profile's row in pin_codes; also its audit identity. */
+  pinScope: varchar("pinScope", { length: 64 }).notNull().unique(),
+  active: int("active").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
+});
+
+export type AccessProfile = typeof accessProfiles.$inferSelect;
+export type InsertAccessProfile = typeof accessProfiles.$inferInsert;
+
+/**
  * One scheduled shift for one employee on one calendar day.
  * Rows are produced by the schedule import (day-level extraction) or manual
  * edits, and are replaced as a set per (employeeId, weekStart) on commit.

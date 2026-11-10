@@ -92,16 +92,32 @@ import {
 } from "@shared/hotspot";
 import { TRPCError } from "@trpc/server";
 import {
-  ALL_SCOPES,
   checkPinHash,
+  hashPinScrypt,
+  invalidateProfileCache,
   listPinScopes,
   listPinScopesWithHashes,
+  sessionStores,
   setPin,
+  sessionFromProfile,
   signPinSession,
   verifyPin,
-  type PinScope,
   type PinSession,
 } from "./_core/pinAuth";
+import {
+  PROFILE_ROLES,
+  createProfileWithPin,
+  getProfileById,
+  legacyProfileFor,
+  listProfiles,
+  newProfileScope,
+  parseStores,
+  softDeleteProfile,
+  storesForRole,
+  updateProfile,
+  type ProfileRole,
+} from "./accessProfiles";
+import type { AccessProfile } from "../drizzle/schema";
 import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
 import { rankNameMatches } from "./nameMatch";
 import { extractPdfText, extractSheetText, isSheetMime } from "./scheduleText";
@@ -219,10 +235,8 @@ function getScope(session: PinSession) {
   if (session.role === "admin") {
     return { isAdmin: true as const, stores: [...STORES] as Store[] };
   }
-  return {
-    isAdmin: false as const,
-    stores: session.store ? ([session.store] as Store[]) : [],
-  };
+  // Managers: exactly the stores on their sign-in profile (one or several).
+  return { isAdmin: false as const, stores: sessionStores(session) };
 }
 
 type Scope = ReturnType<typeof getScope>;
@@ -242,6 +256,118 @@ function resolveStores(scope: Scope, requested?: Store): Store[] | undefined {
   return scope.isAdmin ? undefined : scope.stores;
 }
 
+/** What the browser learns about its own session (never a PIN or hash). */
+function sessionSummary(session: PinSession) {
+  return {
+    role: session.role,
+    store: session.store,
+    stores: session.stores,
+    scope: session.scope,
+    name: session.name,
+    profileId: session.profileId,
+  };
+}
+
+/* --------------------------- Sign-in profiles --------------------------- */
+
+const ProfileRoleEnum = z.enum(PROFILE_ROLES);
+const ProfileNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Give the profile a name")
+  .max(40, "Keep the name under 40 characters");
+const ProfilePinSchema = z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits");
+
+/**
+ * Sign-in matches a PIN against every login, so two logins can never share
+ * one. Checks the PIN against every stored PIN except `ownScope`'s.
+ */
+async function assertPinAvailable(pin: string, ownScope: string | null) {
+  const [existing, profiles] = await Promise.all([
+    listPinScopesWithHashes(),
+    listProfiles({ includeDeleted: true }),
+  ]);
+  const nameOf = new Map(profiles.map(p => [p.pinScope, p.name]));
+  for (const row of existing) {
+    if (row.scope === ownScope) continue;
+    if (await checkPinHash(pin, row.scope, row.pinHash)) {
+      const who = nameOf.get(row.scope);
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `That PIN is already used by ${who ? `the ${who} profile` : "another login"}. Choose a different one.`,
+      });
+    }
+  }
+}
+
+/** Profile names are how people pick themselves out: keep them distinct. */
+async function assertNameAvailable(name: string, ownId: number | null) {
+  const taken = (await listProfiles()).find(
+    p => p.id !== ownId && p.name.trim().toLowerCase() === name.toLowerCase()
+  );
+  if (taken) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: `There's already a profile called "${taken.name}". Use a different name.`,
+    });
+  }
+}
+
+/** Managers must have somewhere to work; CEO/CFO reach comes from the role. */
+function storesForProfile(role: ProfileRole, stores: readonly string[]): Store[] {
+  const clean = storesForRole(role, stores);
+  if (role === "manager" && clean.length === 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Pick at least one store for a manager.",
+    });
+  }
+  return clean;
+}
+
+/**
+ * Nobody may lock the business out of its own settings: the last CEO
+ * profile that can sign in can't be turned off, removed or demoted.
+ */
+async function assertKeepsACeo(
+  target: AccessProfile,
+  next: { role: ProfileRole; active: boolean }
+) {
+  const isCeoNow = target.role === "admin" && target.active === 1;
+  if (!isCeoNow || (next.role === "admin" && next.active)) return;
+  const otherCeos = (await listProfiles()).filter(
+    p => p.id !== target.id && p.role === "admin" && p.active === 1
+  );
+  if (otherCeos.length === 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "This is the only CEO profile that can sign in. Add another CEO profile first, so nobody is locked out of profiles and PINs.",
+    });
+  }
+}
+
+/** The signed-in person can't cut off their own access mid-session. */
+function assertNotSelf(target: AccessProfile, session: PinSession, what: string) {
+  if (target.pinScope === session.scope) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `You can't ${what} the profile you're signed in with. Sign in with another CEO profile to do that.`,
+    });
+  }
+}
+
+async function requireProfile(id: number): Promise<AccessProfile> {
+  const row = await getProfileById(id);
+  if (!row) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "That profile no longer exists.",
+    });
+  }
+  return row;
+}
+
 /** Uniform "locked out" error with a human-readable wait time. */
 function lockedError(ms: number): TRPCError {
   const minutes = Math.max(1, Math.ceil(ms / 60_000));
@@ -257,11 +383,7 @@ export const appRouter = router({
     /** Read current session (or null). Replaces auth.me. */
     me: publicProcedure.query(({ ctx }) => {
       if (!ctx.session) return null;
-      return {
-        role: ctx.session.role,
-        store: ctx.session.store,
-        scope: ctx.session.scope,
-      };
+      return sessionSummary(ctx.session);
     }),
 
     /** Verify a PIN; on success, set the session cookie. */
@@ -272,8 +394,8 @@ export const appRouter = router({
         const lockedMs = pinLoginLimiter.lockedForMs(ip);
         if (lockedMs > 0) throw lockedError(lockedMs);
 
-        const scope = await verifyPin(input.pin);
-        if (!scope) {
+        const profile = await verifyPin(input.pin);
+        if (!profile) {
           pinLoginLimiter.recordFailure(ip);
           void logAudit({
             actorScope: "anonymous",
@@ -288,23 +410,21 @@ export const appRouter = router({
           });
         }
         pinLoginLimiter.reset(ip);
-        void logAudit({ actorScope: scope, action: "auth.pin_success", ip });
-        const token = await signPinSession(scope);
+        void logAudit({
+          actorScope: profile.pinScope,
+          action: "auth.pin_success",
+          entityType: profile.id ? "profile" : undefined,
+          entityId: profile.id ?? undefined,
+          detail: JSON.stringify({ name: profile.name }),
+          ip,
+        });
+        const token = await signPinSession(profile);
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(PIN_COOKIE_NAME, token, {
           ...cookieOptions,
           maxAge: PIN_SESSION_TTL_MS,
         });
-        return {
-          role:
-            scope === "ceo"
-              ? ("admin" as const)
-              : scope === "cfo"
-                ? ("cfo" as const)
-                : ("manager" as const),
-          store: scope === "ceo" || scope === "cfo" ? null : (scope as Store),
-          scope,
-        };
+        return sessionSummary(sessionFromProfile(profile, Date.now()));
       }),
 
     /** Sign out by clearing the PIN cookie. */
@@ -325,15 +445,19 @@ export const appRouter = router({
 
     /**
      * Resolve the display name for the current session.
-     * - CEO/admin: returns role "admin" so the UI shows "CEO".
-     * - Store manager: returns the full name of the active employee at the store
-     *   whose role is "Manager". Falls back to null so the UI shows "Manager".
+     * - A profile the CEO has named (e.g. "Raj"): that name.
+     * - The original logins, still under their default names: the CEO gets
+     *   no name (the UI shows "CEO"); a store login greets the active
+     *   employee whose role is "Manager" at that store, as it always has.
      */
     greetingName: protectedProcedure.query(async ({ ctx }) => {
       const scope = getScope(ctx.session);
-      if (scope.isAdmin) return { role: "admin" as const, name: null };
+      const role = scope.isAdmin ? ("admin" as const) : ("manager" as const);
+      const name = ctx.session.name?.trim() || null;
+      const defaultName = legacyProfileFor(ctx.session.scope)?.name ?? null;
+      if (name && name !== defaultName) return { role, name };
+      if (scope.isAdmin || scope.stores.length !== 1) return { role, name: null };
       const store = scope.stores[0];
-      if (!store) return { role: "manager" as const, name: null };
       const list = await listEmployees({ stores: [store] });
       const manager = list.find(
         e => e.role === "Manager" && e.storeLocation === store
@@ -1990,67 +2114,6 @@ export const appRouter = router({
         };
       }),
 
-    /** List PIN scopes (without revealing PIN values). */
-    listPins: adminProcedure.query(async () => {
-      const rows = await listPinScopes();
-      return ALL_SCOPES.map(scope => {
-        const row = rows.find(r => r.scope === scope);
-        return {
-          scope,
-          label:
-            scope === "ceo"
-              ? "CEO Master PIN"
-              : scope === "cfo"
-                ? "CFO PIN \u2014 read-only finance portal"
-                : `${scope} \u2014 Manager PIN`,
-          isSet: !!row,
-          updatedAt: row?.updatedAt ?? null,
-        };
-      });
-    }),
-
-    /**
-     * Update a PIN (CEO master, or any store PIN).
-     * Rejects a PIN that already belongs to a different scope — sign-in
-     * matches a PIN against every scope, so duplicates would be ambiguous.
-     * Rotating a PIN also revokes all sessions issued before the rotation.
-     */
-    updatePin: adminProcedure
-      .input(
-        z.object({
-          scope: z.enum(["ceo", "cfo", ...STORES] as [PinScope, ...PinScope[]]),
-          pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits"),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const existing = await listPinScopesWithHashes();
-        let conflict: (typeof existing)[number] | undefined;
-        for (const row of existing) {
-          if (row.scope === input.scope) continue;
-          if (await checkPinHash(input.pin, row.scope, row.pinHash)) {
-            conflict = row;
-            break;
-          }
-        }
-        if (conflict) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message: `That PIN is already in use by ${
-              conflict.scope === "ceo" ? "the CEO master PIN" : conflict.scope
-            }. Choose a different one.`,
-          });
-        }
-        await setPin(input.scope, input.pin);
-        void logAudit({
-          actorScope: ctx.session.scope,
-          action: "ceo.updatePin",
-          entityType: "pin",
-          detail: JSON.stringify({ scope: input.scope }),
-          ip: requestIp(ctx.req),
-        });
-        return { success: true };
-      }),
-
     /**
      * Recent audit-log entries — the CEO's paper trail of every sensitive
      * action (logins, deletions, PIN rotations, payroll edits).
@@ -2069,6 +2132,189 @@ export const appRouter = router({
           actorScope: input?.actorScope,
           limit: input?.limit ?? 100,
         });
+      }),
+  }),
+
+  /**
+   * Sign-in profiles — who can log in, with which PIN, to what. CEO only.
+   * Every change applies to that person's open sessions on their very next
+   * click (sessions re-read the profile), and PIN changes sign out every
+   * device that used the old PIN.
+   */
+  profiles: router({
+    list: adminProcedure.query(async ({ ctx }) => {
+      const [rows, pins] = await Promise.all([listProfiles(), listPinScopes()]);
+      const pinAt = new Map(pins.map(p => [p.scope, p.updatedAt]));
+      return rows.map(p => ({
+        id: p.id,
+        name: p.name,
+        role: p.role as ProfileRole,
+        stores: storesForRole(p.role as ProfileRole, parseStores(p.stores)),
+        active: p.active === 1,
+        pinSet: pinAt.has(p.pinScope),
+        pinUpdatedAt: pinAt.get(p.pinScope) ?? null,
+        isYou: p.pinScope === ctx.session.scope,
+        createdAt: p.createdAt,
+      }));
+    }),
+
+    /** Every profile's name by PIN scope — removed ones too — for the activity log. */
+    names: adminProcedure.query(async () => {
+      const rows = await listProfiles({ includeDeleted: true });
+      return rows.map(p => ({
+        scope: p.pinScope,
+        name: p.name,
+        removed: p.deletedAt !== null,
+      }));
+    }),
+
+    create: adminProcedure
+      .input(
+        z.object({
+          name: ProfileNameSchema,
+          role: ProfileRoleEnum,
+          stores: z.array(StoreEnum).max(STORES.length),
+          pin: ProfilePinSchema,
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const stores = storesForProfile(input.role, input.stores);
+        await assertNameAvailable(input.name, null);
+        await assertPinAvailable(input.pin, null);
+        const pinScope = newProfileScope();
+        const id = await createProfileWithPin({
+          name: input.name,
+          role: input.role,
+          stores,
+          pinScope,
+          pinHash: await hashPinScrypt(input.pin, pinScope),
+        });
+        invalidateProfileCache(pinScope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "profiles.create",
+          entityType: "profile",
+          entityId: id,
+          detail: JSON.stringify({ name: input.name, role: input.role, stores }),
+          ip: requestIp(ctx.req),
+        });
+        return { id };
+      }),
+
+    /** Rename, change access level, or change a manager's stores. */
+    update: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int(),
+          name: ProfileNameSchema,
+          role: ProfileRoleEnum,
+          stores: z.array(StoreEnum).max(STORES.length),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const target = await requireProfile(input.id);
+        const stores = storesForProfile(input.role, input.stores);
+        if (input.role !== target.role) {
+          assertNotSelf(target, ctx.session, "change the access level of");
+        }
+        await assertKeepsACeo(target, {
+          role: input.role,
+          active: target.active === 1,
+        });
+        await assertNameAvailable(input.name, target.id);
+        const before = {
+          name: target.name,
+          role: target.role,
+          stores: storesForRole(target.role as ProfileRole, parseStores(target.stores)),
+        };
+        await updateProfile(target.id, {
+          name: input.name,
+          role: input.role,
+          stores,
+        });
+        invalidateProfileCache(target.pinScope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "profiles.update",
+          entityType: "profile",
+          entityId: target.id,
+          detail: JSON.stringify({
+            name: input.name,
+            before,
+            after: { name: input.name, role: input.role, stores },
+          }),
+          ip: requestIp(ctx.req),
+        });
+        return { success: true };
+      }),
+
+    /** Set a new PIN. Signs out every device that used the old one. */
+    setPin: adminProcedure
+      .input(z.object({ id: z.number().int(), pin: ProfilePinSchema }))
+      .mutation(async ({ ctx, input }) => {
+        const target = await requireProfile(input.id);
+        await assertPinAvailable(input.pin, target.pinScope);
+        await setPin(target.pinScope, input.pin);
+        invalidateProfileCache(target.pinScope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "profiles.setPin",
+          entityType: "profile",
+          entityId: target.id,
+          detail: JSON.stringify({ name: target.name }),
+          ip: requestIp(ctx.req),
+        });
+        return { success: true, signedOutSelf: target.pinScope === ctx.session.scope };
+      }),
+
+    /** Turn sign-in off (keeps the profile and PIN) or back on. */
+    setActive: adminProcedure
+      .input(z.object({ id: z.number().int(), active: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const target = await requireProfile(input.id);
+        if (!input.active) assertNotSelf(target, ctx.session, "turn off");
+        await assertKeepsACeo(target, {
+          role: target.role as ProfileRole,
+          active: input.active,
+        });
+        await updateProfile(target.id, { active: input.active });
+        invalidateProfileCache(target.pinScope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "profiles.setActive",
+          entityType: "profile",
+          entityId: target.id,
+          detail: JSON.stringify({ name: target.name, active: input.active }),
+          ip: requestIp(ctx.req),
+        });
+        return { success: true };
+      }),
+
+    /** Remove a login for good: its PIN stops working and is freed up. */
+    remove: adminProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(async ({ ctx, input }) => {
+        const target = await requireProfile(input.id);
+        assertNotSelf(target, ctx.session, "remove");
+        await assertKeepsACeo(target, {
+          role: target.role as ProfileRole,
+          active: false,
+        });
+        await softDeleteProfile(target);
+        invalidateProfileCache(target.pinScope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "profiles.remove",
+          entityType: "profile",
+          entityId: target.id,
+          detail: JSON.stringify({
+            name: target.name,
+            role: target.role,
+            stores: parseStores(target.stores),
+          }),
+          ip: requestIp(ctx.req),
+        });
+        return { success: true };
       }),
   }),
 
@@ -3033,8 +3279,9 @@ export const appRouter = router({
         try {
           importId = await createScheduleImport({
             uploadedBy: ctx.session.scope,
-            storeLocation:
-              input.store ?? (scope.isAdmin ? null : (scope.stores[0] ?? null)),
+            // The import belongs to one store when the upload was for one
+            // store (picked, or the manager only has one); else unassigned.
+            storeLocation: stores?.length === 1 ? stores[0] : null,
             weekStart: week,
             fileUrl: url,
             filename: safeName,

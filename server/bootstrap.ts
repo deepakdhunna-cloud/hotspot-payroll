@@ -31,6 +31,7 @@ const COPY_TABLES = [
   "payroll_entries",
   "time_punches",
   "pin_codes",
+  "access_profiles",
   "schedule_shifts",
   "schedule_imports",
   "audit_log",

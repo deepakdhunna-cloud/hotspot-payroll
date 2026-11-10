@@ -11,7 +11,7 @@ import { runBootstrap } from "../bootstrap";
 import { sweepAutoClockOut } from "../autoClockOut";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { ensureDefaultPins } from "./pinAuth";
+import { ensureAccessProfiles } from "./pinAuth";
 import { serveStatic, setupVite } from "./vite";
 import { handleFullExport } from "../fullExportRoute";
 import { buildPortalFeed, hasPortalFeedAccess } from "../portalFeed";
@@ -75,8 +75,12 @@ async function startServer() {
   // Apply migrations (idempotent) and, when configured, the one-time data
   // import — must finish before the app serves queries.
   await runBootstrap();
-  // Ensure the default Hotspot PINs exist (CEO + 4 store PINs).
-  ensureDefaultPins().catch((err) => console.error("[PinAuth] init failed:", err));
+  // First boot with sign-in profiles: carry every existing PIN over as a
+  // profile (or create the default logins on a brand-new database). Awaited
+  // so the very first sign-in already sees the profiles.
+  await ensureAccessProfiles().catch((err) =>
+    console.error("[Profiles] init failed:", err),
+  );
   // Auto clock-out sweep: runs at boot and every 5 minutes so forgotten
   // clock-outs are closed at the owner's limit even when nobody has the
   // site open. (No-op until the CEO sets a limit in Payroll → Punches.)

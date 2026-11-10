@@ -43,6 +43,13 @@
       "when": 1784317785295,
       "tag": "0005_weekly_pay",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1794352882502,
+      "tag": "0006_access_profiles",
+      "breakpoints": true
     }
   ]
 }

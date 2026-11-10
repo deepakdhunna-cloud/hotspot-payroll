@@ -27,6 +27,7 @@ import type { MySqlTable } from "drizzle-orm/mysql-core";
 import { strToU8, Zip, ZipDeflate } from "fflate";
 import mysql from "mysql2";
 import {
+  accessProfiles,
   appSettings,
   attentionItems,
   auditLog,
@@ -63,6 +64,7 @@ const EXPORT_TABLES: ExportTable[] = [
   { table: payrollEntries },
   { table: timePunches },
   { table: pinCodes, credentialsOnly: true },
+  { table: accessProfiles },
   { table: scheduleShifts },
   { table: scheduleImports },
   { table: auditLog },

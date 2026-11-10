@@ -47,6 +47,7 @@ import {
   useStoreScope,
 } from "@/contexts/StoreScopeContext";
 import { trpc } from "@/lib/trpc";
+import { STORE_ABBR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type MenuItem = {
@@ -292,16 +293,24 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const greetingQ = trpc.meta.greetingName.useQuery(undefined, {
     enabled: !!user && !isCfo,
   });
-  const displayName = isAdmin
-    ? "CEO"
-    : isCfo
-      ? "CFO"
-      : (greetingQ.data?.name ?? "Manager");
+  // The sign-in profile's own name ("Raj", "CFO"); a store login still
+  // under its default name keeps showing its manager from the roster.
+  const displayName =
+    greetingQ.data?.name ??
+    user?.name ??
+    (isAdmin ? "CEO" : isCfo ? "CFO" : "Manager");
+  const myStores = user?.stores ?? [];
   const scopeLine = isAdmin
     ? "All stores"
     : isCfo
       ? "All stores · read-only"
-      : (user?.store ?? "—");
+      : myStores.length === 1
+        ? myStores[0]
+        : myStores.length > 1
+          ? myStores.length <= 3
+            ? myStores.map(s => STORE_ABBR[s] ?? s).join(" · ")
+            : `${myStores.length} stores`
+          : "—";
   // The CFO login is a finance portal, not an operations account — its nav
   // is exactly the portal, nothing else.
   const menuItems = isCfo
@@ -408,7 +417,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 >
                   <Avatar className="h-7 w-7 shrink-0">
                     <AvatarFallback className="text-[11px] font-semibold bg-white/[0.14] text-white">
-                      {isAdmin ? "C" : isCfo ? "F" : (displayName[0]?.toUpperCase() ?? "M")}
+                      {displayName[0]?.toUpperCase() ?? (isAdmin ? "C" : isCfo ? "F" : "M")}
                     </AvatarFallback>
                   </Avatar>
                   {/* The CEO's scope is already on the store picker beside it. */}

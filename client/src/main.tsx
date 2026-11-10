@@ -30,15 +30,30 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * A session can end server-side at any moment (the CEO turned the profile
+ * off, removed it, or changed its PIN). The first request that comes back
+ * "signed out" re-checks the session, so the tab drops to the PIN screen
+ * instead of showing errors everywhere.
+ */
+function recheckSessionIfSignedOut(error: unknown) {
+  const code = (error as { data?: { code?: string } } | null)?.data?.code;
+  if (code === "UNAUTHORIZED") {
+    void queryClient.invalidateQueries({ queryKey: [["auth", "me"]] });
+  }
+}
+
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     console.error("[API Query Error]", event.query.state.error);
+    recheckSessionIfSignedOut(event.query.state.error);
   }
 });
 
 queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     console.error("[API Mutation Error]", event.mutation.state.error);
+    recheckSessionIfSignedOut(event.mutation.state.error);
   }
 });
 
