@@ -19,9 +19,10 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
   flags over-clocked hours on the spot.
 - **Payroll** — weekly hours & pay grid (auto-filled from clock punches, with
   manual override), punch editor, multi-week history, formatted .xlsx exports.
-- **CEO view** — all stores at one glance (live clock-ins, over-schedule
-  counts, withholding estimates), per-employee detail, PIN management, and a
-  full audit log.
+- **Command center** (the CEO's view) — every store live in one picture,
+  payroll for all stores run from one place, findings on where money and
+  hours are going, and every setting the business needs to change, with no
+  developer in the loop. See [The command center](#the-command-center).
 - **Data safety** — every sensitive mutation is written to an append-only
   `audit_log` (deletes keep a JSON snapshot), employee deletion is
   transactional, and schedule uploads are kept as import records.
@@ -45,8 +46,10 @@ flash of the wrong theme, and every change cross-fades
 
 **The logo has two versions** of the same artwork in `client/public/brand/`:
 `hotspot-logo.png` (white lettering, the original — used on dark) and
-`hotspot-logo-ink.png` (the HOTSPOT lettering in solid ink, stripes and
-MARKET pill unchanged — used on light, where white lettering washes out).
+`hotspot-logo-ink.png` (used on light, where white lettering washes out: the
+HOTSPOT lettering in solid ink, and the red stripes as flat red bars — the
+original's black edge on each stripe disappears into a dark page but reads
+as a heavy outline on a white one). The MARKET pill is unchanged.
 `hotspot-mark*.png` are the compact stripes-and-H form. `BrandMark` shows the
 right one with plain CSS. If a designer supplies an official light-background
 logo, replace the `-ink` files.
@@ -65,6 +68,14 @@ status uses its own colors and always carries an icon or a word.
 | under 768px | phones, a foldable's cover screen, a foldable opened upright | brand bar + floating tab bar with the **+** quick add |
 | 768px and up | a foldable opened sideways, tablets, small laptops | navigation rail on the left edge |
 | 1360px and up | desktop | sidebar with search, store picker and account |
+
+**The side navigation is resizable.** From 768px its right edge is a handle:
+drag it to any width between the rail and a wide sidebar, or tap it to flip
+between the two; arrow keys work too. The choice is remembered on that
+device (`localStorage`, `hotspot.nav-width`) and always leaves the page at
+least 640px, which is why a foldable held sideways can open the full
+sidebar while a small tablet held upright stays on the rail
+(`client/src/lib/navSize.ts`).
 
 Tailwind's `sm` / `md` / `lg` / `xl` are redefined in `index.css` so they
 describe the **content column** rather than the window (`md:` still means
@@ -100,6 +111,79 @@ summary and Download. Both use the same builder (`client/src/lib/xlsx.ts`),
 and the spreadsheet is styled like the site: the logo, the page's headline
 figures, an ink column header under a brand-red rule, hairline rows, and
 status words in the site's green and amber.
+
+## The command center
+
+The CEO's view (`/ceo`, signed in with the CEO PIN) is one console with five
+sections. It follows a single focus: tap a store anywhere and every section
+narrows to it; tap the center of the orbit for all stores again.
+
+| Section | What it is for |
+| --- | --- |
+| **Live** | The company at the center and every store in orbit: labor so far this week, hours against the schedule, who is on the clock, what needs attention (with its fix), a log of every change as it happens, and the last eight pay weeks. |
+| **Autopilot** | Payroll for every store from one place. Each person is **Saved**, **Ready** (hours straight from the time clock or their set pay, nothing flagged) or **On hold** (the site flagged it for a person). One button approves every Ready row; each held row says why and offers its fix. Share and Export from here too. |
+| **Optimize** | Findings worked out from numbers the site already shows — hours past the schedule and what they cost, the week's projection against plan, shifts left running, cost per worked hour store against store, schedule accuracy, anything blocking clean payroll. Each one states how it was calculated and links to where to act. |
+| **Control** | Everything about how the site runs. See below. |
+| **Log** | The full activity log. |
+
+**How Autopilot stays accurate.** It builds and saves rows with the same
+functions as the weekly timesheet (`client/src/lib/payrollRow.ts`), so it can
+only save what the timesheet would have saved for a row nobody touched — and
+the two exports are the same file. "Needs a person" is exactly the open
+items of the attention list for that person and week; there is no second
+definition. A week still in progress is shown but cannot be bulk-approved.
+
+**How the live numbers are counted.** Someone paid by the hour counts at
+clocked hours × their rate. Someone on standing set pay counts at their
+weekly amount for the share of the week gone by — their hours don't change
+what they are paid — so the live total ends the week at exactly what
+payroll will be, and agrees with the projection. A saved row always shows
+the amount that was saved.
+
+### What the CEO can change without a developer
+
+All of it is in **Control**, applies to every device at once, and is written
+to the activity log:
+
+- **Rules** — the federal and state withholding estimate rates, how long a
+  shift runs before it is flagged, and the automatic clock-out limit.
+- **Stores** — add a store (name, short label and its manager's PIN). It
+  appears everywhere at once: sign-in, the time clock, employees, payroll,
+  schedules, the dashboards and the portal.
+- **Roles** — add a role employees can be given.
+- **Access** — change any sign-in PIN (changing one signs out every device
+  that used the old one).
+- **Data** — the live portal, the feed key, and the full download.
+
+Employees, pay rates, set pay, schedules, punches and payroll are already
+self-service on their own pages for any store.
+
+Added stores, added roles and the rules are rows in `app_settings`
+(`store:<name>`, `role:<name>`, `rule:<key>`), held in memory by
+`server/registry.ts` and reloaded at boot, after each change and once a
+minute — no migration and no deploy.
+
+### What still needs a developer
+
+- **Renaming or removing a store.** A store's name is what every record
+  (employees, punches, payroll, schedules, its PIN) is filed under, so
+  stores can be added from Control but not renamed or removed there.
+- **Hosting settings** — the database, the session secret, and the portal
+  relay address and tokens are environment variables on the host.
+- **Changing what the software does** — a new report, a new rule the site
+  doesn't have yet, a different pay calculation.
+
+### How it is built
+
+`client/src/pages/CeoView.tsx` is the page; its sections live in
+`client/src/pages/ceo/` (`OrbitCore`, `Autopilot`, `Insights`,
+`ControlRoom`, and the shared `hud` pieces). The look is one CSS scope,
+`.cc` in `client/src/index.css`: everything placed inside picks up the
+instrument-panel styling, in light and dark. The big splits ask how wide
+the page area is (container queries) rather than how wide the window is, so
+the layout adapts when the side navigation is resized and on a foldable in
+either orientation; the orbit redraws with larger stores and type when it
+is shown narrow.
 
 ## Portal integration (this site is the system of record)
 
