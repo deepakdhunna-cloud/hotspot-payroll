@@ -31,12 +31,25 @@ only ever read or write its own store's data; the CEO PIN sees everything.
 
 ## Design, themes and the home-screen app
 
-**Light and dark.** The site follows the device by default; the account menu
-(avatar) has an Appearance switch — Auto, Light, Dark. The choice is kept in
-`localStorage` under `theme` and applied by a small script in
-`client/index.html` before first paint, so there is never a flash of the
-wrong theme. `client/src/contexts/ThemeContext.tsx` keeps it in sync
-afterwards. The time clock (`/clock`) is always dark.
+**Light and dark.** The site follows the device: light when the phone is
+light, dark when it is dark, switching with it. Anyone can set it by hand
+instead — the appearance switch (Auto / Light / Dark) is in plain sight, not
+inside a menu: a sun/moon button in the phone's top bar, on the navigation
+rail and on the sign-in screen, and the three choices spelled out at the
+bottom of the desktop sidebar. A hand-set choice stays on that device until
+Auto is picked again (kept in `localStorage` under `theme`). It is applied by
+a small script in `client/index.html` before first paint, so there is never a
+flash of the wrong theme, and every change cross-fades
+(`client/src/contexts/ThemeContext.tsx`). Light mode is white. The time clock
+(`/clock`) is always dark.
+
+**The logo has two versions** of the same artwork in `client/public/brand/`:
+`hotspot-logo.png` (white lettering, the original — used on dark) and
+`hotspot-logo-ink.png` (the HOTSPOT lettering in solid ink, stripes and
+MARKET pill unchanged — used on light, where white lettering washes out).
+`hotspot-mark*.png` are the compact stripes-and-H form. `BrandMark` shows the
+right one with plain CSS. If a designer supplies an official light-background
+logo, replace the `-ink` files.
 
 **One design system.** Every color is a token in `client/src/index.css` with
 a light and a dark value (`--background`, `--card`, `--primary`, status pairs

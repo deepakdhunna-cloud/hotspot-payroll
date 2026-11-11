@@ -1,9 +1,16 @@
 /**
- * Hotspot Market brand mark — the real logo, bundled with the app
- * (client/public/brand/hotspot-logo.png) so it never depends on external
- * storage. White lettering with a black outline and red stripes reads on
- * both the light and the dark theme, and the artwork already includes the
- * MARKET pill.
+ * Hotspot Market brand mark — the real logo, bundled with the app so it
+ * never depends on external storage. It comes in two versions of the same
+ * artwork, and the right one shows for the surface it sits on:
+ *
+ *  - on dark  (/brand/hotspot-logo.png)     white lettering — the original.
+ *  - on light (/brand/hotspot-logo-ink.png) the same logo with the HOTSPOT
+ *    lettering in solid ink, so it never washes out on a white page. The red
+ *    stripes and the MARKET pill are identical.
+ *
+ * Which one shows is plain CSS (the `dark:` variant), so it follows the
+ * theme — and any always-dark surface such as the time clock — without
+ * JavaScript and without a flash.
  *
  * `BrandGlyph` is the compact form for tight places (the navigation rail,
  * the app icon): the speed stripes and the H, cut from the same artwork.
@@ -14,8 +21,8 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-const LOGO_URL = "/brand/hotspot-logo.png";
-const GLYPH_URL = "/brand/hotspot-mark.png";
+const LOGO = { onDark: "/brand/hotspot-logo.png", onLight: "/brand/hotspot-logo-ink.png" };
+const GLYPH = { onDark: "/brand/hotspot-mark.png", onLight: "/brand/hotspot-mark-ink.png" };
 
 const SIZES = {
   sm: { img: "h-9", text: "text-lg" },
@@ -23,12 +30,51 @@ const SIZES = {
   lg: { img: "h-16", text: "text-3xl" },
 } as const;
 
+/** Both versions of one mark; CSS shows the one that suits the surface. */
+function ThemedImage({
+  sources,
+  width,
+  height,
+  className,
+  onError,
+}: {
+  sources: { onDark: string; onLight: string };
+  width: number;
+  height: number;
+  className?: string;
+  onError: () => void;
+}) {
+  const img = "h-full w-auto max-w-full object-contain select-none";
+  return (
+    <span className={cn("inline-flex shrink-0 items-center", className)}>
+      <img
+        width={width}
+        height={height}
+        src={sources.onLight}
+        alt="Hotspot Market"
+        draggable={false}
+        className={cn(img, "block dark:hidden")}
+        onError={onError}
+      />
+      <img
+        width={width}
+        height={height}
+        src={sources.onDark}
+        alt="Hotspot Market"
+        draggable={false}
+        className={cn(img, "hidden dark:block")}
+        onError={onError}
+      />
+    </span>
+  );
+}
+
 export function BrandMark({
   size = "md",
   className,
 }: {
   size?: keyof typeof SIZES;
-  /** @deprecated the mark reads on every surface; kept so call sites compile. */
+  /** @deprecated the mark picks its own version; kept so call sites compile. */
   tone?: "paper" | "ink";
   className?: string;
 }) {
@@ -52,13 +98,11 @@ export function BrandMark({
   }
 
   return (
-    <img
+    <ThemedImage
+      sources={LOGO}
       width={1201}
       height={289}
-      src={LOGO_URL}
-      alt="Hotspot Market"
-      draggable={false}
-      className={cn("w-auto object-contain select-none", s.img, className)}
+      className={cn(s.img, className)}
       onError={() => setImgFailed(true)}
     />
   );
@@ -79,13 +123,11 @@ export function BrandGlyph({ className }: { className?: string }) {
     );
   }
   return (
-    <img
+    <ThemedImage
+      sources={GLYPH}
       width={600}
       height={362}
-      src={GLYPH_URL}
-      alt="Hotspot Market"
-      draggable={false}
-      className={cn("h-7 w-auto object-contain select-none", className)}
+      className={cn("h-7", className)}
       onError={() => setImgFailed(true)}
     />
   );

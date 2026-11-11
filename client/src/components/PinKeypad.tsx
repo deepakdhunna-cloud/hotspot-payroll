@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { errorMessage } from "@/lib/errors";
 
 import { BrandMark } from "@/components/BrandMark";
+import { ThemeMenu } from "@/components/ThemeSwitch";
 
 const MIN_PIN = 4;
 const MAX_PIN = 8;
@@ -94,7 +95,8 @@ export default function PinKeypad() {
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
-    <div className="auth-screen flex items-center justify-center px-4 py-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className="auth-screen relative flex items-center justify-center px-4 py-[max(1.5rem,env(safe-area-inset-top))]">
+      <ThemeMenu className="chrome-btn absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))]" />
       <div className="flex w-full max-w-[21rem] flex-col items-center">
         <BrandMark size="lg" className="h-14 sm:h-16" />
 

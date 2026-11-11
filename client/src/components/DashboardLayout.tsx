@@ -12,8 +12,9 @@
  *      A sidebar with full labels, search and the account.
  *
  * The same things live in each: the sections, quick add, search (⌘K),
- * the attention bell, the store picker (multi-store logins), the time
- * clock, and the account menu with the light/dark switch.
+ * the attention bell, the light/dark switch (always in plain sight, never
+ * inside a menu), the store picker (multi-store logins), the time clock,
+ * and the account menu.
  */
 import React from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -64,7 +65,7 @@ import { Link, useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { BrandGlyph, BrandMark } from "./BrandMark";
 import { StoreSelect } from "./StoreSelect";
-import { ThemeSwitch } from "./ThemeSwitch";
+import { ThemeMenu, ThemeSwitch } from "./ThemeSwitch";
 import { InstallDialog, useInstallState } from "./InstallApp";
 import {
   StoreScopeProvider,
@@ -378,11 +379,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         </span>
       </DropdownMenuLabel>
       <DropdownMenuSeparator />
-      <div className="px-2 py-1.5">
-        <p className="mb-1.5 text-xs font-medium text-muted-foreground">Appearance</p>
-        <ThemeSwitch />
-      </div>
-      <DropdownMenuSeparator />
       {install.standalone ? (
         // From the home screen there is no browser reload button.
         <DropdownMenuItem className="cursor-pointer" onSelect={() => window.location.reload()}>
@@ -575,6 +571,11 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             </>
           ) : null}
 
+          {/* Appearance: a button on the rail, the three choices spelled out
+              in the sidebar. */}
+          <ThemeMenu label side="right" align="end" className="nav-item xl:hidden" />
+          <ThemeSwitch className="mt-1.5 hidden xl:grid" />
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -607,10 +608,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         <header className="app-topbar">
           <Link
             href={roleHome}
-            className="mr-auto shrink-0 rounded-md"
+            className="mr-auto min-w-0 shrink rounded-md"
             aria-label={isCfo ? "Go to finance" : "Go to dashboard"}
           >
-            <BrandMark size="sm" className="h-[1.9rem]" />
+            <BrandMark size="sm" className="h-[1.9rem] max-w-full" />
           </Link>
           {ops ? <StoreScope className="w-auto" /> : null}
           {ops ? (
@@ -623,6 +624,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
               <Search aria-hidden />
             </button>
           ) : null}
+          <ThemeMenu className="chrome-btn" />
           {ops ? (
             <button
               type="button"

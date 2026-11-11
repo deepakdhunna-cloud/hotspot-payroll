@@ -1,13 +1,19 @@
 /**
  * Light and dark mode.
  *
- * The preference is "system" (follow the device, the default), "light" or
- * "dark", kept in localStorage under "theme". index.html applies it before
- * first paint so the page never flashes the wrong theme; this provider keeps
- * it in sync afterwards — when the manager picks a theme, when the device
- * switches between day and night, and when another tab changes it.
+ * By default the site follows the device: light when the phone is light,
+ * dark when the phone is dark, switching with it. Anyone can instead set it
+ * by hand — Light or Dark — and it then stays that way on that device until
+ * they pick Auto again. The choice is kept in localStorage under "theme"
+ * ("light" | "dark"; nothing stored means "follow the device").
  *
- * `resolvedTheme` is what is actually on screen ("light" or "dark").
+ * index.html applies it before first paint so the page never flashes the
+ * wrong theme; this provider keeps it in sync afterwards — when the switch
+ * is used, when the device flips between day and night, and when another
+ * tab changes it. Every change cross-fades instead of snapping.
+ *
+ * `theme` is what was chosen ("system" | "light" | "dark");
+ * `resolvedTheme` is what is on screen ("light" | "dark").
  */
 import React, {
   createContext,
@@ -15,6 +21,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -22,7 +29,7 @@ export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 interface ThemeContextType {
-  /** What the manager chose. */
+  /** What was chosen. "system" = follow the device. */
   theme: ThemePreference;
   /** What is on screen right now. */
   resolvedTheme: ResolvedTheme;
@@ -32,7 +39,7 @@ interface ThemeContextType {
 const STORAGE_KEY = "theme";
 /** Page surface per theme — mirrored in index.html's theme-color metas. */
 const CHROME_COLOR: Record<ResolvedTheme, string> = {
-  light: "#f7f7f8",
+  light: "#ffffff",
   dark: "#0c0c0e",
 };
 
@@ -61,8 +68,7 @@ function paint(preference: ThemePreference, resolved: ResolvedTheme) {
   root.style.colorScheme = resolved;
   // Browser bars and the home-screen status area match the page surface.
   document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((meta) => {
-    const media = meta.getAttribute("media") ?? "";
-    const forDark = media.includes("dark");
+    const forDark = (meta.getAttribute("media") ?? "").includes("dark");
     meta.setAttribute(
       "content",
       preference === "system" ? CHROME_COLOR[forDark ? "dark" : "light"] : CHROME_COLOR[resolved],
@@ -70,16 +76,48 @@ function paint(preference: ThemePreference, resolved: ResolvedTheme) {
   });
 }
 
+/**
+ * Run a theme change as a short cross-fade: a view transition where the
+ * browser has them, otherwise a brief CSS transition on colors (.theme-fade
+ * in index.css). People who ask for reduced motion get an instant switch.
+ */
+function smoothly(update: () => void) {
+  const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (calm) {
+    update();
+    return;
+  }
+  const doc = document as Document & {
+    startViewTransition?: (cb: () => void) => unknown;
+  };
+  if (doc.startViewTransition) {
+    doc.startViewTransition(update);
+    return;
+  }
+  const root = document.documentElement;
+  root.classList.add("theme-fade");
+  update();
+  window.setTimeout(() => root.classList.remove("theme-fade"), 280);
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemePreference>(readPreference);
   const [device, setDevice] = useState<ResolvedTheme>(deviceTheme);
   const resolvedTheme: ResolvedTheme = theme === "system" ? device : theme;
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
 
   // Follow the device when it flips between day and night.
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
     if (!mq) return;
-    const onChange = () => setDevice(mq.matches ? "dark" : "light");
+    const onChange = () => {
+      const next: ResolvedTheme = mq.matches ? "dark" : "light";
+      smoothly(() => {
+        setDevice(next);
+        if (themeRef.current === "system") paint("system", next);
+      });
+    };
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
@@ -93,6 +131,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Safety net: whatever changed, the page matches the state.
   useEffect(() => {
     paint(theme, resolvedTheme);
   }, [theme, resolvedTheme]);
@@ -104,21 +143,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* storage unavailable — the choice lasts for this visit */
     }
-    const apply = () => setThemeState(next);
-    // Cross-fade the whole page where the browser can; otherwise just switch.
-    const doc = document as Document & {
-      startViewTransition?: (cb: () => void) => unknown;
-    };
-    const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (doc.startViewTransition && !calm) {
-      doc.startViewTransition(() => {
-        apply();
-        const resolved = next === "system" ? deviceTheme() : next;
-        paint(next, resolved);
-      });
-    } else {
-      apply();
-    }
+    smoothly(() => {
+      setThemeState(next);
+      paint(next, next === "system" ? deviceTheme() : next);
+    });
   }, []);
 
   const value = useMemo(

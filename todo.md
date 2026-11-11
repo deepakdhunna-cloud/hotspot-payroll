@@ -199,3 +199,10 @@
 - [x] Payroll: compact expandable rows below desktop width; "See punches" / Clock chip opens that person's punches for the week; quick add separates "Fix a punch" from "Add a missed punch"
 - [x] Hard-coded colors removed from pages (schedule, trend, loading states); avatars theme-aware
 - [x] Verified in Chromium at 393×852, 466×678 (cover), 626×890 and 890×626 (unfolded), 1180 and 1440 wide, light and dark; 189 tests passing; tsc + production build clean
+
+## v14.1 — True light mode, visible appearance switch, logo on light
+- [x] Light mode is white: white page, white cards on hairlines, lightly tinted sidebar; the dashboard payroll card follows the theme (white in light, inked in dark)
+- [x] Appearance switch moved out of the account menu: sun/moon button in the phone bar, on the rail and on sign-in; Auto / Light / Dark spelled out in the desktop sidebar
+- [x] Follows the device by default; a hand-set Light or Dark stays until Auto is chosen again; every change (including the device flipping) cross-fades
+- [x] Light-background version of the logo (solid ink lettering) so it no longer washes out on white; original white-lettered logo on dark
+- [x] Checked in Chromium: device dark + Auto, forced Light on a dark device, forced Dark on a light device, reloads, back to Auto, device flip while open

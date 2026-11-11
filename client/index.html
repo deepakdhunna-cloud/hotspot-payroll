@@ -12,10 +12,10 @@
     <title>Hotspot Market · Payroll</title>
     <meta name="description" content="Payroll, schedules and time clock for the Hotspot Market stores." />
     <!-- Browser chrome follows the app's surface color. The two media entries
-         cover "match my device"; the theme script below rewrites them when a
-         manager picks light or dark by hand. -->
+         cover "follow my device"; the theme script below rewrites them when
+         someone sets light or dark by hand. -->
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f7f7f8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0c0c0e" media="(prefers-color-scheme: dark)" />
     <!-- Internal operations tool: keep it out of search engines. -->
     <meta name="robots" content="noindex, nofollow" />
@@ -37,7 +37,9 @@
 
     <script>
       // Runs before first paint so the page never flashes the wrong theme.
-      // "theme" in localStorage is "light", "dark" or "system" (the default).
+      // The site follows the device (light by day, dark when the phone is)
+      // unless someone set it by hand: "theme" in localStorage is then
+      // "light" or "dark". No stored value means "follow the device".
       (function () {
         var root = document.documentElement;
         var pref = "system";
@@ -57,7 +59,7 @@
         if (pref !== "system") {
           var metas = document.querySelectorAll('meta[name="theme-color"]');
           for (var i = 0; i < metas.length; i++) {
-            metas[i].setAttribute("content", dark ? "#0c0c0e" : "#f7f7f8");
+            metas[i].setAttribute("content", dark ? "#0c0c0e" : "#ffffff");
           }
         }
         // Saved to a home screen, the app runs without browser bars.
