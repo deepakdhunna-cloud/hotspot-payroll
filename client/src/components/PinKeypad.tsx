@@ -1,3 +1,4 @@
+import { redirectFor, type Role } from "@/lib/portal";
 import { trpc } from "@/lib/trpc";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
@@ -32,14 +33,12 @@ export default function PinKeypad() {
       // it, and a toast here sat on top of the account menu on phones.
       // Land each role on its own ground BEFORE the session hydrates, so
       // switching accounts never flashes a page the new role can't use.
-      if (data.role === "cfo" && location !== "/cfo") {
-        setLocation("/cfo", { replace: true });
-      } else if (
-        data.role === "manager" &&
-        (location === "/ceo" || location === "/cfo")
-      ) {
-        setLocation("/", { replace: true });
-      }
+      // (The CEO opens on the command center, the CFO on Finance, a
+      // manager on the dashboard — lib/portal decides.)
+      const role: Role =
+        data.role === "admin" ? "admin" : data.role === "cfo" ? "cfo" : "manager";
+      const to = redirectFor(role, location);
+      if (to) setLocation(to, { replace: true });
       await utils.auth.me.invalidate();
     },
     onError: (e) => {

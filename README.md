@@ -2,6 +2,29 @@
 
 Payroll, scheduling and time clock for the five Hotspot Market stores.
 
+## Three portals, one per job
+
+Signing in decides which portal opens. Nobody sees another job's pages, and
+opening an address that isn't yours simply takes you to where your job is.
+
+| Who | Lands on | Navigation |
+| --- | --- | --- |
+| **Store manager** (a store's PIN) | Dashboard `/` | Dashboard · Payroll · Employees · Schedule — for their own store |
+| **CEO** (the CEO PIN) | Command center `/ceo` | Command · Payroll · Stores · People · Insights · Finance · Control |
+| **CFO** (the CFO PIN) | Finance `/cfo` | Finance · Register — read-only |
+
+The CEO does not do a manager's daily work, so none of the manager's pages
+are in the CEO's navigation. For the occasional manager's task — fix a punch,
+add someone, look at one store's week — the CEO opens the **Store desk**: the
+manager's own pages, for any store, with **Command center** as the way back.
+It is reached from the CEO's navigation, from each store's card on Stores,
+and from the "+" and search.
+
+All of this is described in one file, `client/src/lib/portal.ts` (which
+portal an address belongs to, each portal's navigation, and where a role is
+sent from an address that isn't theirs); the layout renders from it. The
+server enforces access separately on every procedure.
+
 ## What's inside
 
 - **PIN sign-in** — one PIN per store (manager scope) plus a CEO master PIN.
@@ -114,17 +137,23 @@ status words in the site's green and amber.
 
 ## The command center
 
-The CEO's view (`/ceo`, signed in with the CEO PIN) is one console with five
-sections. It follows a single focus: tap a store anywhere and every section
-narrows to it; tap the center of the orbit for all stores again.
+The CEO's portal (signed in with the CEO PIN) is the command center. Each
+section has its own address and its own entry in the navigation, and they
+share a single focus: tap a store anywhere and every section narrows to it;
+tap the center of the orbit for all stores again.
 
-| Section | What it is for |
-| --- | --- |
-| **Live** | The company at the center and every store in orbit: labor so far this week, hours against the schedule, who is on the clock, what needs attention (with its fix), a log of every change as it happens, and the last eight pay weeks. |
-| **Autopilot** | Payroll for every store from one place. Each person is **Saved**, **Ready** (hours straight from the time clock or their set pay, nothing flagged) or **On hold** (the site flagged it for a person). One button approves every Ready row; each held row says why and offers its fix. Share and Export from here too. |
-| **Optimize** | Findings worked out from numbers the site already shows — hours past the schedule and what they cost, the week's projection against plan, shifts left running, cost per worked hour store against store, schedule accuracy, anything blocking clean payroll. Each one states how it was calculated and links to where to act. |
-| **Control** | Everything about how the site runs. See below. |
-| **Log** | The full activity log. |
+| Section | Address | What it is for |
+| --- | --- | --- |
+| **Command** | `/ceo` | The company at the center and every store in orbit: labor so far this week, hours against the schedule, who is on the clock, what needs attention (with its fix), a log of every change as it happens, and the last eight pay weeks. |
+| **Payroll** | `/ceo/payroll` | Autopilot: payroll for every store from one place. Each person is **Saved**, **Ready** (hours straight from the time clock or their set pay, nothing flagged) or **On hold** (the site flagged it for a person). One button approves every Ready row; each held row says why and offers its fix. Share and Export from here too. |
+| **Stores** | `/ceo/stores` | Every store side by side: its people, this week's hours and labor, how last week's payroll stands, cost per hour against the others, whether its time clock is alive — and buttons to see it live, approve its payroll, or open its desk. |
+| **People** | `/ceo/people` | Headcount, how people are paid (by the hour or set pay, and what set pay costs a week), by store and by role, over the full directory for changing pay or role, moving, adding or deactivating someone. |
+| **Insights** | `/ceo/insights` | Findings worked out from numbers the site already shows — hours past the schedule and what they cost, the week's projection against plan, shifts left running, cost per worked hour store against store, schedule accuracy, anything blocking clean payroll. Each one states how it was calculated and links to where to act. |
+| **Finance** | `/ceo/finance` | The CFO's two views inside the CEO's portal: the labor-cost overview and the payroll register. |
+| **Control** | `/ceo/control` | Everything about how the site runs. See below. The full activity log (`/ceo/log`) opens from here and from the live feed on Command. |
+
+Addresses from before the sections had their own (`/ceo?tab=payroll`) are
+sent on to the right one.
 
 **How Autopilot stays accurate.** It builds and saves rows with the same
 functions as the weekly timesheet (`client/src/lib/payrollRow.ts`), so it can
@@ -175,15 +204,32 @@ minute — no migration and no deploy.
 
 ### How it is built
 
-`client/src/pages/CeoView.tsx` is the page; its sections live in
-`client/src/pages/ceo/` (`OrbitCore`, `Autopilot`, `Insights`,
-`ControlRoom`, and the shared `hud` pieces). The look is one CSS scope,
+`client/src/pages/CeoView.tsx` renders the sections that share the live
+data; its parts live in `client/src/pages/ceo/` (`OrbitCore`, `Autopilot`,
+`StoresBoard`, `Insights`, `ControlRoom`, the shared `hud` pieces, and the
+`PeoplePage` and `FinancePage` pages). The look is one CSS scope,
 `.cc` in `client/src/index.css`: everything placed inside picks up the
 instrument-panel styling, in light and dark. The big splits ask how wide
 the page area is (container queries) rather than how wide the window is, so
 the layout adapts when the side navigation is resized and on a foldable in
 either orientation; the orbit redraws with larger stores and type when it
 is shown narrow.
+
+## The CFO's portal
+
+The CFO PIN opens Finance and nothing else, and nothing in it changes
+anything. Two views, in the same look as the CEO's portal:
+
+- **Finance** (`/cfo`) — labor cost for the last five closed pay weeks:
+  last week against the one before, the average week, cost per worked hour,
+  this week's projection against plan, weekly payroll stacked by store,
+  store economics and pay by role.
+- **Register** (`/cfo/register`) — every closed pay week on one line, newest
+  first, for 5, 8 or 12 weeks: people paid, hours, gross, cost per hour and
+  the withholding estimates. **Export** downloads it as a spreadsheet (with
+  each store's gross as its own column) and **Share** sends it.
+
+The CEO sees the same two views under Finance in the command center.
 
 ## Portal integration (this site is the system of record)
 

@@ -427,7 +427,14 @@ function SectionHead({
   );
 }
 
-export default function CfoView() {
+export default function CfoView({
+  eyebrow,
+  actions,
+}: {
+  eyebrow?: ReactNode;
+  /** The Overview / Register switch, supplied by the portal. */
+  actions?: ReactNode;
+} = {}) {
   usePageTitle("Finance");
   const { user } = useAuth();
   const canView = user?.role === "admin" || user?.role === "cfo";
@@ -487,6 +494,8 @@ export default function CfoView() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow={eyebrow}
+        actions={actions}
         title="Finance"
         description="Labor cost for the last five closed pay weeks (Thursday to Wednesday). Read-only."
       />

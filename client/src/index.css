@@ -1294,9 +1294,91 @@ input[type="datetime-local"] {
 /* A short screen (a foldable held sideways): tighter rail items. */
 @media (min-width: 48rem) and (max-height: 42rem) {
   [data-nav="rail"] .nav-item {
-    min-height: 2.75rem;
-    gap: 2px;
+    min-height: 2.125rem;
+    gap: 1px;
+    font-size: 9.5px;
   }
+  [data-nav="rail"] .nav-item > svg {
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+}
+
+/* The sections are the part of the side navigation that gives way: if a
+   short screen can't hold them all they scroll in place, while search (above)
+   and alerts, appearance and the account (below) never move. */
+.sidenav-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.sidenav-main::-webkit-scrollbar { display: none; }
+
+/* The CEO's crossing between the command center and the store desk: set
+   apart from the sections by a rule, so it never reads as one of them. */
+.nav-desk,
+.nav-back {
+  flex-shrink: 0;
+}
+.nav-desk {
+  margin-top: 0.5rem;
+}
+.nav-desk::before {
+  content: "";
+  position: absolute;
+  top: -0.3rem;
+  left: 0.6rem;
+  right: 0.6rem;
+  height: 1px;
+  background: var(--border);
+}
+.nav-back {
+  color: var(--brand-text);
+}
+.nav-back > svg {
+  color: var(--brand-text);
+}
+/* On a phone the store desk says where it is in a slim line above the page
+   (the rail and sidebar carry the same link from 768px). */
+.desk-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.desk-bar > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+  padding: 0 0.6rem 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-weight: 500;
+  color: var(--brand-text);
+}
+.desk-bar > a > svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+@media (min-width: 48rem) {
+  .desk-bar { display: none; }
+}
+.nav-caption {
+  flex-shrink: 0;
+  margin: 0.6rem 0 0.15rem;
+  padding: 0 0.7rem;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
 }
 
 /* ---- The navigation's edge: drag to size it, tap to open or close ----
@@ -1722,6 +1804,7 @@ button:focus-visible {
 /* ---- Type ---- */
 .cc .mono,
 .cc .hud-label,
+.cc .eyebrow,
 .cc .hud-head,
 .cc .kpi-label,
 .cc thead th,
@@ -1729,6 +1812,7 @@ button:focus-visible {
   font-family: var(--font-mono);
 }
 .cc .hud-label,
+.cc .eyebrow,
 .cc .kpi-label,
 .cc thead th {
   font-size: 10.5px;

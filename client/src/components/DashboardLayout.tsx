@@ -37,26 +37,27 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AlertTriangle,
+  ArrowLeft,
   Bell,
   Building2,
   CalendarDays,
   ChevronRight,
   ChevronsUpDown,
-  ClipboardList,
   Clock,
   Ellipsis,
   ExternalLink,
-  Landmark,
-  LayoutDashboard,
+  KeyRound,
   LogOut,
   Pencil,
   Plus,
+  Radar,
+  Rocket,
   RotateCw,
   Search,
   ShieldCheck,
   Smartphone,
+  Store,
   UserPlus,
-  Users,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -73,29 +74,26 @@ import {
 } from "@/contexts/StoreScopeContext";
 import { announceQueryFlags } from "@/lib/queryFlag";
 import { NAV_FULL_MIN, NAV_RAIL, useNavSize } from "@/lib/navSize";
+import {
+  DESK_HOME,
+  homeOf,
+  isActivePath,
+  navFor,
+  portalOf,
+  redirectFor,
+  tabBarFor,
+  type NavItem,
+  type Role,
+} from "@/lib/portal";
 import { registerStores } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
-type MenuItem = {
-  icon: LucideIcon;
-  /** One name per section — the same in the rail, tab bar and search. */
-  label: string;
-  path: string;
-  adminOnly?: boolean;
-};
+type MenuItem = NavItem;
+type QuickAction = { icon: LucideIcon; label: string; hint: string; href: string };
 
-const baseMenuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Users, label: "Employees", path: "/employees" },
-  { icon: ClipboardList, label: "Payroll", path: "/payroll" },
-  { icon: CalendarDays, label: "Schedule", path: "/schedule-import" },
-  { icon: ShieldCheck, label: "Executive", path: "/ceo", adminOnly: true },
-  { icon: Landmark, label: "Finance", path: "/cfo", adminOnly: true },
-];
-
-/** The everyday jobs, one tap from anywhere (the "+" button). */
-const QUICK_ACTIONS: { icon: LucideIcon; label: string; hint: string; href: string }[] = [
+/** A manager's everyday jobs, one tap from anywhere (the "+" button). */
+const QUICK_ACTIONS: QuickAction[] = [
   {
     icon: Pencil,
     label: "Fix a punch",
@@ -125,6 +123,41 @@ const QUICK_ACTIONS: { icon: LucideIcon; label: string; hint: string; href: stri
     label: "Run payroll",
     hint: "Review hours, save and export",
     href: "/payroll",
+  },
+];
+
+/** The CEO's "+": the CEO's own jobs first, then the few manager's tasks a
+ *  CEO reaches for (they open on the store desk). */
+const CEO_QUICK_ACTIONS: QuickAction[] = [
+  {
+    icon: Rocket,
+    label: "Approve payroll",
+    hint: "Every store's clean rows, one button",
+    href: "/ceo/payroll",
+  },
+  {
+    icon: UserPlus,
+    label: "Add employee",
+    hint: "New team member, pay and clock code",
+    href: "/employees?add=1",
+  },
+  {
+    icon: Pencil,
+    label: "Fix a punch",
+    hint: "Change a wrong clock-in or clock-out",
+    href: "/payroll?tab=punches",
+  },
+  {
+    icon: Store,
+    label: "Add a store",
+    hint: "With its manager's sign-in PIN",
+    href: "/ceo/control?addStore=1",
+  },
+  {
+    icon: KeyRound,
+    label: "Change a PIN",
+    hint: "Any login — signs out its devices",
+    href: "/ceo/control?section=access",
   },
 ];
 
@@ -252,11 +285,17 @@ function AccountAvatar({ initial, className }: { initial: string; className?: st
   );
 }
 
-function QuickActionList({ onPick }: { onPick: (href: string) => void }) {
+function QuickActionList({
+  actions,
+  onPick,
+}: {
+  actions: QuickAction[];
+  onPick: (href: string) => void;
+}) {
   return (
     <ul className="grid gap-1.5">
-      {QUICK_ACTIONS.map((a) => (
-        <li key={a.href}>
+      {actions.map((a) => (
+        <li key={a.label}>
           <button
             type="button"
             onClick={() => onPick(a.href)}
@@ -288,14 +327,16 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   // shows an "access only" wall — it glides straight to that role's home.
   // (Store logins have no business on /ceo or /cfo; the CFO login lives on
   // its portal.)
-  const roleBlocked =
-    !!user &&
-    ((isCfo && location !== "/cfo") ||
-      (!isAdmin && !isCfo && (location === "/ceo" || location === "/cfo")));
-  const roleHome = isCfo ? "/cfo" : "/";
+  const role: Role = isAdmin ? "admin" : isCfo ? "cfo" : "manager";
+  // Which of the site's portals this address belongs to (lib/portal): the
+  // CEO's, the CEO's store desk, a manager's, or the CFO's.
+  const portal = portalOf(role, location);
+  const redirect = user ? redirectFor(role, location) : null;
+  const roleBlocked = redirect !== null;
+  const roleHome = homeOf(role);
   React.useEffect(() => {
-    if (roleBlocked) setLocation(roleHome, { replace: true });
-  }, [roleBlocked, roleHome, setLocation]);
+    if (redirect) setLocation(redirect, { replace: true });
+  }, [redirect, setLocation]);
   const greetingQ = trpc.meta.greetingName.useQuery(undefined, {
     enabled: !!user && !isCfo,
   });
@@ -310,22 +351,27 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       ? "All stores · read-only"
       : (user?.store ?? "—");
   const initial = isAdmin ? "C" : isCfo ? "F" : (displayName[0]?.toUpperCase() ?? "M");
-  // The CFO login is a finance portal, not an operations account — its nav
-  // is exactly the portal, nothing else.
-  const menuItems = isCfo
-    ? baseMenuItems.filter((item) => item.path === "/cfo")
-    : baseMenuItems.filter((item) => !item.adminOnly || isAdmin);
-  // The phone tab bar holds four sections around the "+". A store login has
-  // exactly four; the CEO's extra ones sit under "More".
-  const tabPaths = isAdmin
-    ? ["/", "/payroll", "/ceo"]
-    : ["/", "/employees", "/payroll", "/schedule-import"];
-  const tabItems = tabPaths
-    .map((p) => menuItems.find((m) => m.path === p))
-    .filter((m): m is MenuItem => !!m);
-  const moreItems = menuItems.filter((m) => !tabPaths.includes(m.path));
-  // The CFO portal is a single page: no tab bar, no operations tools.
-  const showTabBar = !isCfo;
+  // Each portal has its own navigation, and only its own (lib/portal).
+  const menuItems = navFor(portal);
+  // The phone tab bar holds up to four sections around the "+"; the rest
+  // sit under "More" — along with the CEO's way to and from the store desk.
+  const { tabs: tabItems, more: portalMore } = tabBarFor(portal);
+  const crossing: MenuItem | null =
+    portal === "ceo"
+      ? { icon: Store, label: "Store desk", path: DESK_HOME }
+      : portal === "desk"
+        ? { icon: Radar, label: "Command center", path: "/ceo" }
+        : null;
+  const moreItems = crossing ? [...portalMore, crossing] : portalMore;
+  const quickActions = portal === "ceo" ? CEO_QUICK_ACTIONS : QUICK_ACTIONS;
+  const homeLabel = isCfo
+    ? "Go to finance"
+    : isAdmin
+      ? "Go to the command center"
+      : "Go to dashboard";
+  // Any portal with more than one section gets the phone tab bar. The CFO's
+  // has no "+": that portal changes nothing.
+  const showTabBar = tabItems.length > 1;
   const ops = !isCfo;
   const revealAttention = useRevealAttention(roleHome);
   const attention = useAttentionCount();
@@ -370,10 +416,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [isCfo]);
   // Highlight nested routes too (/employees/12 keeps Employees active).
-  const isPathActive = (path: string) =>
-    path === "/"
-      ? location === "/"
-      : location === path || location.startsWith(`${path}/`);
+  const isPathActive = (path: string) => isActivePath(path, location);
   const shortcut = isMac ? "⌘K" : "Ctrl K";
 
   const pickQuick = (href: string) => {
@@ -455,7 +498,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         <Link
           href={roleHome}
           className="mb-1 flex h-11 shrink-0 items-center justify-center rounded-xl nav-full:mb-2 nav-full:justify-start nav-full:px-2"
-          aria-label={isCfo ? "Go to finance" : "Go to dashboard"}
+          aria-label={homeLabel}
         >
           <BrandGlyph className="h-6 nav-full:hidden" />
           <BrandMark size="sm" className="hidden h-8 nav-full:block" />
@@ -493,11 +536,19 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   Quick add
                 </TooltipContent>
               </Tooltip>
-              <DropdownMenuContent side="right" align="start" sideOffset={10} className="w-80 p-1.5">
+              {/* Picking an action usually opens a page or a dialog that takes
+                  the focus; don't pull it back to the "+" (and its tooltip). */}
+              <DropdownMenuContent
+                side="right"
+                align="start"
+                sideOffset={10}
+                className="w-80 p-1.5"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+              >
                 <p className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">
                   Quick add
                 </p>
-                <QuickActionList onPick={pickQuick} />
+                <QuickActionList actions={quickActions} onPick={pickQuick} />
               </DropdownMenuContent>
             </DropdownMenu>
             <Tooltip>
@@ -520,8 +571,31 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
         {ops ? <StoreScope className="mx-auto mt-1 w-full max-w-full shrink-0 nav-full:mt-2" /> : null}
 
+        {/* The sections scroll on their own if a short screen can't hold them
+            all; search above and the account below always stay in reach. */}
+        <div className="sidenav-main">
+        {/* The CEO on the store desk: say where this is, and the way back. */}
+        {portal === "desk" ? (
+          <Link href="/ceo" className="nav-item nav-back mt-2 nav-full:mt-3" title="Back to the command center">
+            <ArrowLeft aria-hidden />
+            <span className="max-w-full truncate">
+              <span className="nav-full:hidden">Command</span>
+              <span className="hidden nav-full:inline">Command center</span>
+            </span>
+          </Link>
+        ) : null}
+        {portal === "desk" ? (
+          <p className="nav-caption hidden nav-full:block">Store desk · a manager&apos;s tools</p>
+        ) : null}
+
         {menuItems.length > 1 ? (
-          <nav className="mt-2 flex shrink-0 flex-col gap-0.5 nav-full:mt-3" aria-label="Primary">
+          <nav
+            className={cn(
+              "flex shrink-0 flex-col gap-0.5",
+              portal === "desk" ? "mt-1" : "mt-2 nav-full:mt-3",
+            )}
+            aria-label="Primary"
+          >
             {menuItems.map((item) => {
               const active = isPathActive(item.path);
               return (
@@ -540,7 +614,23 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </nav>
         ) : null}
 
-        <div className="mt-auto flex shrink-0 flex-col gap-0.5 pt-2">
+        {/* The CEO's way into a manager's tools, kept apart from the portal. */}
+        {portal === "ceo" ? (
+          <Link
+            href={DESK_HOME}
+            className="nav-item nav-desk mt-2"
+            title="Do a manager's job for any store: payroll, punches, employees, schedule"
+          >
+            <Store aria-hidden />
+            <span className="max-w-full truncate">
+              <span className="nav-full:hidden">Desk</span>
+              <span className="hidden nav-full:inline">Store desk</span>
+            </span>
+          </Link>
+        ) : null}
+        </div>
+
+        <div className="flex shrink-0 flex-col gap-0.5 pt-2">
           {ops ? (
             <>
               <button
@@ -586,18 +676,22 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   </span>
                 ) : null}
               </button>
-              <a
-                href="/clock"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="nav-item"
-                aria-label="Open the time clock in a new tab"
-                title="Open the time clock in a new tab"
-              >
-                <Clock aria-hidden />
-                <span className="truncate nav-full:flex-1 nav-full:text-left">Time clock</span>
-                <ExternalLink className="hidden h-3.5 w-3.5 opacity-60 nav-full:block" aria-hidden />
-              </a>
+              {/* A store's tool: on the store desk and for managers, not in
+                  the CEO's own portal (each store's clock is under Stores). */}
+              {portal === "ceo" ? null : (
+                <a
+                  href="/clock"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="nav-item"
+                  aria-label="Open the time clock in a new tab"
+                  title="Open the time clock in a new tab"
+                >
+                  <Clock aria-hidden />
+                  <span className="truncate nav-full:flex-1 nav-full:text-left">Time clock</span>
+                  <ExternalLink className="hidden h-3.5 w-3.5 opacity-60 nav-full:block" aria-hidden />
+                </a>
+              )}
             </>
           ) : null}
 
@@ -673,7 +767,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           <Link
             href={roleHome}
             className="mr-auto min-w-0 shrink rounded-md"
-            aria-label={isCfo ? "Go to finance" : "Go to dashboard"}
+            aria-label={homeLabel}
           >
             <BrandMark size="sm" className="h-[1.9rem] max-w-full" />
           </Link>
@@ -727,14 +821,26 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 <div className="h-8 w-8 rounded-full border-2 border-border border-t-primary animate-spin" />
               </div>
             ) : (
-              <React.Fragment key={registryVersion}>{children}</React.Fragment>
+              <>
+                {/* The CEO on a phone, doing a manager's task: where this is
+                    and the way back (the side navigation says it from 768px). */}
+                {portal === "desk" ? (
+                  <p className="desk-bar">
+                    <Link href="/ceo">
+                      <ArrowLeft aria-hidden /> Command center
+                    </Link>
+                    <span>Store desk · a manager&apos;s tools</span>
+                  </p>
+                ) : null}
+                <React.Fragment key={registryVersion}>{children}</React.Fragment>
+              </>
             )}
           </div>
         </main>
       </div>
 
       {ops ? (
-        <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} isAdmin={isAdmin} />
+        <CommandMenu open={cmdOpen} onOpenChange={setCmdOpen} role={role} />
       ) : null}
       <InstallDialog open={installOpen} onOpenChange={setInstallOpen} />
 
@@ -744,15 +850,17 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           {tabItems.slice(0, 2).map((item) => (
             <TabLink key={item.path} item={item} active={isPathActive(item.path)} />
           ))}
-          <button
-            type="button"
-            className="tabbar-add"
-            onClick={() => setQuickOpen(true)}
-            aria-label="Quick add"
-            aria-haspopup="dialog"
-          >
-            <Plus aria-hidden />
-          </button>
+          {ops ? (
+            <button
+              type="button"
+              className="tabbar-add"
+              onClick={() => setQuickOpen(true)}
+              aria-label="Quick add"
+              aria-haspopup="dialog"
+            >
+              <Plus aria-hidden />
+            </button>
+          ) : null}
           {tabItems.slice(2).map((item) => (
             <TabLink key={item.path} item={item} active={isPathActive(item.path)} />
           ))}
@@ -793,7 +901,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
               Start an everyday task
             </DialogDescription>
           </DialogHeader>
-          <QuickActionList onPick={pickQuick} />
+          <QuickActionList actions={quickActions} onPick={pickQuick} />
         </DialogContent>
       </Dialog>
     </div>

@@ -228,3 +228,17 @@
 - [x] Checked in Chromium on the production build: time clock (wrong code, clock in, repeat-tap guard, clock out, unknown store, store list unavailable), manager sign-in and payroll, CEO all five sections, CFO, server refusals (403) for non-CEO rule changes; every section at 393, 466, 626, 890, 1440 and 1680 wide in light and dark with no sideways overflow and no script errors
 - [ ] Not yet checked on a real iPhone or a real foldable (sizes are from published estimates)
 
+## v16 — Three portals: manager, CEO, CFO
+- [x] One description of who sees what (`client/src/lib/portal.ts`): which portal an address belongs to, each portal's navigation and phone tab bar, and where a role is sent from an address that isn't theirs. The layout, the "+" menu and search all render from it
+- [x] CEO signs in to the command center (`/ceo`), not the manager's dashboard. CEO navigation: Command · Payroll · Stores · People · Insights · Finance · Control — no manager pages. The command center's tabs became sections with their own addresses; old `?tab=` links are sent on; the chosen week stays in the address of the section it belongs to
+- [x] New **Stores** section: every store side by side (people, on the clock, this week's hours and labor, last week's payroll and how much of it is saved, cost per hour against the others, time clock freshness) with See it live / Approve its payroll / Open store desk
+- [x] New **People** section: headcount, hourly vs set pay (and what set pay costs a week), no clock code, by store and by role, over the full directory
+- [x] **Store desk**: the manager's pages for any store, for the CEO's occasional manager's task, with "Command center" as the way back (side navigation from 768px, a slim bar on a phone, the logo everywhere). Reached from the CEO's navigation, each store's card, "+" and search
+- [x] CEO "+": Approve payroll, Add employee, Fix a punch, Add a store (opens the dialog), Change a PIN (opens Control on Access)
+- [x] Manager portal unchanged in what it does: Dashboard · Payroll · Employees · Schedule, for their store; CEO and CFO addresses send a manager home
+- [x] CFO portal: Finance and a new **Register** (every closed pay week on one line for 5/8/12 weeks, Export and Share with each store's gross as a column), in the executive look, with a two-tab bar on phones; still read-only on the server
+- [x] The side navigation's section list scrolls on its own on a short screen; search above and alerts/appearance/account below never move. Tighter rail on a foldable held sideways so all of the CEO's sections fit
+- [x] Tests: 17 new for the role map (homes, navigation per portal, redirects, section addresses, old links) — 246 passing; tsc + production build clean
+- [x] Checked in Chromium on the production build: where each login lands and what it can't open (manager and CFO are sent home from every CEO address), every page of every portal at 393, 466, 626, 890, 1440 and 1680 wide in light and dark (228 page loads, no sideways overflow, no script errors), the new buttons and crossings, the register export, time clock unaffected
+- [ ] Not yet checked on a real iPhone or a real foldable
+

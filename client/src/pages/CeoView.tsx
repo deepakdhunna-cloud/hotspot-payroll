@@ -1,20 +1,26 @@
 /**
- * The command center — the CEO's view (admin only).
+ * The command center — the heart of the CEO's portal (admin only).
  *
- * One console with five sections that share a single focus (tap a store
- * anywhere and every section narrows to it):
+ * Each section has its own address and its own entry in the portal's
+ * navigation (lib/portal); this page renders the ones that share the live
+ * data and the single focus (tap a store anywhere and every section narrows
+ * to it):
  *
- *   LIVE       the company at the center, every store in orbit, vital signs,
- *              who is on the clock, what needs attention, the system log.
- *   AUTOPILOT  payroll for every store from one place (pages/ceo/Autopilot),
- *              with the saved-payroll ledger under it.
- *   OPTIMIZE   findings worked out from the site's own figures (ceo/Insights).
- *   CONTROL    rules, stores, roles, sign-in PINs, data (ceo/ControlRoom).
- *   LOG        the full activity log.
+ *   /ceo            COMMAND   the company at the center, every store in orbit,
+ *                             vital signs, who is on the clock, what needs
+ *                             attention, the system log.
+ *   /ceo/payroll    PAYROLL   Autopilot (pages/ceo/Autopilot) and the
+ *                             saved-payroll ledger under it.
+ *   /ceo/stores     STORES    every store side by side (ceo/StoresBoard).
+ *   /ceo/insights   INSIGHTS  findings from the site's own figures (ceo/Insights).
+ *   /ceo/control    CONTROL   rules, stores, roles, PINs, data (ceo/ControlRoom).
+ *   /ceo/log        LOG       the full activity log.
  *
- * The open section and the chosen weeks live in the URL (?tab=, ?week= for
- * Live, ?pay= for Autopilot), so a refresh, Back or a shared link lands on
- * the same view. The look is one CSS scope, `.cc` in index.css.
+ * People and Finance are their own pages (ceo/PeoplePage, ceo/FinancePage).
+ * The chosen weeks live in the address (?week= on Command, ?pay= on
+ * Payroll), so a refresh or a shared link lands on the same view. Addresses
+ * from before the sections had their own (?tab=) are sent on. The look is
+ * one CSS scope, `.cc` in index.css.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -42,7 +48,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/errors";
 import {
   STORE_ABBR,
@@ -99,19 +104,33 @@ import {
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Link } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
+import {
+  DESK_HOME,
+  ceoPath,
+  ceoSectionFromLegacyTab,
+  ceoSectionFromSlug,
+  type CeoSectionKey,
+} from "@/lib/portal";
 import { Autopilot } from "./ceo/Autopilot";
 import { ControlRoom } from "./ceo/ControlRoom";
 import { Insights } from "./ceo/Insights";
+import { StoresBoard, type StoreCard } from "./ceo/StoresBoard";
 import { OrbitCore, type OrbitStore } from "./ceo/OrbitCore";
 import { CountMoney, CountNumber, HudPanel, Led, LiveClock, Readout } from "./ceo/hud";
 
 /* ------------------------------ URL state ------------------------------ */
 
-const TAB_KEYS = ["overview", "payroll", "optimize", "control", "activity"] as const;
-type TabKey = (typeof TAB_KEYS)[number];
-/** Addresses from before the command center keep working. */
-const LEGACY_TABS: Record<string, TabKey> = { pins: "control", portal: "control" };
+type TabKey = CeoSectionKey;
+
+const SECTION_TITLE: Partial<Record<TabKey, string>> = {
+  overview: "Command center",
+  payroll: "Payroll",
+  stores: "Stores",
+  optimize: "Insights",
+  control: "Control",
+  activity: "Activity log",
+};
 
 function searchParams(): URLSearchParams {
   return new URLSearchParams(
@@ -129,14 +148,6 @@ function replaceSearchParam(key: string, value: string | null) {
     "",
     `${url.pathname}${url.search}${url.hash}`
   );
-}
-
-function initialTab(): TabKey {
-  const t = searchParams().get("tab") ?? "";
-  if (LEGACY_TABS[t]) return LEGACY_TABS[t];
-  return (TAB_KEYS as readonly string[]).includes(t)
-    ? (t as TabKey)
-    : "overview";
 }
 
 function initialWeek(): Date {
@@ -212,38 +223,54 @@ export default function CeoView() {
   usePageTitle("Command center");
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [tab, setTabState] = useState<TabKey>(initialTab);
+  // The section comes from the address (/ceo, /ceo/payroll, …).
+  const [, routeParams] = useRoute("/ceo/:section");
+  const [, navigate] = useLocation();
+  const slug = (routeParams as { section?: string } | null)?.section;
+  const tab: TabKey = ceoSectionFromSlug(slug) ?? "overview";
+  useEffect(() => {
+    // An address that names no section opens Command; one from before the
+    // sections had addresses (?tab=payroll) is sent to the section it meant.
+    const legacy = ceoSectionFromLegacyTab(searchParams().get("tab"));
+    if (legacy) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("tab");
+      navigate(`${ceoPath(legacy)}${url.search}`, { replace: true });
+    } else if (slug && ceoSectionFromSlug(slug) === null) {
+      navigate("/ceo", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
   // The Live view follows the week in progress; Autopilot works on the week
   // to be paid (the last closed one) unless another is picked.
   const [weekStart, setWeekState] = useState<Date>(initialWeek);
   const [payWeek, setPayWeekState] = useState<Date>(initialPayWeek);
   const { scope: storeFilter, setScope: setStoreFilter } = useStoreScope();
 
-  const setTab = (next: string) => {
-    const t = (TAB_KEYS as readonly string[]).includes(next)
-      ? (next as TabKey)
-      : "overview";
-    setTabState(t);
-    replaceSearchParam("tab", t === "overview" ? null : t);
+  const setTab = (next: TabKey) => {
+    navigate(ceoPath(next));
     window.scrollTo({ top: 0 });
   };
-  const setWeekStart = (next: Date) => {
-    setWeekState(next);
+  const setWeekStart = setWeekState;
+  const setPayWeek = setPayWeekState;
+  // The chosen weeks are kept in the address of the section they belong to
+  // (Command's ?week=, Payroll's ?pay=), so a refresh or a shared link opens
+  // the same week — and moving between sections never leaves a stale one.
+  useEffect(() => {
     const live = inProgressPayWeekStart();
     replaceSearchParam(
       "week",
-      next.getTime() === live.getTime() ? null : toDateInput(next)
+      tab === "overview" && weekStart.getTime() !== live.getTime()
+        ? toDateInput(weekStart)
+        : null
     );
-  };
-  // Autopilot's week is in the address too, so a refresh or a shared link
-  // opens the payroll that was being worked on.
-  const setPayWeek = (next: Date) => {
-    setPayWeekState(next);
     replaceSearchParam(
       "pay",
-      next.getTime() === currentPayPeriodStart().getTime() ? null : toDateInput(next)
+      tab === "payroll" && payWeek.getTime() !== currentPayPeriodStart().getTime()
+        ? toDateInput(payWeek)
+        : null
     );
-  };
+  }, [tab, weekStart, payWeek]);
 
   // Always fetch every store — the orbit IS the filter, so the all-stores
   // picture must stay on screen while one store is focused.
@@ -267,6 +294,17 @@ export default function CeoView() {
   const cfoQ = trpc.cfo.summary.useQuery(
     { weeks: 5 },
     { enabled: !!isAdmin, refetchInterval: 5 * 60_000 }
+  );
+  // Stores: this week live, and the last closed week as saved.
+  const liveWeekStart = useMemo(() => inProgressPayWeekStart(), []);
+  const lastClosedStart = useMemo(() => currentPayPeriodStart(), []);
+  const storesLiveQ = trpc.ceo.weekly.useQuery(
+    { weekStart: liveWeekStart },
+    { enabled: !!isAdmin && tab === "stores", refetchInterval: 60_000 }
+  );
+  const lastWeekQ = trpc.ceo.weekly.useQuery(
+    { weekStart: lastClosedStart },
+    { enabled: !!isAdmin && tab === "stores", refetchInterval: 60_000 }
   );
   // The saved-payroll ledger under Autopilot, for the week being paid.
   const ledgerQ = trpc.ceo.weekly.useQuery(
@@ -392,6 +430,41 @@ export default function CeoView() {
   const focusLabel =
     storeFilter === "all" ? "all stores" : storeShort(storeFilter);
 
+  // The Stores board is always "this week, live" beside "last week, as
+  // saved" — whatever week Command happens to be looking at.
+  const storeCards: StoreCard[] = useMemo(() => {
+    const live = storesLiveQ.data;
+    if (!live) return [];
+    const liveRows = live.rows as WeeklyRow[];
+    const lastRows = (lastWeekQ.data?.rows ?? []) as WeeklyRow[];
+    const soFar = payWeekElapsed(liveWeekStart);
+    const lastPunch = new Map((cfoQ.data?.feeds ?? []).map(f => [f.store, f.lastPunchAt]));
+    return Object.entries(live.byStore).map(([store, s]) => {
+      const mine = liveRows.filter(r => r.storeLocation === store);
+      const last = lastRows.filter(r => r.storeLocation === store);
+      const saved = last.filter(isSaved);
+      const savedHours = saved.reduce((t, r) => t + r.hoursWorked, 0);
+      const savedGross = saved.reduce((t, r) => t + r.grossPay, 0);
+      return {
+        name: store,
+        short: storeShort(store),
+        color: storeColor(store),
+        people: mine.length,
+        onClock: s.clockedInCount,
+        alerts: alertsByStore.get(store) ?? 0,
+        clockHours: s.totalClockHours,
+        scheduled: s.totalScheduled,
+        labor: mine.reduce((t, r) => t + laborSoFar(r, soFar), 0),
+        lastGross: lastWeekQ.data ? savedGross : null,
+        lastSaved: saved.length,
+        lastUnsaved: last.filter(isUnsaved).length,
+        costPerHour: savedHours > 0 ? savedGross / savedHours : null,
+        lastPunchAt: lastPunch.get(store) ?? null,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storesLiveQ.data, lastWeekQ.data, cfoQ.data, alertsByStore, liveWeekStart]);
+
   const orbitStores: OrbitStore[] = Object.entries(byStore).map(([store, s]) => ({
     name: store,
     short: storeShort(store),
@@ -413,14 +486,22 @@ export default function CeoView() {
         {/* ---------------- Masthead: where you are, and the vital signs ---------------- */}
         <header className="cc-mast">
           <div className="min-w-0">
-            <p className="hud-label">Hotspot Market // Executive</p>
-            <h1 className="page-title mt-1">Command center</h1>
+            <p className="hud-label">Hotspot Market // CEO</p>
+            <h1 className="page-title mt-1">{SECTION_TITLE[tab] ?? "Command center"}</h1>
             <p className="page-subtitle">
               {tab === "payroll"
-                ? `Payroll for ${fmtWeekRange(payWeek)} · ${focusLabel}`
-                : isLiveWeek
-                  ? `This week, live · ${focusLabel}`
-                  : `Closed week · ${fmtWeekRange(weekStart)} · ${focusLabel}`}
+                ? `Autopilot · ${fmtWeekRange(payWeek)} · ${focusLabel}`
+                : tab === "stores"
+                  ? `Every store side by side · this week, ${fmtWeekRange(inProgressPayWeekStart())}`
+                  : tab === "optimize"
+                    ? `What the numbers say could be better · ${focusLabel}`
+                    : tab === "control"
+                      ? "How the site runs: rules, stores, roles, sign-ins and data"
+                      : tab === "activity"
+                        ? "Every change, by whom and when"
+                        : isLiveWeek
+                          ? `This week, live · ${focusLabel}`
+                          : `Closed week · ${fmtWeekRange(weekStart)} · ${focusLabel}`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -462,27 +543,9 @@ export default function CeoView() {
           </div>
         </header>
 
-        <Tabs value={tab} onValueChange={setTab} className="gap-4 sm:gap-5">
-          <TabsList className="w-full sm:justify-start">
-              <TabsTrigger value="overview">
-                <Radar /> Live
-              </TabsTrigger>
-              <TabsTrigger value="payroll">
-                <Rocket /> Autopilot
-              </TabsTrigger>
-              <TabsTrigger value="optimize">
-                <ScanLine /> Optimize
-              </TabsTrigger>
-              <TabsTrigger value="control">
-                <SlidersHorizontal /> Control
-              </TabsTrigger>
-              <TabsTrigger value="activity">
-                <History /> Log
-              </TabsTrigger>
-            </TabsList>
-
-          {/* ============================== LIVE ============================== */}
-          <TabsContent value="overview" className="space-y-4 sm:space-y-5">
+        {/* ============================== COMMAND ============================== */}
+        {tab === "overview" ? (
+          <div className="space-y-4 sm:space-y-5">
             {ceoQ.isError ? (
               <HudPanel>
                 <div className="p-4 sm:p-5">
@@ -668,10 +731,12 @@ export default function CeoView() {
                 </HudPanel>
               </>
             )}
-          </TabsContent>
+          </div>
+        ) : null}
 
-          {/* ============================ AUTOPILOT ============================ */}
-          <TabsContent value="payroll">
+        {/* ============================== PAYROLL ============================== */}
+        {tab === "payroll" ? (
+          <div>
             <Autopilot weekStart={payWeek} storeFocus={storeFilter} soFar={ledgerSoFar}>
               <PayrollPanel
                 rows={ledgerRows}
@@ -685,10 +750,44 @@ export default function CeoView() {
                 onRetry={() => ledgerQ.refetch()}
               />
             </Autopilot>
-          </TabsContent>
+          </div>
+        ) : null}
 
-          {/* ============================= OPTIMIZE ============================= */}
-          <TabsContent value="optimize">
+        {/* ============================== STORES ============================== */}
+        {tab === "stores" ? (
+          <StoresBoard
+            stores={storeCards}
+            loading={storesLiveQ.isPending && !storesLiveQ.isError}
+            failed={storesLiveQ.isError && !storesLiveQ.data}
+            onRetry={() => storesLiveQ.refetch()}
+            lastWeek={lastClosed}
+            lastWeekLoading={lastWeekQ.isPending && !lastWeekQ.isError}
+            lastWeekFailed={lastWeekQ.isError && !lastWeekQ.data}
+            onRetryLastWeek={() => lastWeekQ.refetch()}
+            focus={storeFilter}
+            onFocus={store => {
+              // "Live" means the week in progress, whatever week Command
+              // was last looking at.
+              setStoreFilter(store);
+              setWeekStart(inProgressPayWeekStart());
+              setTab("overview");
+            }}
+            onDesk={store => {
+              setStoreFilter(store);
+              navigate(DESK_HOME);
+              window.scrollTo({ top: 0 });
+            }}
+            onReview={store => {
+              setStoreFilter(store);
+              setPayWeek(lastClosed);
+              setTab("payroll");
+            }}
+          />
+        ) : null}
+
+        {/* ============================= INSIGHTS ============================= */}
+        {tab === "optimize" ? (
+          <div>
             <Insights
               storeFocus={storeFilter}
               onOpenAutopilot={() => {
@@ -696,18 +795,16 @@ export default function CeoView() {
                 setTab("payroll");
               }}
             />
-          </TabsContent>
+          </div>
+        ) : null}
 
-          {/* ============================== CONTROL ============================== */}
-          <TabsContent value="control">
-            <ControlRoom access={<PinsPanel />} data={<LivePortalPanel />} />
-          </TabsContent>
+        {/* ============================== CONTROL ============================== */}
+        {tab === "control" ? (
+          <ControlRoom access={<PinsPanel />} data={<LivePortalPanel />} />
+        ) : null}
 
-          {/* ================================ LOG ================================ */}
-          <TabsContent value="activity">
-            <ActivityPanel />
-          </TabsContent>
-        </Tabs>
+        {/* ================================ LOG ================================ */}
+        {tab === "activity" ? <ActivityPanel /> : null}
       </div>
     </div>
   );
