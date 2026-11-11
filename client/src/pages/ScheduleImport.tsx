@@ -1333,7 +1333,7 @@ export default function ScheduleImport() {
               </div>
 
               {/* Summary, blockers and the one primary action */}
-              <div className="space-y-3 rounded-b-2xl border-t border-border bg-card px-4 py-4 sm:px-5 md:sticky md:bottom-4 md:z-[3] md:shadow-[0_-10px_24px_-14px_rgb(40_12_6/0.25)]">
+              <div className="space-y-3 rounded-b-2xl border-t border-border bg-card px-4 py-4 sm:px-5 md:sticky md:bottom-4 md:z-[3] md:shadow-[var(--shadow-float)]">
                 {replacePreview.replacing ? (
                   <div className="space-y-1.5">
                     <div
@@ -1855,7 +1855,7 @@ function WeekScheduleBoard({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="sticky left-0 z-[2] min-w-[168px] bg-[oklch(0.985_0.003_60)] pl-5">
+                    <TableHead className="sticky left-0 z-[2] min-w-[168px] bg-card pl-5">
                       Employee
                     </TableHead>
                     {days.map((d) => {
@@ -1968,7 +1968,7 @@ function WeekScheduleBoard({
                     </Fragment>
                   ))}
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableCell className="sticky left-0 z-[1] bg-[oklch(0.975_0.004_60)] pl-5 text-xs font-medium text-muted-foreground">
+                    <TableCell className="sticky left-0 z-[1] bg-muted pl-5 text-xs font-medium text-muted-foreground">
                       Day total
                     </TableCell>
                     {dayTotals.map((t, i) => {

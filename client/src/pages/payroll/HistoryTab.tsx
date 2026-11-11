@@ -168,7 +168,7 @@ export default function HistoryTab({
     .map((e) => ({ role: e.role, hours: e.hours, gross: e.gross }))
     .filter((it) => it.hours > 0 || it.gross > 0);
   const kpiLoading = (
-    <span className="inline-block h-8 w-28 animate-pulse rounded-md bg-white/10" aria-label="Loading" />
+    <span className="inline-block h-8 w-28 animate-pulse rounded-md bg-muted" aria-label="Loading" />
   );
   const kpi = (v: React.ReactNode) => (ready ? v : rangeQ.isError ? "—" : kpiLoading);
 
@@ -242,7 +242,7 @@ export default function HistoryTab({
         </p>
       </div>
 
-      <KpiBand className="grid-cols-2 xl:grid-cols-3">
+      <KpiBand className="grid-cols-2 md:grid-cols-3">
         <KpiCell
           hero
           icon={<Wallet />}

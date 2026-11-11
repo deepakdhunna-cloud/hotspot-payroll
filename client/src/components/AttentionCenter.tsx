@@ -5,7 +5,9 @@
  * and operational gaps with a direct route to each fix. Items keep their
  * first-detected date so everyone can see how long a task has been pending.
  * When there's nothing to do it collapses to one quiet line; when there is,
- * it's the first card on the page and each item carries its own fix.
+ * each item is a compact row carrying its own fix. A long list shows its
+ * first few rows and one "Show all" — it never pushes the rest of the
+ * dashboard off the screen.
  *
  * Sign-offs (approve hours, mark reviewed, keep an automatic clock-out) ask
  * once before they clear an item, and a failed check never reads as
@@ -23,6 +25,7 @@ import {
   BadgeCheck,
   CalendarX,
   CheckCircle2,
+  ChevronDown,
   Clock,
   KeyRound,
   RotateCw,
@@ -137,6 +140,9 @@ const KIND_META: Record<string, { label: string; icon: LucideIcon }> = {
   unsaved_payroll: { label: "Payroll not saved", icon: Wallet },
 };
 
+/** Rows shown before "Show all". */
+const PREVIEW = 3;
+
 const MANUAL_KINDS = new Set(["long_punch", "auto_clockout", "hours_mismatch"]);
 
 /** What each one-tap sign-off says before it clears an item. */
@@ -178,6 +184,8 @@ export function AttentionCenter({ className }: { className?: string }) {
   const [clockOutFormFor, setClockOutFormFor] = useState<number | null>(null);
   const [clockOutValue, setClockOutValue] = useState("");
   const [clockOutError, setClockOutError] = useState<string | null>(null);
+  // A long list starts folded to its first rows.
+  const [showAll, setShowAll] = useState(false);
 
   const closeForm = () => {
     setClockOutFormFor(null);
@@ -219,7 +227,7 @@ export function AttentionCenter({ className }: { className?: string }) {
     return (
       <div
         {...ANCHOR}
-        className={cn("h-11 rounded-xl border border-border bg-card animate-pulse scroll-mt-24 outline-none", className)}
+        className={cn("h-12 rounded-[0.875rem] border border-border bg-card animate-pulse scroll-mt-24 outline-none", className)}
         aria-label="Checking for issues"
       />
     );
@@ -292,35 +300,43 @@ export function AttentionCenter({ className }: { className?: string }) {
     resolveM.mutate({ id: item.id, resolution: "approved", clockOutAt: at });
   };
 
+  // The row whose clock-out form is open always stays visible.
+  const openIndex = items.findIndex((i) => i.id === clockOutFormFor);
+  const visible =
+    showAll || items.length <= PREVIEW + 1
+      ? items
+      : items.slice(0, Math.max(PREVIEW, openIndex + 1));
+  const hiddenCount = items.length - visible.length;
+
   return (
     <section
       {...ANCHOR}
       className={cn("attention-card rise-in scroll-mt-24 outline-none", className)}
       aria-labelledby="attention-title"
     >
-      <header className="attention-head flex flex-wrap items-center gap-x-3 gap-y-1 px-4 sm:px-5 pt-4 pb-3">
+      <header className="attention-head flex items-center gap-3 px-4 py-3 sm:px-5">
         <span className="attention-beacon attention-icon" aria-hidden="true">
           <ShieldAlert />
         </span>
-        <div className="min-w-0">
-          <h2 id="attention-title" className="text-[15px] font-semibold leading-tight flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <h2 id="attention-title" className="flex items-center gap-2 text-[15px] font-semibold leading-tight">
             Needs attention
             <span className="attention-count" aria-hidden="true">
               {items.length}
             </span>
             <span className="sr-only">, {items.length} open</span>
           </h2>
-          <p className="text-xs text-muted-foreground leading-snug">
+          <p className="mt-0.5 hidden text-xs leading-snug text-muted-foreground sm:block">
             Each stays here until someone signs it off
           </p>
         </div>
         {oldest >= 1 ? (
-          <span className="ml-auto attention-age">Oldest waiting {oldest}d</span>
+          <span className="attention-age shrink-0">Oldest waiting {oldest}d</span>
         ) : null}
       </header>
 
       <ul className="attention-list">
-        {items.map((item) => {
+        {visible.map((item) => {
           const p = pendingFor(item.createdAt);
           const fix = fixHref(item);
           const isManual = MANUAL_KINDS.has(item.kind);
@@ -336,13 +352,13 @@ export function AttentionCenter({ className }: { className?: string }) {
           const KindIcon = meta.icon;
           const formOpen = clockOutFormFor === item.id;
           const inputId = `attention-clockout-${item.id}`;
-          // The item's main fix is its filled button, at the top of its column.
+          // The item's main fix is its filled button, first in its group.
           const hasFormButton = isManual && showsClockOutForm;
           const signOffIsPrimary = !hasFormButton && !!signOff;
           const linkIsPrimary = !hasFormButton && !signOff;
           return (
             <li key={item.id} className="attention-item">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
+              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4">
                 <div className="flex flex-1 min-w-0 items-start gap-3">
                   <span
                     className={cn("attention-marker", stale && "attention-marker-stale")}
@@ -351,31 +367,35 @@ export function AttentionCenter({ className }: { className?: string }) {
                     <KindIcon />
                   </span>
                   <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold leading-snug">{item.title}</p>
                     {/* What kind of issue, where, and how long it has waited */}
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
                       <span className="attention-kind">{meta.label}</span>
                       {item.storeLocation ? (
-                        <span className="chip-neutral" title={item.storeLocation}>
-                          {STORE_ABBR[item.storeLocation] ?? item.storeLocation}
-                        </span>
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span title={item.storeLocation}>
+                            {STORE_ABBR[item.storeLocation] ?? item.storeLocation}
+                          </span>
+                        </>
                       ) : null}
+                      <span aria-hidden="true">·</span>
                       <span
-                        className={stale ? "chip-bad" : "chip-neutral"}
+                        className={stale ? "font-medium text-[var(--bad-fg)]" : undefined}
                         title={`First flagged ${p.since}`}
                       >
                         {p.label}
                       </span>
-                    </div>
-                    <p className="mt-1.5 text-[15px] font-semibold leading-snug">{item.title}</p>
+                    </p>
                     {item.detail ? (
-                      <p className="mt-0.5 text-sm text-muted-foreground leading-relaxed">
+                      <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
                         {item.detail}
                       </p>
                     ) : null}
 
                     {formOpen ? (
                       <form
-                        className="mt-3 rounded-xl bg-card p-3 shadow-[inset_0_0_0_1px_var(--sk-ring)]"
+                        className="mt-3 rounded-xl bg-muted/60 p-3"
                         onSubmit={(e) => submitClockOut(e, item)}
                         noValidate
                       >
@@ -435,13 +455,13 @@ export function AttentionCenter({ className }: { className?: string }) {
                   </div>
                 </div>
 
-                {/* The fix: one column of equal-width buttons, main action first */}
-                <div className="grid grid-cols-2 gap-2 shrink-0 [&>*:only-child]:col-span-2 sm:flex sm:w-44 sm:flex-col sm:items-stretch">
+                {/* The fix: main action first, then the way to look closer */}
+                <div className="grid shrink-0 grid-cols-2 gap-2 pl-[2.875rem] [&>*:only-child]:col-span-2 sm:flex sm:flex-row-reverse sm:items-center sm:pl-0">
                   {hasFormButton ? (
                     <Button
                       size="sm"
                       variant="tint"
-                      className="h-9"
+                      className="h-9 sm:h-8"
                       onClick={() => {
                         setClockOutFormFor(item.id);
                         setClockOutValue("");
@@ -473,7 +493,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                         <Button
                           size="sm"
                           variant={signOffIsPrimary ? "tint" : "outline"}
-                          className="h-9"
+                          className="h-9 sm:h-8"
                         >
                           {signOff.button}
                         </Button>
@@ -483,8 +503,8 @@ export function AttentionCenter({ className }: { className?: string }) {
                   {fix ? (
                     <Button
                       size="sm"
-                      variant={linkIsPrimary ? "tint" : "outline"}
-                      className="h-9"
+                      variant={linkIsPrimary ? "tint" : "ghost"}
+                      className={cn("h-9 sm:h-8", !linkIsPrimary && "text-muted-foreground")}
                       asChild
                     >
                       {fix.newTab ? (
@@ -508,6 +528,23 @@ export function AttentionCenter({ className }: { className?: string }) {
           );
         })}
       </ul>
+      {hiddenCount > 0 || (showAll && items.length > PREVIEW + 1) ? (
+        <div className="border-t border-border p-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 w-full text-muted-foreground"
+            onClick={() => setShowAll((v) => !v)}
+            aria-expanded={showAll}
+          >
+            {showAll ? "Show fewer" : `Show all ${items.length}`}
+            <ChevronDown
+              className={cn("h-4 w-4 transition-transform", showAll && "rotate-180")}
+              aria-hidden
+            />
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -121,7 +121,7 @@ export default function EmployeeProfile() {
   // The band's history numbers wait for history — never a fake $0.00.
   const histValue = (v: ReactNode) =>
     histQ.isLoading ? (
-      <Skeleton className="mt-1 h-7 w-20 bg-white/15" />
+      <Skeleton className="mt-1 h-7 w-20" />
     ) : histQ.isError ? (
       "—"
     ) : (

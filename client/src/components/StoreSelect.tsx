@@ -2,7 +2,7 @@
  * Scope-aware store filter used identically on every page:
  *  - CEO or multi-store manager: dropdown with an "All stores" option
  *  - single-store manager: a static badge (their store; nothing to choose)
- * In the dark top bar (tone="ink") the trigger is compact — store
+ * In the app chrome (tone="ink") the trigger is compact — store
  * abbreviations, and just "All" on phones — so the bar never overflows.
  */
 import {
@@ -29,7 +29,7 @@ export function StoreSelect({
   value: string; // "all" or a store name
   onChange: (next: string) => void;
   className?: string;
-  /** "card" on porcelain pages, "ink" inside the dark top bar */
+  /** "card" on pages, "ink" for the compact form in the app chrome */
   tone?: "card" | "ink";
 }) {
   const canPickAll = isAdmin || stores.length > 1;
@@ -41,17 +41,12 @@ export function StoreSelect({
       <span
         className={cn(
           "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-sm font-medium",
-          ink
-            ? "border-white/10 bg-white/[0.06] text-white/85"
-            : "border-border bg-card shadow-sm",
+          ink ? "border-border bg-transparent" : "border-border bg-card shadow-sm",
           className,
         )}
         aria-label={`Store: ${stores[0]}`}
       >
-        <Building2
-          className={cn("h-3.5 w-3.5", ink ? "text-white/60" : "text-muted-foreground")}
-          aria-hidden
-        />
+        <Building2 className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
         {STORE_ABBR[stores[0]] ?? stores[0]}
       </span>
     );
@@ -65,9 +60,7 @@ export function StoreSelect({
       <SelectTrigger
         className={cn(
           "text-sm",
-          ink
-            ? "h-9 md:h-8 gap-1.5 px-2.5 border-white/10 bg-white/[0.08] text-white shadow-none hover:bg-white/[0.12] [&_svg]:text-white/65"
-            : "h-8 w-44 bg-card shadow-sm",
+          ink ? "h-9 gap-1.5 px-2.5 shadow-none" : "h-8 w-44 bg-card shadow-sm",
           className,
         )}
         aria-label={`Store: ${selectedName}`}

@@ -129,7 +129,7 @@ export function QuickWeekNav({
             aria-label={`Pay week ${range}. Pick another week`}
             title="Pick a pay week"
           >
-            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
             {range}
           </button>
         </PopoverTrigger>

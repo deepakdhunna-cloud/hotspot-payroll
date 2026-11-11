@@ -1,7 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Delete } from "lucide-react";
+import { ArrowRight, Delete, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { errorMessage } from "@/lib/errors";
@@ -94,83 +94,77 @@ export default function PinKeypad() {
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
-    <div className="ink-panel min-h-svh flex items-center justify-center p-4">
-      <div className="w-full max-w-[22rem] flex flex-col items-center gap-8">
-        <BrandMark size="lg" tone="ink" />
+    <div className="auth-screen flex items-center justify-center px-4 py-[max(1.5rem,env(safe-area-inset-top))]">
+      <div className="flex w-full max-w-[21rem] flex-col items-center">
+        <BrandMark size="lg" className="h-14 sm:h-16" />
 
-        <div className="relative w-full overflow-hidden rounded-2xl bg-card text-card-foreground p-6 shadow-[0_24px_60px_-24px_rgb(0_0_0/0.7)]">
-          <div
-            aria-hidden="true"
-            className="absolute inset-x-0 top-0 h-1"
-            style={{
-              background:
-                "linear-gradient(90deg, var(--brand-red), var(--brand-red-bright) 50%, var(--brand-orange))",
-            }}
-          />
-          <div className="flex flex-col items-center gap-1 text-center">
-            <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
-            <p className="text-sm text-muted-foreground">Enter your PIN.</p>
-          </div>
-
-          {/* PIN dots */}
-          <div
-            className={`flex items-center justify-center gap-3 mt-6 ${shake ? "animate-shake" : ""}`}
-            role="status"
-            style={{ minHeight: 24 }}
-            aria-label={`${pin.length} digits entered`}
-          >
-            {Array.from({ length: dotCount }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-3 w-3 rounded-full border-2 transition-all duration-150 ${
-                  pin.length > i
-                    ? "bg-foreground border-foreground scale-110"
-                    : "border-muted-foreground/30"
-                }`}
-              />
-            ))}
-          </div>
-
-          <p
-            role="alert"
-            className={`mt-2 mb-4 min-h-5 text-center text-sm font-medium ${
-              error ? "text-destructive" : "text-transparent"
-            }`}
-          >
-            {error ?? "."}
-          </p>
-
-          {/* Keypad */}
-          <div className="grid grid-cols-3 gap-2.5 w-full">
-            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-              <KeypadKey key={d} onClick={() => push(d)} disabled={verify.isPending}>
-                {d}
-              </KeypadKey>
-            ))}
-            <KeypadKey
-              onClick={back}
-              disabled={verify.isPending || pin.length === 0}
-              variant="ghost"
-              aria-label="Delete digit"
-            >
-              <Delete className="h-5 w-5" />
-            </KeypadKey>
-            <KeypadKey onClick={() => push("0")} disabled={verify.isPending}>
-              0
-            </KeypadKey>
-            <Button
-              type="button"
-              onClick={submit}
-              disabled={!canSubmit}
-              aria-label="Sign in"
-              className="h-14 text-lg font-semibold rounded-xl"
-            >
-              {verify.isPending ? "…" : <ArrowRight className="h-6 w-6" />}
-            </Button>
-          </div>
+        <div className="mt-8 flex flex-col items-center gap-1 text-center">
+          <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
+          <p className="text-sm text-muted-foreground">Enter your PIN to open payroll.</p>
         </div>
 
-        <p className="text-xs text-white/65 text-center">
+        {/* PIN dots */}
+        <div
+          className={`mt-6 flex items-center justify-center gap-3.5 ${shake ? "animate-shake" : ""}`}
+          role="status"
+          style={{ minHeight: 24 }}
+          aria-label={`${pin.length} digits entered`}
+        >
+          {Array.from({ length: dotCount }).map((_, i) => (
+            <div
+              key={i}
+              className={`h-3.5 w-3.5 rounded-full transition-all duration-150 ${
+                pin.length > i
+                  ? "scale-110 bg-foreground"
+                  : "bg-[var(--border-strong)]"
+              }`}
+            />
+          ))}
+        </div>
+
+        <p
+          role="alert"
+          className={`mt-3 mb-4 min-h-5 text-center text-sm font-medium ${
+            error ? "text-destructive" : "text-transparent"
+          }`}
+        >
+          {error ?? "."}
+        </p>
+
+        {/* Keypad */}
+        <div className="grid w-full grid-cols-3 gap-3">
+          {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+            <KeypadKey key={d} onClick={() => push(d)} disabled={verify.isPending}>
+              {d}
+            </KeypadKey>
+          ))}
+          <KeypadKey
+            onClick={back}
+            disabled={verify.isPending || pin.length === 0}
+            variant="ghost"
+            aria-label="Delete digit"
+          >
+            <Delete className="h-6 w-6" />
+          </KeypadKey>
+          <KeypadKey onClick={() => push("0")} disabled={verify.isPending}>
+            0
+          </KeypadKey>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={!canSubmit}
+            aria-label="Sign in"
+            className="h-16 rounded-2xl text-lg font-semibold"
+          >
+            {verify.isPending ? (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            ) : (
+              <ArrowRight className="h-6 w-6" />
+            )}
+          </Button>
+        </div>
+
+        <p className="mt-8 text-center text-xs text-muted-foreground">
           Hotspot Market · Payroll &amp; time clock
         </p>
       </div>
@@ -196,7 +190,11 @@ function KeypadKey({
       variant={variant === "ghost" ? "ghost" : "secondary"}
       onClick={onClick}
       disabled={disabled}
-      className="sk-keycap h-14 text-2xl font-medium tabular-nums rounded-xl"
+      className={
+        variant === "ghost"
+          ? "h-16 rounded-2xl text-muted-foreground"
+          : "sk-keycap h-16 rounded-2xl text-[1.65rem] font-medium tabular-nums"
+      }
       {...rest}
     >
       {children}

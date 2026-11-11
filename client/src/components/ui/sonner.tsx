@@ -1,25 +1,25 @@
-import { useTheme } from "next-themes";
+import { useTheme } from "@/contexts/ThemeContext";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
+  const { resolvedTheme } = useTheme();
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={resolvedTheme}
       className="toaster group"
-      // Top-center, below the floating nav: never on top of the phone tab
-      // bar or a sticky "Save changes" bar at the bottom.
+      // Top-center: never on top of the phone tab bar or a sticky "Save
+      // changes" bar at the bottom, and clear of the status bar when the app
+      // runs from the home screen.
       position="top-center"
-      offset={{ top: 80 }}
-      mobileOffset={{ top: 72, left: 12, right: 12 }}
+      offset={{ top: "calc(1rem + env(safe-area-inset-top))" }}
+      mobileOffset={{ top: "calc(0.75rem + env(safe-area-inset-top))", left: 12, right: 12 }}
       richColors={false}
       toastOptions={{
         style: {
           borderRadius: "14px",
           border: "0",
-          boxShadow:
-            "0 0 0 1px oklch(0.2 0.01 30 / 0.08), 0 12px 32px -12px oklch(0.2 0.01 30 / 0.35)",
+          boxShadow: "var(--shadow-pop)",
           fontFamily: "var(--font-sans)",
         },
       }}

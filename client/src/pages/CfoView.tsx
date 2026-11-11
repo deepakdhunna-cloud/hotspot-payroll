@@ -519,7 +519,7 @@ export default function CfoView() {
         </Card>
       ) : (
         <>
-          <KpiBand className="grid-cols-2 xl:grid-cols-3">
+          <KpiBand className="grid-cols-2 md:grid-cols-3">
             <KpiCell
               hero
               icon={<Wallet />}
