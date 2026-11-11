@@ -53,7 +53,8 @@ import {
   toDateInput,
 } from "@/lib/payweek";
 import { errorMessage } from "@/lib/errors";
-import { deliveryMessage, exportXlsx } from "@/lib/xlsx";
+import { buildXlsx, exportXlsx, prefetchXlsx, type XlsxSheet } from "@/lib/xlsx";
+import { ShareDialog, sharePayload, type SharePayload } from "@/components/SharePayroll";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -65,6 +66,7 @@ import {
   Loader2,
   Pencil,
   Save,
+  Share,
   Wallet,
 } from "lucide-react";
 import {
@@ -499,7 +501,11 @@ export default function HoursAndPayTab({
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [savedIds, setSavedIds] = useState<Set<number>>(() => new Set());
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
-  const [exportAsk, setExportAsk] = useState(false);
+  // Export or Share with unsaved rows on screen asks first; this is which.
+  const [askFor, setAskFor] = useState<"export" | "share" | null>(null);
+  const [sharing, setSharing] = useState(false);
+  // The share dialog (shown when the device's own share sheet can't be used).
+  const [shareDialog, setShareDialog] = useState<SharePayload | null>(null);
   // Compact list (phone, foldable, tablet): which rows are opened for editing.
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set());
   const toggleRow = (id: number) =>
@@ -874,9 +880,26 @@ export default function HoursAndPayTab({
 
   /* ------------------------------- export ------------------------------- */
 
-  const runExport = async (justSaved?: Set<number>) => {
+  type ExportRow = {
+    employee: string;
+    store: string;
+    role: string;
+    payType: string;
+    rate: number;
+    scheduled: number;
+    hours: number;
+    gross: number;
+    status: string;
+  };
+
+  /**
+   * The week on screen as a spreadsheet, plus the words that go with it when
+   * it is shared. One builder for Export and Share, so they can never differ.
+   */
+  const buildWeekFile = (justSaved?: Set<number>) => {
     const weekEnd = new Date(weekStart);
     weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+    const year = weekEnd.getUTCFullYear();
     const storeLabel = scopeStore ?? "All stores";
     const storeSlug = (scopeStore ? (STORE_ABBR[scopeStore] ?? scopeStore) : "All-stores").replace(/\s+/g, "-");
     const filename = `Hotspot-Payroll-${toDateInput(weekStart)}_to_${toDateInput(weekEnd)}-${storeSlug}.xlsx`;
@@ -887,7 +910,7 @@ export default function HoursAndPayTab({
       if (v.status === "unsaved" || v.status === "saving") return "Not saved";
       return "No hours";
     };
-    const exportRows = views.map((v) => ({
+    const exportRows: ExportRow[] = views.map((v) => ({
       employee: v.former ? `${v.name} (former)` : v.name,
       store: v.row.employee.storeLocation,
       role: v.row.employee.role,
@@ -898,58 +921,122 @@ export default function HoursAndPayTab({
       gross: v.calc.gross,
       status: statusLabel(v),
     }));
+    const paid = exportRows.filter((r) => r.status !== "No hours");
+    const savedN = paid.filter((r) => r.status === "Saved").length;
+    const pendingN = paid.length - savedN;
+    const sheet: XlsxSheet<ExportRow> = {
+      name: "Hours & pay",
+      title: "Weekly payroll",
+      subtitle: `Pay week ${range}, ${year} · ${storeLabel}`,
+      summary: [
+        { label: "Gross pay", value: fmtMoney(totals.gross) },
+        { label: "Hours worked", value: fmtHours(totals.hours, 2) },
+        { label: "People paid", value: String(paid.length) },
+        { label: "Saved to payroll", value: `${savedN} of ${paid.length}` },
+      ],
+      columns: [
+        { header: "Employee", key: "employee", width: 26 },
+        { header: "Store", key: "store", width: 20 },
+        { header: "Role", key: "role", width: 18 },
+        { header: "Pay type", key: "payType", width: 11 },
+        { header: "Hourly rate", key: "rate", width: 12, numFmt: "$#,##0.00", align: "right" },
+        { header: "Scheduled hours", key: "scheduled", width: 16, numFmt: "#,##0.0", align: "right" },
+        { header: "Hours worked", key: "hours", width: 14, numFmt: "#,##0.00", align: "right" },
+        { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
+        {
+          header: "Status",
+          key: "status",
+          width: 18,
+          tone: (r) => (r.status === "Saved" ? "good" : r.status === "No hours" ? "muted" : "warn"),
+        },
+      ],
+      rows: exportRows,
+      totals: {
+        scheduled: Number(totals.scheduled.toFixed(2)),
+        hours: Number(totals.hours.toFixed(2)),
+        gross: Number(totals.gross.toFixed(2)),
+      },
+      totalsLabelKey: "employee",
+      totalsLabel: "Total",
+    };
+    return {
+      filename,
+      sheet,
+      title: `Hotspot payroll · ${range}`,
+      text: [
+        `${storeLabel} — pay week ${range}, ${year}`,
+        `${paid.length} ${plural(paid.length, "person", "people")} · ${fmtHours(totals.hours, 2)} hours · ${fmtMoney(totals.gross)} gross`,
+        pendingN > 0
+          ? `${pendingN} ${plural(pendingN, "row")} not saved to payroll yet`
+          : "Everyone is saved to payroll",
+      ].join("\n"),
+    };
+  };
+
+  const buildFailed = (err: unknown) => {
+    console.error("[Export] failed:", err);
+    toast.error(
+      "Couldn't build the spreadsheet. A new version of the app may have been released — refresh the page (saved payroll is safe) and try again.",
+    );
+  };
+
+  const runExport = async (justSaved?: Set<number>) => {
+    const { filename, sheet } = buildWeekFile(justSaved);
     setExporting(true);
     try {
-      const delivery = await exportXlsx(filename, {
-        name: "Hours & pay",
-        title: "Hotspot Market — Weekly payroll",
-        subtitle: `Pay week ${range}, ${weekEnd.getUTCFullYear()} · ${storeLabel}`,
-        columns: [
-          { header: "Employee", key: "employee", width: 26 },
-          { header: "Store", key: "store", width: 20 },
-          { header: "Role", key: "role", width: 18 },
-          { header: "Pay type", key: "payType", width: 11 },
-          { header: "Hourly rate", key: "rate", width: 12, numFmt: "$#,##0.00", align: "right" },
-          { header: "Scheduled hours", key: "scheduled", width: 16, numFmt: "0.0", align: "right" },
-          { header: "Hours worked", key: "hours", width: 14, numFmt: "0.00", align: "right" },
-          { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
-          { header: "Status", key: "status", width: 18 },
-        ],
-        rows: exportRows,
-        totals: {
-          scheduled: Number(totals.scheduled.toFixed(2)),
-          hours: Number(totals.hours.toFixed(2)),
-          gross: Number(totals.gross.toFixed(2)),
-        },
-        totalsLabelKey: "employee",
-        totalsLabel: "Total",
-      });
-      const done = deliveryMessage(delivery);
-      if (done) toast.success(done, { description: filename });
+      await exportXlsx(filename, sheet);
+      toast.success("Spreadsheet downloaded.", { description: filename });
     } catch (err) {
-      console.error("[Export] failed:", err);
-      toast.error(
-        "Couldn't build the spreadsheet. A new version of the app may have been released — refresh the page (saved payroll is safe) and export again.",
-      );
+      buildFailed(err);
     } finally {
       setExporting(false);
     }
   };
 
-  const onExportClick = () => {
-    if (exportPending > 0) setExportAsk(true);
-    else void runExport();
+  /** Send the week: the device's share sheet, or the share dialog. */
+  const runShare = async (justSaved?: Set<number>) => {
+    const { filename, sheet, title, text } = buildWeekFile(justSaved);
+    setSharing(true);
+    try {
+      const payload: SharePayload = { filename, blob: await buildXlsx(sheet), title, text };
+      const result = await sharePayload(payload);
+      if (result === "shared") toast.success("Payroll shared.");
+      else if (result === "dialog") setShareDialog(payload);
+    } catch (err) {
+      buildFailed(err);
+    } finally {
+      setSharing(false);
+    }
   };
 
-  const saveThenExport = async () => {
-    setExportAsk(false);
+  const onExportClick = () => {
+    if (exportPending > 0) setAskFor("export");
+    else void runExport();
+  };
+  const onShareClick = () => {
+    if (exportPending > 0) setAskFor("share");
+    else void runShare();
+  };
+  const run = (what: "export" | "share", justSaved?: Set<number>) =>
+    what === "share" ? runShare(justSaved) : runExport(justSaved);
+
+  const saveThen = async (what: "export" | "share") => {
+    setAskFor(null);
     const res = await saveRows([...edited, ...unsaved]);
     if (res.failed.length > 0) {
       failureToast(res.saved.length, res.failed);
       return;
     }
-    await runExport(new Set(res.saved));
+    await run(what, new Set(res.saved));
   };
+
+  // Warm the spreadsheet builder once the week is on screen, so the first
+  // Export or Share starts the moment it is tapped.
+  useEffect(() => {
+    if (!ready) return;
+    const t = window.setTimeout(prefetchXlsx, 1500);
+    return () => window.clearTimeout(t);
+  }, [ready]);
 
   // Only label stores when the grid spans more than one.
   const multiStore = new Set(rows.map((r) => r.employee.storeLocation)).size > 1;
@@ -1044,17 +1131,30 @@ export default function HoursAndPayTab({
               {liveWeek ? " · week in progress" : ""}
             </p>
           </div>
-          <Button
-            variant={everyoneSaved ? "default" : "outline"}
-            size="sm"
-            className="h-9 sm:h-8"
-            onClick={onExportClick}
-            disabled={!ready || rows.length === 0 || exporting}
-            title="Download this week as an .xlsx spreadsheet (opens in Google Sheets and Excel)"
-          >
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            Export
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 sm:h-8"
+              onClick={onShareClick}
+              disabled={!ready || rows.length === 0 || sharing}
+              title="Send this week's payroll: the spreadsheet with a short summary"
+            >
+              {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share className="h-4 w-4" />}
+              Share
+            </Button>
+            <Button
+              variant={everyoneSaved ? "default" : "outline"}
+              size="sm"
+              className="h-9 sm:h-8"
+              onClick={onExportClick}
+              disabled={!ready || rows.length === 0 || exporting}
+              title="Download this week as an .xlsx spreadsheet (opens in Google Sheets and Excel)"
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Export
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-0">
           {/* ---------- Phone, foldable and tablet: one compact row per person ----------
@@ -1568,16 +1668,17 @@ export default function HoursAndPayTab({
         </div>
       )}
 
-      {/* ---------- Export with unsaved rows: say so, offer to save first ---------- */}
-      <AlertDialog open={exportAsk} onOpenChange={setExportAsk}>
+      {/* ---------- Export or share with unsaved rows: say so, offer to save first ---------- */}
+      <AlertDialog open={askFor !== null} onOpenChange={(open) => !open && setAskFor(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {exportPending} {plural(exportPending, "row isn't", "rows aren't")} saved yet
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The spreadsheet shows exactly what's on screen. Save first so it matches payroll, or
-              export as is — unsaved rows are marked "Not saved" in a Status column.
+              The spreadsheet shows exactly what's on screen. Save first so it matches payroll, or{" "}
+              {askFor === "share" ? "share" : "export"} as is — unsaved rows are marked "Not saved"
+              in a Status column.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1585,18 +1686,21 @@ export default function HoursAndPayTab({
             <Button
               variant="outline"
               onClick={() => {
-                setExportAsk(false);
-                void runExport();
+                const what = askFor ?? "export";
+                setAskFor(null);
+                void run(what);
               }}
             >
-              Export as is
+              {askFor === "share" ? "Share as is" : "Export as is"}
             </Button>
-            <Button onClick={() => void saveThenExport()}>
-              <Save className="h-4 w-4" /> Save and export
+            <Button onClick={() => void saveThen(askFor ?? "export")}>
+              <Save className="h-4 w-4" /> {askFor === "share" ? "Save and share" : "Save and export"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ShareDialog payload={shareDialog} onOpenChange={(open) => !open && setShareDialog(null)} />
     </div>
   );
 }

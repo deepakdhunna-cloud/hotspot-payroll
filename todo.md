@@ -206,3 +206,9 @@
 - [x] Follows the device by default; a hand-set Light or Dark stays until Auto is chosen again; every change (including the device flipping) cross-fades
 - [x] Light-background version of the logo (solid ink lettering) so it no longer washes out on white; original white-lettered logo on dark
 - [x] Checked in Chromium: device dark + Auto, forced Light on a dark device, forced Dark on a light device, reloads, back to Auto, device flip while open
+
+## v14.2 — Export matches the site; Share button
+- [x] Spreadsheet restyled to match the site: logo, title, headline figures, ink header under a brand-red rule, hairline rows, green/amber status words, totals row, export stamp, no gridlines, prints one page wide
+- [x] Share button on the weekly timesheet and on History: device share sheet with the spreadsheet and a summary; dialog with Email / Copy / Download where files can't be shared; if the browser refuses because the file took too long to build, the dialog's Share button shares on the next tap
+- [x] Export is a plain download everywhere; Share and Export both respect the "rows aren't saved yet" check
+- [x] Checked: real exports opened in LibreOffice; share flow exercised in Chromium with a stubbed share sheet (file, title and text passed; refusal path)

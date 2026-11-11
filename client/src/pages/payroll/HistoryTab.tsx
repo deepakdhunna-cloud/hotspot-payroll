@@ -5,7 +5,7 @@
  * here (schedule placeholders are left out on the server); the range exports
  * to .xlsx.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +21,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { fmtHours, fmtMoney, STORE_ABBR } from "@/lib/format";
-import { deliveryMessage, exportXlsx } from "@/lib/xlsx";
+import { buildXlsx, exportXlsx, prefetchXlsx, type XlsxSheet } from "@/lib/xlsx";
+import { ShareDialog, sharePayload, type SharePayload } from "@/components/SharePayroll";
 import { PositionBreakdown } from "@/components/PositionBreakdown";
 import { KpiBand, KpiCell } from "@/components/KpiBand";
 import { Money } from "@/components/Money";
@@ -34,7 +35,7 @@ import {
   startOfPayWeek,
   toDateInput,
 } from "@/lib/payweek";
-import { CalendarCheck, Clock, FileSpreadsheet, Loader2, UserRound, Wallet } from "lucide-react";
+import { CalendarCheck, Clock, FileSpreadsheet, Loader2, Share, UserRound, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useStoreScope } from "@/contexts/StoreScopeContext";
@@ -68,6 +69,8 @@ export default function HistoryTab({
   );
   const [endWeek, setEndWeek] = useState<Date>(() => currentPayPeriodStart());
   const [exporting, setExporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareDialog, setShareDialog] = useState<SharePayload | null>(null);
   const { stores: visibleStores } = useStoreScope();
   // "All" for a one-store login IS that store — name it in exports.
   const scopeStore =
@@ -109,55 +112,112 @@ export default function HistoryTab({
   // Weeks that haven't started can't be picked.
   const maxDay = toDateInput(weekEndOf(inProgressPayWeekStart()));
 
-  const handleExport = async () => {
+  type HistoryRow = {
+    employee: string;
+    store: string;
+    role: string;
+    weeks: number;
+    hours: number;
+    avgWeekly: number;
+    gross: number;
+  };
+
+  /** The range on screen as a spreadsheet, plus the words for sharing it. */
+  const buildRangeFile = () => {
     const storeLabel = scopeStore ?? "All stores";
     const storeSlug = (scopeStore ? (STORE_ABBR[scopeStore] ?? scopeStore) : "All-stores").replace(/\s+/g, "-");
     const filename = `Hotspot-Payroll-History-${toDateInput(startWeek)}_to_${toDateInput(
       weekEndOf(endWeek),
     )}-${storeSlug}.xlsx`;
+    const weeksLabel = `${weekCount} pay ${weekCount === 1 ? "week" : "weeks"}`;
+    const sheet: XlsxSheet<HistoryRow> = {
+      name: "Payroll history",
+      title: "Payroll history",
+      subtitle: `${span} · ${weeksLabel} · ${storeLabel}`,
+      summary: [
+        { label: "Gross pay", value: fmtMoney(totals.gross) },
+        { label: "Hours worked", value: fmtHours(totals.hours, 2) },
+        { label: "People paid", value: String(employees.length) },
+        { label: "Pay weeks", value: String(weekCount) },
+      ],
+      columns: [
+        { header: "Employee", key: "employee", width: 26 },
+        { header: "Store", key: "store", width: 20 },
+        { header: "Role", key: "role", width: 18 },
+        { header: "Weeks paid", key: "weeks", width: 12, numFmt: "0", align: "right" },
+        { header: "Hours worked", key: "hours", width: 14, numFmt: "#,##0.00", align: "right" },
+        { header: "Avg hours / week", key: "avgWeekly", width: 16, numFmt: "0.0", align: "right" },
+        { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
+      ],
+      rows: employees.map((e) => ({
+        employee: e.employeeName,
+        store: e.storeLocation,
+        role: e.role,
+        weeks: e.weekCount,
+        hours: e.hours,
+        avgWeekly: e.weekCount > 0 ? e.hours / e.weekCount : 0,
+        gross: e.gross,
+      })),
+      totals: {
+        weeks: totals.weeks,
+        hours: Number(totals.hours.toFixed(2)),
+        gross: Number(totals.gross.toFixed(2)),
+      },
+      totalsLabelKey: "employee",
+      totalsLabel: "Total",
+    };
+    return {
+      filename,
+      sheet,
+      title: `Hotspot payroll history · ${span}`,
+      text: [
+        `${storeLabel} — saved payroll, ${span} (${weeksLabel})`,
+        `${employees.length} ${employees.length === 1 ? "person" : "people"} · ${fmtHours(totals.hours, 2)} hours · ${fmtMoney(totals.gross)} gross`,
+      ].join("\n"),
+    };
+  };
+
+  const buildFailed = (err: unknown) => {
+    console.error("[Export] failed:", err);
+    toast.error(
+      "Couldn't build the spreadsheet. A new version of the app may have been released — refresh the page and try again.",
+    );
+  };
+
+  const handleExport = async () => {
+    const { filename, sheet } = buildRangeFile();
     setExporting(true);
     try {
-      const delivery = await exportXlsx(filename, {
-        name: "Payroll history",
-        title: "Hotspot Market — Payroll history",
-        subtitle: `${span} · ${weekCount} pay ${weekCount === 1 ? "week" : "weeks"} · ${storeLabel}`,
-        columns: [
-          { header: "Employee", key: "employee", width: 26 },
-          { header: "Store", key: "store", width: 20 },
-          { header: "Role", key: "role", width: 18 },
-          { header: "Weeks paid", key: "weeks", width: 12, numFmt: "0", align: "right" },
-          { header: "Hours worked", key: "hours", width: 14, numFmt: "0.00", align: "right" },
-          { header: "Avg hours / week", key: "avgWeekly", width: 16, numFmt: "0.0", align: "right" },
-          { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
-        ],
-        rows: employees.map((e) => ({
-          employee: e.employeeName,
-          store: e.storeLocation,
-          role: e.role,
-          weeks: e.weekCount,
-          hours: e.hours,
-          avgWeekly: e.weekCount > 0 ? e.hours / e.weekCount : 0,
-          gross: e.gross,
-        })),
-        totals: {
-          weeks: totals.weeks,
-          hours: Number(totals.hours.toFixed(2)),
-          gross: Number(totals.gross.toFixed(2)),
-        },
-        totalsLabelKey: "employee",
-        totalsLabel: "Total",
-      });
-      const done = deliveryMessage(delivery);
-      if (done) toast.success(done, { description: filename });
+      await exportXlsx(filename, sheet);
+      toast.success("Spreadsheet downloaded.", { description: filename });
     } catch (err) {
-      console.error("[Export] failed:", err);
-      toast.error(
-        "Couldn't build the spreadsheet. A new version of the app may have been released — refresh the page and export again.",
-      );
+      buildFailed(err);
     } finally {
       setExporting(false);
     }
   };
+
+  const handleShare = async () => {
+    const { filename, sheet, title, text } = buildRangeFile();
+    setSharing(true);
+    try {
+      const payload: SharePayload = { filename, blob: await buildXlsx(sheet), title, text };
+      const result = await sharePayload(payload);
+      if (result === "shared") toast.success("Payroll shared.");
+      else if (result === "dialog") setShareDialog(payload);
+    } catch (err) {
+      buildFailed(err);
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  // Warm the spreadsheet builder once the range is on screen.
+  useEffect(() => {
+    if (!ready) return;
+    const t = window.setTimeout(prefetchXlsx, 1500);
+    return () => window.clearTimeout(t);
+  }, [ready]);
 
   const lastClosed = currentPayPeriodStart().getTime();
   const activePreset =
@@ -280,17 +340,30 @@ export default function HistoryTab({
               Saved payroll only · {span}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 sm:h-8"
-            onClick={() => void handleExport()}
-            disabled={!ready || employees.length === 0 || exporting}
-            title="Download this range as an .xlsx spreadsheet (opens in Google Sheets and Excel)"
-          >
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            Export
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 sm:h-8"
+              onClick={() => void handleShare()}
+              disabled={!ready || employees.length === 0 || sharing}
+              title="Send this payroll history: the spreadsheet with a short summary"
+            >
+              {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share className="h-4 w-4" />}
+              Share
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 sm:h-8"
+              onClick={() => void handleExport()}
+              disabled={!ready || employees.length === 0 || exporting}
+              title="Download this range as an .xlsx spreadsheet (opens in Google Sheets and Excel)"
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Export
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="px-0">
           <div className="overflow-x-auto">
@@ -365,6 +438,7 @@ export default function HistoryTab({
       </Card>
 
       <PositionBreakdown items={positionItems} />
+      <ShareDialog payload={shareDialog} onOpenChange={(open) => !open && setShareDialog(null)} />
     </div>
   );
 }

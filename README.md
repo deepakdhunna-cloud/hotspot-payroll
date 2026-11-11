@@ -88,8 +88,18 @@ dashboard shows a one-time reminder on phones. What makes it work:
 tags in `client/index.html`. A store tablet saved from `/clock` uses
 `kiosk.webmanifest` instead, so its icon reopens the time clock. From the
 home screen the account menu offers **Refresh** (there is no browser reload
-button there), spreadsheet exports open the share sheet, and the app icon
-shows the number of open attention items where the device supports it.
+button there), and the app icon shows the number of open attention items
+where the device supports it.
+
+**Export and Share.** Payroll (the weekly timesheet and History) has two
+buttons. **Export** downloads the spreadsheet. **Share** sends it: on a
+phone it opens the device's share sheet (Messages, Mail, AirDrop, Save to
+Files…) with the spreadsheet attached and a short summary as the message;
+where a browser can't share files it opens a small dialog with Email, Copy
+summary and Download. Both use the same builder (`client/src/lib/xlsx.ts`),
+and the spreadsheet is styled like the site: the logo, the page's headline
+figures, an ink column header under a brand-red rule, hairline rows, and
+status words in the site's green and amber.
 
 ## Portal integration (this site is the system of record)
 
