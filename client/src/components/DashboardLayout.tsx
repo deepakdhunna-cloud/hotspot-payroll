@@ -73,6 +73,7 @@ import {
 } from "@/contexts/StoreScopeContext";
 import { announceQueryFlags } from "@/lib/queryFlag";
 import { NAV_FULL_MIN, NAV_RAIL, useNavSize } from "@/lib/navSize";
+import { registerStores } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
@@ -331,6 +332,16 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const install = useInstallState();
   const [installOpen, setInstallOpen] = React.useState(false);
   const nav = useNavSize();
+  // Stores the CEO has added: take the server's list (names, short labels,
+  // order). If it differs from what pages may already have read, re-mount
+  // the page once so every chip and color uses it.
+  const optionsQ = trpc.meta.options.useQuery(undefined, { staleTime: 5 * 60_000 });
+  const [registryVersion, setRegistryVersion] = React.useState(0);
+  React.useEffect(() => {
+    if (optionsQ.data?.storeInfo && registerStores(optionsQ.data.storeInfo)) {
+      setRegistryVersion((v) => v + 1);
+    }
+  }, [optionsQ.data]);
   const [quickOpen, setQuickOpen] = React.useState(false);
   // The rail / sidebar "+" menu is controlled so picking an action closes it.
   const [railQuickOpen, setRailQuickOpen] = React.useState(false);
@@ -706,7 +717,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 <div className="h-8 w-8 rounded-full border-2 border-border border-t-primary animate-spin" />
               </div>
             ) : (
-              children
+              <React.Fragment key={registryVersion}>{children}</React.Fragment>
             )}
           </div>
         </main>

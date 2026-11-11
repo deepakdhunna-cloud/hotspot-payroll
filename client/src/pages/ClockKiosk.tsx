@@ -39,8 +39,11 @@ import {
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 
+// Stores can be added from the command center, so a store name in the URL
+// or session is first taken as given (any plausible name) and then checked
+// against the server's list once that has loaded — see the effect below.
 function isStore(value: string | undefined): value is Store {
-  return !!value && (STORES as readonly string[]).includes(value);
+  return !!value && value.trim().length >= 3 && value.length <= 64;
 }
 
 function decodeStoreFromUrl(raw: string | undefined): Store | null {
@@ -105,6 +108,22 @@ export default function ClockKiosk() {
 
   const [store, setStore] = useState<Store | null>(initialStore);
   usePageTitle(store ? `Time clock · ${store}` : "Time clock");
+
+  // The stores this business has right now (built-in ones until it loads).
+  const optionsQ = trpc.meta.options.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const storeList: readonly string[] = optionsQ.data?.stores ?? STORES;
+  // A link to a store that doesn't exist falls back to the store picker —
+  // unless this tablet is locked to a store, which always wins.
+  useEffect(() => {
+    if (!optionsQ.data || !store || getKioskStore()) return;
+    if (!optionsQ.data.stores.includes(store)) {
+      setStore(null);
+      navigate("/clock", { replace: true });
+    }
+  }, [optionsQ.data, store, navigate]);
   useEffect(() => {
     const lockedStore = getKioskStore();
     if (lockedStore) {
@@ -264,7 +283,7 @@ export default function ClockKiosk() {
             </h1>
             <p className="mt-2 text-white/70">This device will remember it.</p>
             <div className="mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
-              {STORES.map((s) => (
+              {(storeList as Store[]).map((s) => (
                 <button
                   key={s}
                   type="button"

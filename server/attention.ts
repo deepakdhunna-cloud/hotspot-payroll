@@ -17,6 +17,7 @@
  * auto-resolve the moment the underlying condition verifiably clears, and
  * re-open with a fresh date if it comes back.
  */
+import { getRules } from "./registry";
 import {
   getAttentionByRefKeys,
   hoursWorkedForWeekBulk,
@@ -42,6 +43,7 @@ import {
   sweepAutoClockOut,
 } from "./autoClockOut";
 
+/** Default; the CEO can change it (see getRules().longShiftHours). */
 export const LONG_PUNCH_HOURS = 12;
 export const MISMATCH_TOLERANCE_HOURS = 1;
 /** How far back closed punches are scanned for 12h+ shifts. */
@@ -134,7 +136,7 @@ export async function computeAttentionCandidates(
     const inAt = new Date(p.clockInAt);
     const endAt = p.clockOutAt ? new Date(p.clockOutAt) : now;
     const hours = (endAt.getTime() - inAt.getTime()) / 3_600_000;
-    if (hours <= LONG_PUNCH_HOURS) return;
+    if (hours <= getRules().longShiftHours) return;
     const stillOpen = !p.clockOutAt;
     out.push({
       refKey: `long_punch:${p.id}`,

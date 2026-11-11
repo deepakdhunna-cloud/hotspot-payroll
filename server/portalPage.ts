@@ -15,7 +15,7 @@
  * totals — never per-person pay rates, phone numbers, clock codes or PINs.
  */
 import { timingSafeEqual } from "node:crypto";
-import { STORES } from "@shared/hotspot";
+import { getStores } from "./registry";
 import { payWeekBounds, payWeekOf } from "@shared/hotspot";
 import { FEED_SILENCE_HOURS } from "./attention";
 import {
@@ -102,7 +102,7 @@ export async function buildPortalSummary(
     if (t > prev) lastPunchByStore.set(p.storeLocation, t);
   }
 
-  const stores: PortalStoreSummary[] = STORES.map((store) => {
+  const stores: PortalStoreSummary[] = getStores().map((store) => {
     const staff = employees.filter((e) => e.storeLocation === store);
 
     const clockedIn = openPunches

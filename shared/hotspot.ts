@@ -41,9 +41,16 @@ export function computeGrossPay(hoursWorked: number, payRate: number) {
   };
 }
 
-export function estimateWithholding(grossPay: number) {
-  const federal = grossPay * FEDERAL_TAX_RATE;
-  const state = grossPay * STATE_TAX_RATE;
+export function estimateWithholding(
+  grossPay: number,
+  /** The CEO can change these in the command center; defaults apply otherwise. */
+  rates: { estFederalRate: number; estStateRate: number } = {
+    estFederalRate: FEDERAL_TAX_RATE,
+    estStateRate: STATE_TAX_RATE,
+  },
+) {
+  const federal = grossPay * rates.estFederalRate;
+  const state = grossPay * rates.estStateRate;
   return {
     federal,
     state,

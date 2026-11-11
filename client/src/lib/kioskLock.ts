@@ -1,9 +1,12 @@
-import { STORES, type Store } from "../../../shared/hotspot";
+import { type Store } from "../../../shared/hotspot";
 
 const KIOSK_STORE_KEY = "hotspot-kiosk-store";
 
+// Stores can be added from the command center, so a remembered store is not
+// checked against a fixed list here: any plausible name is kept, and the
+// server refuses punches for a store that doesn't exist.
 function isStore(value: string | null): value is Store {
-  return !!value && (STORES as readonly string[]).includes(value);
+  return !!value && value.trim().length >= 3 && value.length <= 64;
 }
 
 /**

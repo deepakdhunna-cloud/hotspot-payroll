@@ -8,6 +8,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { csrfOriginGuard } from "../csrf";
 import { runBootstrap } from "../bootstrap";
+import { loadRegistry } from "../registry";
 import { sweepAutoClockOut } from "../autoClockOut";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -75,6 +76,13 @@ async function startServer() {
   // Apply migrations (idempotent) and, when configured, the one-time data
   // import — must finish before the app serves queries.
   await runBootstrap();
+  // Stores, roles and operating rules the CEO has changed from the command
+  // center (server/registry.ts). Loaded before the first request, refreshed
+  // once a minute so a second instance picks up changes made on another.
+  await loadRegistry().catch((err) => console.error("[Registry] load failed:", err));
+  setInterval(() => {
+    loadRegistry().catch((err) => console.error("[Registry] refresh failed:", err));
+  }, 60_000);
   // Ensure the default Hotspot PINs exist (CEO + 4 store PINs).
   ensureDefaultPins().catch((err) => console.error("[PinAuth] init failed:", err));
   // Auto clock-out sweep: runs at boot and every 5 minutes so forgotten

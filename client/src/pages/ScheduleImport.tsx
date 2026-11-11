@@ -43,7 +43,7 @@ import {
 import { useStoreScope } from "@/contexts/StoreScopeContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { errorMessage } from "@/lib/errors";
-import { STORE_ABBR, fmtHours, fmtHoursLabel, fmtWeekRange, storeColor } from "@/lib/format";
+import { STORE_ABBR, fmtHours, fmtHoursLabel, fmtWeekRange, storeColor, storeIndex } from "@/lib/format";
 import {
   fmtDateTime,
   fromDateInput,
@@ -56,7 +56,7 @@ import {
 } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { ROLES, STORES, parseTimeLabelToMinutes, type Store } from "@shared/hotspot";
+import { ROLES, parseTimeLabelToMinutes, type Store } from "@shared/hotspot";
 import {
   AlertCircle,
   CalendarDays,
@@ -158,10 +158,8 @@ function shortTime(label: string): string {
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}${mm ? `:${String(mm).padStart(2, "0")}` : ""}${h24 < 12 ? "a" : "p"}`;
 }
-const storeOrder = (s: string) => {
-  const i = (STORES as readonly string[]).indexOf(s);
-  return i < 0 ? 99 : i;
-};
+// Display order of the stores, including any added from the command center.
+const storeOrder = (s: string) => storeIndex(s);
 
 function fileProblem(f: File): string | null {
   const byExt = /\.(pdf|png|jpe?g|webp|csv|xlsx)$/i.test(f.name);
@@ -224,6 +222,9 @@ export default function ScheduleImport() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const [weekStart, setWeekStart] = useState<Date>(() => inProgressPayWeekStart());
+  // Roles a new person can be given: the built-in ones plus any the CEO added.
+  const optionsQ = trpc.meta.options.useQuery(undefined, { staleTime: 5 * 60_000 });
+  const roleOptions: readonly string[] = optionsQ.data?.roles ?? ROLES;
 
   // The board follows the top-bar store scope like every other page. A
   // manager has exactly one store; the CEO's "All stores" shows them all.
@@ -1156,7 +1157,7 @@ export default function ScheduleImport() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {ROLES.map((r) => (
+                                  {roleOptions.map((r) => (
                                     <SelectItem key={r} value={r}>
                                       {r}
                                     </SelectItem>
