@@ -93,13 +93,17 @@ function initialWeek(draftWeek: string | undefined): Date {
  */
 function readWhoParam(): number | null {
   if (typeof window === "undefined") return null;
-  const url = new URL(window.location.href);
-  const raw = url.searchParams.get("who");
+  const raw = new URL(window.location.href).searchParams.get("who");
   if (raw === null) return null;
-  url.searchParams.delete("who");
-  window.history.replaceState(window.history.state, "", url.toString());
   const id = Number(raw);
   return Number.isInteger(id) && id > 0 ? id : null;
+}
+/** Take `?who=` out of the address once it has been read. */
+function stripWhoParam(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("who")) return;
+  url.searchParams.delete("who");
+  window.history.replaceState(window.history.state, "", url.toString());
 }
 
 type PendingSwitch = { kind: "week"; to: Date } | { kind: "store"; to: string };
@@ -139,6 +143,7 @@ export default function WeeklyPayroll() {
   const [punchRange, setPunchRange] = useState(false);
   // "See punches" on a timesheet row opens Punches on that one person.
   const [punchWho, setPunchWho] = useState<number | null>(readWhoParam);
+  useEffect(stripWhoParam, []);
 
   /** Change week — but ask first if Hours & pay has unsaved edits. */
   const requestWeek = useCallback(

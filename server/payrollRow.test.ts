@@ -7,6 +7,7 @@ import {
   saveInputFor,
   type WeekRow,
 } from "@/lib/payrollRow";
+import { payWeekBounds, payWeekElapsed } from "@/lib/payweek";
 
 /**
  * The payroll row math is shared by the weekly timesheet and the command
@@ -188,5 +189,19 @@ describe("what saving a row sends", () => {
       olderWeek: false,
     });
     expect(noRate.ok).toBe(false);
+  });
+});
+
+describe("how far a pay week has run (set pay accrues with it)", () => {
+  const { start, end } = payWeekBounds(WEEK);
+  it("is 0 before the week starts and 1 once it has closed", () => {
+    expect(payWeekElapsed(WEEK, start.getTime() - 60_000)).toBe(0);
+    expect(payWeekElapsed(WEEK, end.getTime() + 60_000)).toBe(1);
+    expect(payWeekElapsed(WEEK, end.getTime() + 30 * 86_400_000)).toBe(1);
+  });
+  it("is the share of the week gone by in between", () => {
+    const mid = (start.getTime() + end.getTime()) / 2;
+    expect(payWeekElapsed(WEEK, mid)).toBeCloseTo(0.5, 6);
+    expect(payWeekElapsed(WEEK, start.getTime())).toBe(0);
   });
 });

@@ -54,7 +54,7 @@ import {
   fmtTime,
   fromDateInput,
   inProgressPayWeekStart,
-  payWeekBounds,
+  payWeekElapsed,
   startOfPayWeek,
   storeDayKey,
   toDateInput,
@@ -184,11 +184,6 @@ const laborSoFar = (r: WeeklyRow, elapsed: number) =>
   // itself is saved with, so a live figure and the saved one never drift.
   cents(onSetPay(r) ? r.weeklyPay! * elapsed : Number(r.clockHours.toFixed(2)) * r.payRate);
 const cents = (n: number) => Math.round(n * 100) / 100;
-/** Share of a pay week that has gone by, 0–1 (1 for any closed week). */
-function weekElapsed(weekStart: Date): number {
-  const { start, end } = payWeekBounds(weekStart);
-  return Math.min(1, Math.max(0, (Date.now() - start.getTime()) / (end.getTime() - start.getTime())));
-}
 
 export default function CeoView() {
   usePageTitle("Command center");
@@ -263,7 +258,7 @@ export default function CeoView() {
     [ledgerQ.data, storeFilter]
   );
   const ledgerElapsed = useMemo(
-    () => weekElapsed(payWeek),
+    () => payWeekElapsed(payWeek),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [payWeek, ledgerQ.dataUpdatedAt]
   );
@@ -297,7 +292,7 @@ export default function CeoView() {
   // How much of the pay week has gone by (store time): the core's dial, and
   // how far set pay has accrued. Refreshed with every data refresh.
   const elapsed = useMemo(
-    () => (isLiveWeek ? weekElapsed(weekStart) : null),
+    () => (isLiveWeek ? payWeekElapsed(weekStart) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isLiveWeek, weekStart, ceoQ.dataUpdatedAt]
   );
@@ -896,7 +891,7 @@ function PayrollPanel({
   // The estimate rates are set in Control; say the ones in force right now.
   const rulesQ = trpc.settings.get.useQuery(undefined, { staleTime: 60_000 });
   const pctOf = (rate: number | undefined, fallback: number) =>
-    `${Math.round((rate ?? fallback) * 1000) / 10}%`;
+    `${Math.round((rate ?? fallback) * 10000) / 100}%`;
   const fedPct = pctOf(rulesQ.data?.rules.estFederalRate, 0.18);
   const statePct = pctOf(rulesQ.data?.rules.estStateRate, 0.05);
 

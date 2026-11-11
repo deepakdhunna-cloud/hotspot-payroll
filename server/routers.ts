@@ -1239,14 +1239,28 @@ export const appRouter = router({
           { name: input.name, short: input.short },
           ctx.session.scope
         );
-        await setPin(store.name as PinScope, input.pin);
+        let pinSaved = true;
+        try {
+          await setPin(store.name as PinScope, input.pin);
+        } catch (err) {
+          pinSaved = false;
+          console.error("[Registry] store added but its PIN failed:", err);
+        }
         void logAudit({
           actorScope: ctx.session.scope,
           action: "settings.addStore",
           entityType: "store",
-          detail: JSON.stringify({ store: store.name, short: store.short }),
+          detail: JSON.stringify({ store: store.name, short: store.short, pinSaved }),
           ip: requestIp(ctx.req),
         });
+        if (!pinSaved) {
+          // The store exists; adding it again would be refused as a
+          // duplicate, so say exactly what is left to do.
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `${store.name} was added, but its manager PIN could not be saved. Set it under Access → Change PIN.`,
+          });
+        }
         return { store };
       }),
 

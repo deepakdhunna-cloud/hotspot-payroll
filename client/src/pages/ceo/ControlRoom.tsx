@@ -56,7 +56,9 @@ function suggestShort(name: string): string {
   return (clean.replace(/^Hotspot\s+/i, "").split(" ")[0] || clean).slice(0, 12);
 }
 
-const pctText = (rate: number) => String(Math.round(rate * 1000) / 10);
+// Two decimals (7.65%), so the field shows exactly what is saved and a later
+// save can never quietly round a rate it wasn't asked to change.
+const pctText = (rate: number) => String(Math.round(rate * 10000) / 100);
 
 export function ControlRoom({ access, data }: { access: ReactNode; data: ReactNode }) {
   return (
@@ -279,7 +281,7 @@ function PercentField({
           inputMode="decimal"
           min={0}
           max={max}
-          step={0.1}
+          step={0.01}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="h-10 pr-8 text-right tabular-nums"
@@ -324,7 +326,12 @@ function StoresPanel() {
       });
       setOpen(false);
     },
-    onError: (e) => setError(errorMessage(e)),
+    onError: (e) => {
+      setError(errorMessage(e));
+      // The store itself may have been added even if a later step failed.
+      utils.meta.options.invalidate();
+      utils.ceo.listPins.invalidate();
+    },
   });
 
   const reset = () => {

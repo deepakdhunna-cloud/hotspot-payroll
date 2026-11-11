@@ -337,11 +337,20 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   // the page once so every chip and color uses it.
   const optionsQ = trpc.meta.options.useQuery(undefined, { staleTime: 5 * 60_000 });
   const [registryVersion, setRegistryVersion] = React.useState(0);
+  const registryLoaded = React.useRef(false);
+  const seesEveryStore = user?.role === "admin" || user?.role === "cfo";
   React.useEffect(() => {
-    if (optionsQ.data?.storeInfo && registerStores(optionsQ.data.storeInfo)) {
-      setRegistryVersion((v) => v + 1);
-    }
-  }, [optionsQ.data]);
+    if (!optionsQ.data?.storeInfo) return;
+    const changed = registerStores(optionsQ.data.storeInfo);
+    const first = !registryLoaded.current;
+    registryLoaded.current = true;
+    // Re-mounting throws away anything typed but not saved, so it happens
+    // only where that can't hurt: right as the app loads, or for the logins
+    // that see every store (the CEO adds stores; the CFO's page is
+    // read-only). A manager in the middle of a timesheet is never
+    // interrupted — a new store elsewhere changes nothing on their screen.
+    if (changed && (first || seesEveryStore)) setRegistryVersion((v) => v + 1);
+  }, [optionsQ.data, seesEveryStore]);
   const [quickOpen, setQuickOpen] = React.useState(false);
   // The rail / sidebar "+" menu is controlled so picking an action closes it.
   const [railQuickOpen, setRailQuickOpen] = React.useState(false);

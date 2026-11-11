@@ -82,6 +82,13 @@ describe("Control: values are checked before anything is saved", () => {
     await expect(ceo().settings.addStore({ name: "All", pin: "4321" })).rejects.toThrow(
       /reserved/i,
     );
+    // ...or with who the activity log names for automatic actions.
+    await expect(ceo().settings.addStore({ name: "System", pin: "4321" })).rejects.toThrow(
+      /reserved/i,
+    );
+    await expect(ceo().settings.addStore({ name: "anonymous", pin: "4321" })).rejects.toThrow(
+      /reserved/i,
+    );
     await expect(
       ceo().settings.addStore({ name: "Store <script>", pin: "4321" }),
     ).rejects.toThrow(/letters, numbers/i);

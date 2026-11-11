@@ -40,7 +40,7 @@ import {
   currentPayPeriodStart,
   fromDateInput,
   inProgressPayWeekStart,
-  payWeekBounds,
+  payWeekElapsed,
   startOfPayWeek,
   storeDayKey,
   toDateInput,
@@ -194,12 +194,11 @@ export function Autopilot({
   // week gone by — the same rule as the Live tab and the ledger below, so
   // all three show one number. (Saving, and the export, always use the full
   // amount: that is what payroll will be.)
-  const elapsed = useMemo(() => {
-    if (!liveWeek) return 1;
-    const { start, end } = payWeekBounds(weekStart);
-    return Math.min(1, Math.max(0, (Date.now() - start.getTime()) / (end.getTime() - start.getTime())));
+  const elapsed = useMemo(
+    () => (liveWeek ? payWeekElapsed(weekStart) : 1),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveWeek, weekStart, weekQ.dataUpdatedAt, clockQ.dataUpdatedAt]);
+    [liveWeek, weekStart, weekQ.dataUpdatedAt, clockQ.dataUpdatedAt],
+  );
   const shownPay = (r: Row) =>
     liveWeek && r.lane !== "saved" && r.calc.isFixed ? payOf(r) * elapsed : payOf(r);
   const shownSum = (list: Row[]) => list.reduce((t, r) => t + shownPay(r), 0);

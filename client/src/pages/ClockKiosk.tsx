@@ -7,7 +7,13 @@ import type { AppRouter } from "../../../server/routers";
 import { fmtDayHeading, fmtDuration, fmtTime } from "@/lib/payweek";
 import { fmtHoursLabel } from "@/lib/format";
 import { errorMessage } from "@/lib/errors";
-import { getKioskStore, kioskPath, lockKioskToStore, markKioskTab } from "@/lib/kioskLock";
+import {
+  clearKioskLock,
+  getKioskStore,
+  kioskPath,
+  lockKioskToStore,
+  markKioskTab,
+} from "@/lib/kioskLock";
 
 /**
  * Public kiosk page. Behaves in two ways:
@@ -115,11 +121,14 @@ export default function ClockKiosk() {
     retry: 1,
   });
   const storeList: readonly string[] = optionsQ.data?.stores ?? STORES;
-  // A link to a store that doesn't exist falls back to the store picker —
-  // unless this tablet is locked to a store, which always wins.
+  // A store that doesn't exist — a mistyped link, or a tablet remembering a
+  // name the business doesn't have — falls back to the store picker rather
+  // than a keypad that refuses every code. Only once the server's list has
+  // actually loaded: until then the remembered store is trusted.
   useEffect(() => {
-    if (!optionsQ.data || !store || getKioskStore()) return;
+    if (!optionsQ.data || !store) return;
     if (!optionsQ.data.stores.includes(store)) {
+      if (getKioskStore() === store) clearKioskLock();
       setStore(null);
       navigate("/clock", { replace: true });
     }

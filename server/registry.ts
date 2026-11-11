@@ -139,7 +139,9 @@ export async function loadRegistry(): Promise<void> {
 }
 
 /** Names that would collide with a sign-in scope or a filter value. */
-const RESERVED = new Set(["ceo", "cfo", "all", "kiosk"]);
+// "system" and "anonymous" are who the activity log names for automatic
+// actions and unknown devices.
+const RESERVED = new Set(["ceo", "cfo", "all", "kiosk", "system", "anonymous"]);
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 .&'#\-]*$/;
 
 /** Why a store name can't be used, or null when it can. */
