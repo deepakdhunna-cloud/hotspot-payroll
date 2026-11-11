@@ -120,6 +120,8 @@ export default function WeeklyPayroll() {
   const [switching, setSwitching] = useState(false);
   // Punches in "custom dates" mode don't use the header's week picker.
   const [punchRange, setPunchRange] = useState(false);
+  // "See punches" on a timesheet row opens Punches on that one person.
+  const [punchWho, setPunchWho] = useState<number | null>(null);
 
   /** Change week — but ask first if Hours & pay has unsaved edits. */
   const requestWeek = useCallback(
@@ -171,6 +173,7 @@ export default function WeeklyPayroll() {
 
   const switchTab = (next: TabKey) => {
     setTab(next);
+    if (next !== "punches") setPunchWho(null);
     // Reflect the tab in the URL so deep links + refresh keep the same view.
     const url = new URL(window.location.href);
     url.searchParams.set("tab", next);
@@ -243,13 +246,20 @@ export default function WeeklyPayroll() {
             controllerRef={hoursCtl}
             onEditedChange={onEditedChange}
             onOpenWeek={requestWeek}
+            onShowPunches={(employeeId) => {
+              setPunchWho(employeeId);
+              switchTab("punches");
+              window.scrollTo({ top: 0 });
+            }}
           />
         </TabsContent>
         <TabsContent value="punches" className="mt-4">
           <PunchesTab
+            key={punchWho ?? "everyone"}
             weekStart={weekStart}
             storeFilter={storeFilter}
             onRangeModeChange={setPunchRange}
+            initialEmployeeId={punchWho}
           />
         </TabsContent>
         <TabsContent value="history" className="mt-4">

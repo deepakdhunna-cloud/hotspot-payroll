@@ -113,8 +113,8 @@ export function WeekTrend({
                     style={{
                       bottom: `${Math.min(schedH, BAR_AREA - 1)}px`,
                       height: "2px",
-                      background: "oklch(0.35 0.02 255)",
-                      boxShadow: "0 0 0 1px oklch(1 0 0 / 0.65)",
+                      background: "var(--foreground)",
+                      boxShadow: "0 0 0 1px var(--card)",
                       opacity: isSelected || isLive ? 0.9 : 0.55,
                     }}
                   />
@@ -157,7 +157,7 @@ export function WeekTrend({
             <span className="inline-flex items-center gap-1">
               <span
                 className="inline-block h-[2px] w-3 rounded-full"
-                style={{ background: "oklch(0.35 0.02 255)" }}
+                style={{ background: "var(--foreground)" }}
               />
               Scheduled level
             </span>

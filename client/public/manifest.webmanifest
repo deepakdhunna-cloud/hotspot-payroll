@@ -1,0 +1,44 @@
+{
+  "name": "Hotspot Market Payroll",
+  "short_name": "Hotspot",
+  "description": "Payroll, schedules and time clock for the Hotspot Market stores.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0c0c0e",
+  "theme_color": "#0c0c0e",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Run payroll",
+      "short_name": "Payroll",
+      "url": "/payroll",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Fix or add a punch",
+      "short_name": "Punches",
+      "url": "/payroll?tab=punches&add=1",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Add an employee",
+      "short_name": "Add employee",
+      "url": "/employees?add=1",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Schedule",
+      "short_name": "Schedule",
+      "url": "/schedule-import",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

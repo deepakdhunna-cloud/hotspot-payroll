@@ -6,15 +6,18 @@
  *  CLOSED WEEK — what happened, what's been saved to payroll, what still
  *               needs finalizing, one click from export.
  *
- * Top to bottom it answers, in order: does anything need me (attention),
- * what do I want to do (quick actions), how is the week going (KPIs), who's
- * here right now, and the detail behind it. The eight-week filmstrip at the
- * foot makes any older pay week (always Thu → Wed) one click away.
+ * Top to bottom it answers, in order: is last week's payroll done (the
+ * hero), does anything need me (attention), how is the week going (the
+ * numbers), who's here right now, and the detail behind it. The eight-week
+ * filmstrip at the foot makes any older pay week (always Thu → Wed) one
+ * click away. Everyday actions live on the "+" in the app chrome.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { businessDayStart } from "@shared/hotspot";
 import { AttentionCenter } from "@/components/AttentionCenter";
+import { InstallNudge } from "@/components/InstallApp";
+import { PayrollHero } from "@/components/PayrollHero";
 import { EmptyState } from "@/components/EmptyState";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import { Money } from "@/components/Money";
@@ -44,14 +47,12 @@ import {
   RotateCw,
   CalendarDays,
   CheckCircle2,
-  ChevronRight,
   Clock,
   LogOut,
   Pencil,
   ClipboardCheck,
   History,
   TrendingUp,
-  UserPlus,
   UserRound,
   Users,
   Wallet,
@@ -196,7 +197,7 @@ export default function Home() {
   const todayIso = toDateInput(businessDayStart());
 
   return (
-    <div className="space-y-5 md:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <PageHeader
         title={firstName ? `${greeting}, ${firstName}` : greeting}
         description={
@@ -207,20 +208,17 @@ export default function Home() {
         actions={<QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />}
       />
 
+      <InstallNudge />
+
+      {/* Last week's payroll: the one job that has a deadline */}
+      {isLiveWeek && !isCfo ? <PayrollHero store={store} /> : null}
+
       {/* Everything that needs a person, with its fix. One quiet line when clear. */}
       <AttentionCenter />
 
-      {/* Every everyday action, one tap from home */}
-      <nav aria-label="Quick actions" className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-        <QuickAction href="/payroll?tab=punches&add=1" icon={<Clock />} label="Add a punch" hint="Fix or add hours" />
-        <QuickAction href="/employees?add=1" icon={<UserPlus />} label="Add employee" hint="New team member" />
-        <QuickAction href="/schedule-import" icon={<CalendarDays />} label="Import schedule" hint="Upload this week" />
-        <QuickAction href="/payroll" icon={<Wallet />} label="Run payroll" hint="Review and export" />
-      </nav>
-
       {/* KPI band — one strip, one dominant number per mode */}
       {summaryQ.isLoading ? (
-        <Skeleton className="h-[116px] rounded-xl" />
+        <Skeleton className="h-[116px] rounded-[0.875rem]" />
       ) : summaryFailed ? (
         <div
           role="alert"
@@ -396,7 +394,7 @@ export default function Home() {
       ) : null}
 
       {/* Operational detail */}
-      <div className="grid gap-5 md:gap-6 lg:grid-cols-[1.25fr_1fr]">
+      <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1.25fr_1fr]">
         {isLiveWeek ? (
           <Card className="surface-card gap-0 py-0">
             <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
@@ -823,34 +821,5 @@ function CardLoadError({ onRetry }: { onRetry: () => void }) {
         <RotateCw className="mr-1.5 h-3.5 w-3.5" /> Retry
       </Button>
     </div>
-  );
-}
-
-/** A shortcut to one everyday task: brand icon, name, one line of what it does. */
-function QuickAction({
-  href,
-  icon,
-  label,
-  hint,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="sk-key group flex items-center gap-3 rounded-xl px-3 py-3 transition-all"
-    >
-      <span className="icon-badge transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold leading-tight sm:truncate">{label}</span>
-        <span className="hidden sm:block truncate text-xs text-muted-foreground">{hint}</span>
-      </span>
-      <ChevronRight className="hidden sm:block h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-    </Link>
   );
 }

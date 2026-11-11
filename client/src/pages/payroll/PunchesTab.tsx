@@ -141,6 +141,7 @@ export default function PunchesTab({
   weekStart,
   storeFilter,
   onRangeModeChange,
+  initialEmployeeId,
 }: {
   weekStart: Date;
   storeFilter: string;
@@ -150,6 +151,8 @@ export default function PunchesTab({
    * week or the tab goes away.
    */
   onRangeModeChange?: (on: boolean) => void;
+  /** Open already filtered to one person ("See punches" on the timesheet). */
+  initialEmployeeId?: number | null;
 }) {
   const tz = storeTzLabel();
   const today = storeDayKey(new Date());
@@ -187,9 +190,15 @@ export default function PunchesTab({
     return start && end ? { start, end } : null;
   }, [rangeMode, weekMs, fromDay, toDay]);
 
-  const [employeeFilter, setEmployeeFilter] = useState<string>("all");
-  // Someone picked under one store means nothing under another.
+  const [employeeFilter, setEmployeeFilter] = useState<string>(
+    initialEmployeeId ? String(initialEmployeeId) : "all",
+  );
+  // Someone picked under one store means nothing under another. (Not on
+  // first render: the tab may open already filtered to one person.)
+  const filterStore = useRef(storeFilter);
   useEffect(() => {
+    if (filterStore.current === storeFilter) return;
+    filterStore.current = storeFilter;
     setEmployeeFilter("all");
   }, [storeFilter]);
   const [search, setSearch] = useState("");

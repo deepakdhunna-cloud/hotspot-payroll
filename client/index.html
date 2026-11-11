@@ -3,18 +3,76 @@
 
   <head>
     <meta charset="UTF-8" />
+    <!-- viewport-fit=cover lets the app draw edge to edge; every edge that can
+         sit under a notch, the home indicator or a fold hinge is padded with
+         env(safe-area-inset-*) in index.css. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0" />
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Hotspot Market · Payroll</title>
     <meta name="description" content="Payroll, schedules and time clock for the Hotspot Market stores." />
-    <meta name="theme-color" content="#b91c1c" />
+    <!-- Browser chrome follows the app's surface color. The two media entries
+         cover "match my device"; the theme script below rewrites them when a
+         manager picks light or dark by hand. -->
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f7f7f8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0c0c0e" media="(prefers-color-scheme: dark)" />
     <!-- Internal operations tool: keep it out of search engines. -->
     <meta name="robots" content="noindex, nofollow" />
     <meta property="og:title" content="Hotspot Market · Payroll" />
     <meta property="og:description" content="Payroll, schedules and time clock for the Hotspot Market stores." />
     <meta property="og:type" content="website" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23b91c1c'/%3E%3Ctext x='50' y='68' font-size='52' font-family='Arial,sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EH%3C/text%3E%3C/svg%3E" />
+
+    <!-- Home-screen app: managers save the site to their home screen and use
+         it full screen, without browser bars. -->
+    <link rel="manifest" href="/manifest.webmanifest" id="app-manifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hotspot" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+
+    <script>
+      // Runs before first paint so the page never flashes the wrong theme.
+      // "theme" in localStorage is "light", "dark" or "system" (the default).
+      (function () {
+        var root = document.documentElement;
+        var pref = "system";
+        try {
+          var stored = localStorage.getItem("theme");
+          if (stored === "light" || stored === "dark") pref = stored;
+        } catch (e) {
+          /* storage unavailable (locked-down kiosk webviews): follow the device */
+        }
+        var dark =
+          pref === "dark" ||
+          (pref === "system" &&
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+        if (pref !== "system") {
+          var metas = document.querySelectorAll('meta[name="theme-color"]');
+          for (var i = 0; i < metas.length; i++) {
+            metas[i].setAttribute("content", dark ? "#0c0c0e" : "#f7f7f8");
+          }
+        }
+        // Saved to a home screen, the app runs without browser bars.
+        var standalone =
+          (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+          window.navigator.standalone === true;
+        if (standalone) root.classList.add("standalone");
+        // A store tablet saved from the time clock must reopen the time clock.
+        if (location.pathname === "/clock" || location.pathname.indexOf("/clock/") === 0) {
+          var link = document.getElementById("app-manifest");
+          if (link) link.setAttribute("href", "/kiosk.webmanifest");
+        }
+      })();
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet" />

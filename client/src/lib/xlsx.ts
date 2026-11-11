@@ -1,6 +1,7 @@
 // Tiny wrapper around exceljs that builds nicely-formatted Hotspot payroll
-// spreadsheets and triggers a download. The output opens cleanly in both
-// Google Sheets and Microsoft Excel.
+// spreadsheets and hands them over — a download on a computer, the share
+// sheet on a phone or tablet. The output opens cleanly in both Google Sheets
+// and Microsoft Excel.
 //
 // We intentionally avoid pulling in exceljs's Node-only streaming APIs —
 // `xlsx.write` to a Buffer works in the browser via the bundled UMD-ish entry.
@@ -35,10 +36,9 @@ const BORDER_COLOR = "FFE5E7EB";
 const ZEBRA_FILL = "FFF9FAFB";
 const TOTALS_FILL = "FFFEF2F2";
 
-function downloadBlob(buf: ArrayBuffer, filename: string) {
-  const blob = new Blob([buf], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -50,13 +50,52 @@ function downloadBlob(buf: ArrayBuffer, filename: string) {
 }
 
 /**
- * Build and download a single-sheet xlsx with bold header, frozen header
+ * Hand the finished spreadsheet to the manager.
+ *
+ * On a phone or tablet — above all when the site runs from the home screen,
+ * where there is no downloads bar — the file goes to the device's share
+ * sheet, so it can be saved to Files, mailed or messaged in one step. If
+ * sharing isn't available (or the browser refuses because the tap is too
+ * old by the time the file is built) it falls back to a normal download,
+ * which is also what every desktop browser gets.
+ */
+export type Delivery = "shared" | "downloaded" | "cancelled";
+
+async function deliverFile(buf: ArrayBuffer, filename: string): Promise<Delivery> {
+  const blob = new Blob([buf], { type: XLSX_MIME });
+  const touch =
+    typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+  if (touch && typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      const file = new File([blob], filename, { type: XLSX_MIME });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return "shared";
+      }
+    } catch (err) {
+      // Closing the share sheet is a choice, not a failure.
+      if ((err as { name?: string } | null)?.name === "AbortError") return "cancelled";
+      /* anything else: download instead */
+    }
+  }
+  downloadBlob(blob, filename);
+  return "downloaded";
+}
+
+/** What to tell the manager once a spreadsheet has been handed over. */
+export function deliveryMessage(d: Delivery): string | null {
+  if (d === "cancelled") return null;
+  return d === "shared" ? "Spreadsheet shared." : "Spreadsheet downloaded.";
+}
+
+/**
+ * Build and hand over a single-sheet xlsx with bold header, frozen header
  * row, column formatting, zebra striping, and an optional "Total" row.
  */
 export async function exportXlsx<T extends Record<string, any>>(
   filename: string,
   sheet: XlsxSheet<T>,
-) {
+): Promise<Delivery> {
   const { default: ExcelJS } = await import("exceljs");
   const wb = new ExcelJS.Workbook();
   wb.creator = "Hotspot Market Payroll";
@@ -146,5 +185,5 @@ export async function exportXlsx<T extends Record<string, any>>(
   }
 
   const buf = await wb.xlsx.writeBuffer();
-  downloadBlob(buf as ArrayBuffer, filename);
+  return deliverFile(buf as ArrayBuffer, filename);
 }

@@ -53,11 +53,12 @@ import {
   toDateInput,
 } from "@/lib/payweek";
 import { errorMessage } from "@/lib/errors";
-import { exportXlsx } from "@/lib/xlsx";
+import { deliveryMessage, exportXlsx } from "@/lib/xlsx";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   ClipboardList,
   Clock,
   FileSpreadsheet,
@@ -380,6 +381,33 @@ function FieldError({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** A row's status in the folded list: a small labelled mark, never color alone. */
+function RowStatusDot({ status, liveWeek }: { status: Status; liveWeek: boolean }) {
+  if (status === "saving") {
+    return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Saving" />;
+  }
+  if (status === "saved") {
+    return (
+      <span className="chip-good shrink-0 !px-1.5" title="Saved to payroll">
+        <Check className="h-3 w-3" aria-hidden="true" />
+        <span className="sr-only sm:not-sr-only">Saved</span>
+      </span>
+    );
+  }
+  if (status === "empty") {
+    return <span className="w-5 shrink-0" aria-hidden="true" />;
+  }
+  const edited = status === "edited";
+  return (
+    <span
+      className={cn(edited || !liveWeek ? "chip-warn" : "chip-neutral", "shrink-0")}
+      title={edited ? "Changed here, not saved yet" : "From the time clock — not saved to payroll yet"}
+    >
+      {edited ? "Edited" : "Not saved"}
+    </span>
+  );
+}
+
 function StatusCell({
   status,
   liveWeek,
@@ -444,6 +472,7 @@ export default function HoursAndPayTab({
   controllerRef,
   onEditedChange,
   onOpenWeek,
+  onShowPunches,
 }: {
   weekStart: Date;
   storeFilter: string;
@@ -451,6 +480,8 @@ export default function HoursAndPayTab({
   onEditedChange?: (count: number) => void;
   /** Jump to another week (used by the "unsaved edits waiting" banner). */
   onOpenWeek?: (weekStart: Date) => void;
+  /** Open the Punches tab on one person's punches for this week. */
+  onShowPunches?: (employeeId: number) => void;
 }) {
   const store = storeFilter === "all" ? undefined : (storeFilter as any);
   const { stores: visibleStores } = useStoreScope();
@@ -469,6 +500,15 @@ export default function HoursAndPayTab({
   const [savedIds, setSavedIds] = useState<Set<number>>(() => new Set());
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
   const [exportAsk, setExportAsk] = useState(false);
+  // Compact list (phone, foldable, tablet): which rows are opened for editing.
+  const [openRows, setOpenRows] = useState<Set<number>>(() => new Set());
+  const toggleRow = (id: number) =>
+    setOpenRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [exporting, setExporting] = useState(false);
 
   // Live mirrors so the merge effect never works from a stale closure.
@@ -860,7 +900,7 @@ export default function HoursAndPayTab({
     }));
     setExporting(true);
     try {
-      await exportXlsx(filename, {
+      const delivery = await exportXlsx(filename, {
         name: "Hours & pay",
         title: "Hotspot Market — Weekly payroll",
         subtitle: `Pay week ${range}, ${weekEnd.getUTCFullYear()} · ${storeLabel}`,
@@ -884,7 +924,8 @@ export default function HoursAndPayTab({
         totalsLabelKey: "employee",
         totalsLabel: "Total",
       });
-      toast.success("Spreadsheet downloaded.", { description: filename });
+      const done = deliveryMessage(delivery);
+      if (done) toast.success(done, { description: filename });
     } catch (err) {
       console.error("[Export] failed:", err);
       toast.error(
@@ -917,7 +958,7 @@ export default function HoursAndPayTab({
     ready && payable.length > 0 && savedCount >= payable.length && edited.length === 0 && unsaved.length === 0;
 
   const kpiLoading = (
-    <span className="inline-block h-8 w-28 animate-pulse rounded-md bg-white/10" aria-label="Loading" />
+    <span className="inline-block h-8 w-28 animate-pulse rounded-md bg-muted" aria-label="Loading" />
   );
 
   /* -------------------------------- render -------------------------------- */
@@ -946,7 +987,7 @@ export default function HoursAndPayTab({
           </Button>
         </div>
       ) : null}
-      <KpiBand className="grid-cols-2 xl:grid-cols-3">
+      <KpiBand className="grid-cols-2 md:grid-cols-3">
         <KpiCell
           hero
           icon={<Wallet />}
@@ -1016,179 +1057,243 @@ export default function HoursAndPayTab({
           </Button>
         </CardHeader>
         <CardContent className="px-0">
-          {/* ---------- Phone layout: one card per employee ---------- */}
-          <div className="space-y-3 px-3 pt-3 pb-3 md:hidden">
-            {(weekQ.isLoading || (weekQ.isSuccess && clockHoursQ.isLoading)) &&
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-36 animate-pulse rounded-xl bg-muted" />
-              ))}
+          {/* ---------- Phone, foldable and tablet: one compact row per person ----------
+              A row shows who, hours, pay and status at a glance. Tapping it
+              opens that person's controls in place, so a whole store fits
+              on a screen or two and only the row being fixed takes room. */}
+          <div className="lg:hidden">
+            {(weekQ.isLoading || (weekQ.isSuccess && clockHoursQ.isLoading)) && (
+              <div className="space-y-2 p-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-14 animate-pulse rounded-xl bg-muted" />
+                ))}
+              </div>
+            )}
             {weekQ.isError && <BlockState isError onRetry={() => weekQ.refetch()}>{null}</BlockState>}
             {ready && rows.length === 0 && (
               <BlockState
                 isEmpty
                 emptyTitle="No one to pay this week"
-                emptyHint="Change the store in the top bar, or add employees from the Employees page."
+                emptyHint="Change the store, or add employees from the Employees page."
               >
                 {null}
               </BlockState>
             )}
-            {ready &&
-              views.map((v) => {
-                const errId = (f: string) => `m-${f}-err-${v.id}`;
-                return (
-                  <div
-                    key={v.id}
-                    className={cn(
-                      "rounded-xl border border-border bg-card p-3.5",
-                      v.dirty && "border-primary/40 bg-primary/[0.02]",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5 font-medium">
-                          <span className="truncate">{v.name}</span>
-                          {v.former ? <span className="chip-neutral">Former</span> : null}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {v.row.employee.role}
-                          {multiStore ? ` · ${storeTag(v.row.employee.storeLocation)}` : ""}
-                          {` · ${fmtHoursLabel(v.scheduled)} scheduled`}
-                        </div>
-                      </div>
-                      <StatusCell
-                        status={v.status}
-                        liveWeek={liveWeek}
-                        name={v.name}
-                        onSave={() => void handleSaveOne(v)}
-                      />
-                    </div>
-
-                    <PayTypeToggle
-                      className="mt-3 flex w-full"
-                      fixed={v.calc.isFixed}
-                      name={v.name}
-                      onChange={(fixed) => setPayType(v, fixed)}
-                    />
-
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      {v.calc.isFixed ? (
-                        <div className="space-y-1">
-                          <label htmlFor={`m-fixed-${v.id}`} className="text-xs font-medium text-muted-foreground">
-                            Set pay this week
-                          </label>
-                          <MoneyInput
-                            id={`m-fixed-${v.id}`}
-                            value={v.edit.fixed ?? ""}
-                            onChange={(val) => setRow(v.id, { fixed: val })}
-                            error={v.calc.errors.fixed}
-                            errorId={errId("fixed")}
-                            onKeyDown={saveOnEnter(v)}
-                            inputClassName="h-10"
-                          />
-                          {v.calc.errors.fixed ? (
-                            <FieldError id={errId("fixed")}>{v.calc.errors.fixed}</FieldError>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          <label htmlFor={`m-rate-${v.id}`} className="text-xs font-medium text-muted-foreground">
-                            Hourly rate
-                          </label>
-                          <MoneyInput
-                            id={`m-rate-${v.id}`}
-                            value={v.edit.rate}
-                            onChange={(val) => setRow(v.id, { rate: val })}
-                            error={v.calc.errors.rate}
-                            errorId={errId("rate")}
-                            onKeyDown={saveOnEnter(v)}
-                            inputClassName="h-10"
-                          />
-                          {v.calc.errors.rate ? (
-                            <FieldError id={errId("rate")}>{v.calc.errors.rate}</FieldError>
-                          ) : null}
-                        </div>
-                      )}
-                      <div className="space-y-1">
-                        <label htmlFor={`m-hours-${v.id}`} className="text-xs font-medium text-muted-foreground">
-                          Hours worked
-                        </label>
-                        {v.showClock ? (
-                          <button
-                            type="button"
-                            id={`m-hours-${v.id}`}
-                            className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-secondary/50 px-3 text-sm"
-                            onClick={() => setRow(v.id, { manual: true })}
-                            aria-label={`${fmtHours(v.calc.hoursOk, 2)} hours from the time clock. Tap to edit.`}
-                          >
-                            <span className="chip-good">
-                              <Clock className="h-3 w-3" /> Clock
-                            </span>
-                            <span className="flex items-center gap-1.5 font-medium tabular-nums">
-                              {fmtHours(v.calc.hoursOk, 2)}
-                              <Pencil className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-                            </span>
-                          </button>
-                        ) : (
-                          <Input
-                            id={`m-hours-${v.id}`}
-                            type="number"
-                            inputMode="decimal"
-                            step="0.25"
-                            min="0"
-                            value={v.edit.hours}
-                            onChange={(e) => setRow(v.id, { hours: e.target.value, manual: true })}
-                            onBlur={(e) => {
-                              const t = tidy2(e.target.value);
-                              if (t !== e.target.value) setRow(v.id, { hours: t });
-                            }}
-                            onKeyDown={saveOnEnter(v)}
-                            placeholder={v.hasClock ? fmtHours(v.clock!, 2) : "0.00"}
-                            aria-invalid={v.calc.errors.hours ? true : undefined}
-                            aria-describedby={v.calc.errors.hours ? errId("hours") : undefined}
-                            className="h-10 text-right tabular-nums"
-                          />
-                        )}
-                        {v.calc.errors.hours ? (
-                          <FieldError id={errId("hours")}>{v.calc.errors.hours}</FieldError>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {(v.overBy !== null || (v.clockDiffers && !v.showClock)) && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        {v.overBy !== null && (
-                          <span className="chip-warn" title={`${fmtHoursLabel(v.scheduled)} scheduled`}>
-                            <AlertTriangle className="h-3 w-3" /> {fmtHoursLabel(v.overBy)} over schedule
-                          </span>
-                        )}
-                        {v.clockDiffers && !v.showClock && (
-                          <button
-                            type="button"
-                            className="inline-flex h-9 items-center rounded-md px-1 text-xs text-muted-foreground"
-                            onClick={() =>
-                              setRow(v.id, { hours: v.clock!.toFixed(2), manual: false })
-                            }
-                          >
-                            Clock says {fmtHours(v.clock!, 2)} ·&nbsp;
-                            <span className="font-medium text-foreground underline underline-offset-2">Use clock</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="mt-3 flex items-center justify-between border-t border-border pt-2.5">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {v.calc.isFixed ? "Gross pay (set pay)" : "Gross pay"}
-                      </span>
-                      <span className="font-semibold tabular-nums">{fmtMoney(v.calc.gross)}</span>
-                    </div>
-                  </div>
-                );
-              })}
             {ready && rows.length > 0 && (
-              <div className="flex items-center justify-between rounded-xl bg-muted/60 px-3.5 py-3 text-sm">
-                <span className="font-semibold">Total</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
+              <ul className="divide-y divide-border">
+                {views.map((v) => {
+                  const errId = (f: string) => `m-${f}-err-${v.id}`;
+                  const hasErrors = Object.keys(v.calc.errors).length > 0;
+                  const open = openRows.has(v.id) || hasErrors;
+                  const panelId = `m-panel-${v.id}`;
+                  return (
+                    <li
+                      key={v.id}
+                      className={cn(
+                        "relative",
+                        v.dirty && "shadow-[inset_3px_0_0_var(--primary)]",
+                        open && "bg-muted/40",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left sm:px-5"
+                        aria-expanded={open}
+                        aria-controls={panelId}
+                        onClick={() => toggleRow(v.id)}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate text-[15px] font-medium leading-tight">
+                              {v.name}
+                            </span>
+                            {v.former ? <span className="chip-neutral">Former</span> : null}
+                          </span>
+                          <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                            <span className="truncate">
+                              {v.row.employee.role}
+                              {multiStore ? ` · ${storeTag(v.row.employee.storeLocation)}` : ""}
+                            </span>
+                            {v.overBy !== null ? (
+                              <span className="chip-warn">
+                                <AlertTriangle className="h-3 w-3" /> {fmtHoursLabel(v.overBy)} over
+                              </span>
+                            ) : null}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-[15px] font-semibold leading-tight tabular-nums">
+                            {fmtMoney(v.calc.gross)}
+                          </span>
+                          <span className="mt-1 flex items-center justify-end gap-1 text-xs tabular-nums text-muted-foreground">
+                            {v.calc.isFixed ? (
+                              "Set pay"
+                            ) : (
+                              <>
+                                {v.showClock ? <Clock className="h-3 w-3" aria-hidden="true" /> : null}
+                                {fmtHours(v.calc.hoursOk, 2)} h
+                              </>
+                            )}
+                          </span>
+                        </span>
+                        {/* While open, the row's status sits beside its Save button. */}
+                        {open ? null : <RowStatusDot status={v.status} liveWeek={liveWeek} />}
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                            open && "rotate-180",
+                          )}
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      {open ? (
+                        <div id={panelId} className="px-4 pb-4 sm:px-5">
+                          <div className="grid gap-3 sm:grid-cols-[auto_1fr_1fr] sm:items-end">
+                            <PayTypeToggle
+                              className="flex w-full sm:w-auto"
+                              fixed={v.calc.isFixed}
+                              name={v.name}
+                              onChange={(fixed) => setPayType(v, fixed)}
+                            />
+                            <div className="grid grid-cols-2 gap-3 sm:contents">
+                              {v.calc.isFixed ? (
+                                <div className="space-y-1">
+                                  <label htmlFor={`m-fixed-${v.id}`} className="text-xs font-medium text-muted-foreground">
+                                    Set pay this week
+                                  </label>
+                                  <MoneyInput
+                                    id={`m-fixed-${v.id}`}
+                                    value={v.edit.fixed ?? ""}
+                                    onChange={(val) => setRow(v.id, { fixed: val })}
+                                    error={v.calc.errors.fixed}
+                                    errorId={errId("fixed")}
+                                    onKeyDown={saveOnEnter(v)}
+                                    inputClassName="h-10"
+                                  />
+                                  {v.calc.errors.fixed ? (
+                                    <FieldError id={errId("fixed")}>{v.calc.errors.fixed}</FieldError>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <div className="space-y-1">
+                                  <label htmlFor={`m-rate-${v.id}`} className="text-xs font-medium text-muted-foreground">
+                                    Hourly rate
+                                  </label>
+                                  <MoneyInput
+                                    id={`m-rate-${v.id}`}
+                                    value={v.edit.rate}
+                                    onChange={(val) => setRow(v.id, { rate: val })}
+                                    error={v.calc.errors.rate}
+                                    errorId={errId("rate")}
+                                    onKeyDown={saveOnEnter(v)}
+                                    inputClassName="h-10"
+                                  />
+                                  {v.calc.errors.rate ? (
+                                    <FieldError id={errId("rate")}>{v.calc.errors.rate}</FieldError>
+                                  ) : null}
+                                </div>
+                              )}
+                              <div className="space-y-1">
+                                <label htmlFor={`m-hours-${v.id}`} className="text-xs font-medium text-muted-foreground">
+                                  Hours worked
+                                </label>
+                                {v.showClock ? (
+                                  <button
+                                    type="button"
+                                    id={`m-hours-${v.id}`}
+                                    className="flex h-10 w-full items-center justify-between rounded-[0.625rem] border border-input bg-[var(--field)] px-3 text-sm"
+                                    onClick={() => setRow(v.id, { manual: true })}
+                                    aria-label={`${fmtHours(v.calc.hoursOk, 2)} hours from the time clock. Tap to edit.`}
+                                  >
+                                    <span className="chip-good">
+                                      <Clock className="h-3 w-3" /> Clock
+                                    </span>
+                                    <span className="flex items-center gap-1.5 font-medium tabular-nums">
+                                      {fmtHours(v.calc.hoursOk, 2)}
+                                      <Pencil className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <Input
+                                    id={`m-hours-${v.id}`}
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="0.25"
+                                    min="0"
+                                    value={v.edit.hours}
+                                    onChange={(e) => setRow(v.id, { hours: e.target.value, manual: true })}
+                                    onBlur={(e) => {
+                                      const t = tidy2(e.target.value);
+                                      if (t !== e.target.value) setRow(v.id, { hours: t });
+                                    }}
+                                    onKeyDown={saveOnEnter(v)}
+                                    placeholder={v.hasClock ? fmtHours(v.clock!, 2) : "0.00"}
+                                    aria-invalid={v.calc.errors.hours ? true : undefined}
+                                    aria-describedby={v.calc.errors.hours ? errId("hours") : undefined}
+                                    className="h-10 text-right tabular-nums"
+                                  />
+                                )}
+                                {v.calc.errors.hours ? (
+                                  <FieldError id={errId("hours")}>{v.calc.errors.hours}</FieldError>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              {v.scheduled > 0
+                                ? `${fmtHoursLabel(v.scheduled)} scheduled`
+                                : "Not on the schedule"}
+                              {onShowPunches && v.hasClock ? (
+                                <>
+                                  {" · "}
+                                  <button
+                                    type="button"
+                                    className="inline-flex min-h-8 items-center font-medium text-foreground underline underline-offset-2"
+                                    onClick={() => onShowPunches(v.id)}
+                                  >
+                                    See punches
+                                  </button>
+                                </>
+                              ) : null}
+                              {v.clockDiffers && !v.showClock ? (
+                                <>
+                                  {" · "}
+                                  <button
+                                    type="button"
+                                    className="inline-flex min-h-8 items-center"
+                                    onClick={() =>
+                                      setRow(v.id, { hours: v.clock!.toFixed(2), manual: false })
+                                    }
+                                  >
+                                    Clock says {fmtHours(v.clock!, 2)} ·&nbsp;
+                                    <span className="font-medium text-foreground underline underline-offset-2">
+                                      Use clock
+                                    </span>
+                                  </button>
+                                </>
+                              ) : null}
+                            </p>
+                            <StatusCell
+                              status={v.status}
+                              liveWeek={liveWeek}
+                              name={v.name}
+                              onSave={() => void handleSaveOne(v)}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {ready && rows.length > 0 && (
+              <div className="flex items-center gap-3 border-t border-border bg-muted/50 px-4 py-3 text-sm sm:px-5">
+                <span className="flex-1 font-semibold">Total</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
                   {fmtHoursLabel(totals.hours, 2)}
                 </span>
                 <span className="font-semibold tabular-nums">{fmtMoney(totals.gross)}</span>
@@ -1197,17 +1302,17 @@ export default function HoursAndPayTab({
           </div>
 
           {/* ---------- Desktop layout: the grid ---------- */}
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden overflow-x-auto lg:block">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 z-10 bg-card pl-4 sm:pl-5">Employee</TableHead>
-                  <TableHead className="w-[150px]">Pay</TableHead>
-                  <TableHead className="w-[132px] text-right">Hourly rate</TableHead>
-                  <TableHead className="w-[118px] text-right">Scheduled hours</TableHead>
-                  <TableHead className="w-[200px] text-right">Hours worked</TableHead>
-                  <TableHead className="w-[150px] text-right">Gross pay</TableHead>
-                  <TableHead className="w-[168px] pr-4 sm:pr-5 text-right">Status</TableHead>
+                  <TableHead className="w-[146px]">Pay</TableHead>
+                  <TableHead className="w-[126px] text-right">Hourly rate</TableHead>
+                  <TableHead className="w-[96px] text-right">Scheduled</TableHead>
+                  <TableHead className="w-[196px] text-right">Hours worked</TableHead>
+                  <TableHead className="w-[140px] text-right">Gross pay</TableHead>
+                  <TableHead className="w-[164px] pr-4 sm:pr-5 text-right">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1286,9 +1391,21 @@ export default function HoursAndPayTab({
                           <div className="flex flex-col items-end gap-1">
                             {v.showClock ? (
                               <div className="flex h-9 items-center justify-end gap-2">
-                                <span className="chip-good" title="Filled in from time clock punches">
-                                  <Clock className="h-3 w-3" /> Clock
-                                </span>
+                                {onShowPunches ? (
+                                  <button
+                                    type="button"
+                                    className="chip-good transition-opacity hover:opacity-80"
+                                    onClick={() => onShowPunches(v.id)}
+                                    title="Filled in from the time clock. Click to see the punches behind these hours."
+                                    aria-label={`See ${v.name}'s punches for this week`}
+                                  >
+                                    <Clock className="h-3 w-3" /> Clock
+                                  </button>
+                                ) : (
+                                  <span className="chip-good" title="Filled in from time clock punches">
+                                    <Clock className="h-3 w-3" /> Clock
+                                  </span>
+                                )}
                                 <span className="w-14 text-right font-medium tabular-nums">
                                   {fmtHours(v.calc.hoursOk, 2)}
                                 </span>
@@ -1411,11 +1528,11 @@ export default function HoursAndPayTab({
 
       {/* ---------- Commit bar: what will be saved, in plain words ---------- */}
       {ready && barTargets.length > 0 && (
-        <div className="sticky bottom-[calc(5.25rem+env(safe-area-inset-bottom))] md:bottom-4 z-40 px-1">
+        <div className="above-tabbar sticky z-40 px-1">
           <div
             role="region"
             aria-label="Unsaved payroll"
-            className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-2xl border border-border bg-card/95 py-2.5 pl-4 pr-2.5 shadow-[0_8px_30px_-8px_rgb(16_24_40/0.3)] backdrop-blur sm:gap-4 sm:py-3 sm:pr-3"
+            className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-2xl bg-popover/95 py-2.5 pl-4 pr-2.5 shadow-[var(--shadow-pop)] backdrop-blur sm:gap-4 sm:py-3 sm:pr-3"
           >
             <div className="min-w-0">
               <p className="flex items-center gap-2 text-sm font-medium">
