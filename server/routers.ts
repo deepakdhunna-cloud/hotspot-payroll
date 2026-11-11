@@ -1348,6 +1348,13 @@ export const appRouter = router({
             storeLocation: emp.storeLocation,
             role: emp.role,
             payRate: Number(emp.payRate),
+            // Standing set pay (a flat weekly amount), or null when hourly.
+            // Someone on set pay is owed it whether or not they clocked in,
+            // so the dashboard counts them as payable the way Payroll does.
+            weeklyPay:
+              emp.weeklyPay != null && Number(emp.weeklyPay) > 0
+                ? Number(emp.weeklyPay)
+                : null,
             hoursWorked,
             scheduledHours: scheduled,
             clockHours: clocked,

@@ -48,6 +48,7 @@ import { trpc } from "@/lib/trpc";
 import PunchesTab from "./payroll/PunchesTab";
 import HistoryTab from "./payroll/HistoryTab";
 import { PageHeader } from "@/components/PageHeader";
+import { FLAG_EVENT } from "@/lib/queryFlag";
 
 type TabKey = "hours" | "punches" | "history";
 
@@ -169,6 +170,32 @@ export default function WeeklyPayroll() {
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // In-app navigation that changes only the query string — the "+" quick
+  // actions or the command bar while Payroll is already open — is the same
+  // route, so nothing above re-runs. Those navigations announce themselves
+  // (see lib/queryFlag); re-read the tab so "Fix a punch" really opens
+  // Punches, and so its ?add=1 has a mounted tab to open the form.
+  const weekRef = useRef(weekStart);
+  weekRef.current = weekStart;
+  useEffect(() => {
+    const onNavigate = () => {
+      setTab(readTabFromQuery());
+      setPunchWho(null);
+      const w = readWeekParam();
+      if (w) {
+        requestWeekRef.current(w);
+        return;
+      }
+      // The new address dropped the week: stay on the one on screen and put
+      // it back in the URL, so refresh and Back still match the page.
+      const url = new URL(window.location.href);
+      url.searchParams.set("week", toDateInput(weekRef.current));
+      window.history.replaceState(window.history.state, "", url.toString());
+    };
+    window.addEventListener(FLAG_EVENT, onNavigate);
+    return () => window.removeEventListener(FLAG_EVENT, onNavigate);
   }, []);
 
   const switchTab = (next: TabKey) => {

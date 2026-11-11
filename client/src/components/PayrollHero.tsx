@@ -2,8 +2,9 @@
  * The dashboard's headline: the pay week that just closed, and the one thing
  * left to do about it.
  *
- *  - Hours are in but not saved  → an inked card with the hours to pay, how
- *    many people are saved, and one button: review and save.
+ *  - Hours are in but not saved  → the page's one highlighted card, with the
+ *    hours to pay, how many people are saved, and one button: review and
+ *    save. (White with a warm brand glow in light mode, inked in dark.)
  *  - Everyone is saved           → one quiet green line with Export.
  *  - Nobody worked that week     → nothing at all.
  *
@@ -38,11 +39,16 @@ export function PayrollHero({ store }: { store?: string }) {
   if (!data) return null;
 
   const employees = data.employees;
+  type Emp = (typeof employees)[number];
   // One definition of "saved" everywhere: hours or pay on the saved entry.
-  const isSaved = (e: (typeof employees)[number]) => e.hoursWorked > 0 || e.grossPay > 0;
+  const isSaved = (e: Emp) => e.hoursWorked > 0 || e.grossPay > 0;
+  // Owed something that week: clocked time, or a standing weekly amount
+  // (set pay is owed whether or not they clocked in — Payroll lists them
+  // as "Not saved" too).
+  const needsPay = (e: Emp) => e.clockHours > 0.25 || (e.weeklyPay ?? 0) > 0;
   const saved = employees.filter(isSaved).length;
-  const unsaved = employees.filter((e) => e.clockHours > 0.25 && !isSaved(e)).length;
-  const payable = employees.filter((e) => isSaved(e) || e.clockHours > 0.25).length;
+  const unsaved = employees.filter((e) => needsPay(e) && !isSaved(e)).length;
+  const payable = employees.filter((e) => isSaved(e) || needsPay(e)).length;
   if (payable === 0) return null;
 
   const range = fmtWeekRange(weekStart);
@@ -74,14 +80,14 @@ export function PayrollHero({ store }: { store?: string }) {
   const pct = Math.round((saved / payable) * 100);
   return (
     <section
-      className="ink hero-card rise-in px-5 py-5 sm:px-6 sm:py-6"
+      className="hero-card rise-in px-5 py-5 sm:px-6 sm:py-6"
       aria-labelledby="payroll-hero-title"
     >
       <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
         <div className="min-w-0">
           <h2
             id="payroll-hero-title"
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium text-white/70"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-medium text-muted-foreground"
           >
             Payroll to run
             <span aria-hidden="true">·</span>
@@ -89,22 +95,22 @@ export function PayrollHero({ store }: { store?: string }) {
           </h2>
           <p className="hero-value mt-2.5">
             {fmtHours(data.totals.totalHours)}
-            <span className="ml-1.5 text-[0.42em] font-medium tracking-normal text-white/60">
+            <span className="ml-1.5 text-[0.42em] font-medium tracking-normal text-muted-foreground">
               hours
             </span>
           </p>
-          <p className="mt-2 text-sm text-white/70">
-            Worked by {people(payable)}, straight from the time clock
+          <p className="mt-2 text-sm text-muted-foreground">
+            On the time clock · {people(payable)} to pay
           </p>
         </div>
 
         <div className="flex w-full shrink-0 flex-col gap-3 sm:w-72">
           <div>
             <div className="mb-1.5 flex items-baseline justify-between text-xs">
-              <span className="font-medium text-white/90">
+              <span className="font-medium">
                 {saved} of {payable} saved
               </span>
-              <span className="text-white/60">{unsaved} to review</span>
+              <span className="text-muted-foreground">{unsaved} to review</span>
             </div>
             <div
               className="hero-meter"
