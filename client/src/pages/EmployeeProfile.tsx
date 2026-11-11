@@ -465,8 +465,8 @@ function PunchHistoryCard({
                 <TableHead>Clock in</TableHead>
                 <TableHead>Clock out</TableHead>
                 <TableHead className="text-right">Duration</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Note</TableHead>
+                <TableHead className="hidden sm:table-cell">Source</TableHead>
+                <TableHead className="hidden sm:table-cell">Note</TableHead>
                 <TableHead className="w-[110px] text-right">
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -508,7 +508,7 @@ function PunchHistoryCard({
                   <TableCell className="text-right tabular-nums">
                     {fmtDuration(p.durationHours)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden sm:table-cell">
                     {p.source === "manual" ? (
                       <span className="chip-warn">
                         <Pencil className="h-3 w-3" /> Manual
@@ -519,7 +519,7 @@ function PunchHistoryCard({
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground max-w-[260px] truncate">
+                  <TableCell className="hidden sm:table-cell text-xs text-muted-foreground max-w-[260px] truncate">
                     {p.note ?? "—"}
                   </TableCell>
                   <TableCell className="text-right">
@@ -527,7 +527,7 @@ function PunchHistoryCard({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-7 w-7 text-muted-foreground"
+                        className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground"
                         onClick={() => setFixTimeFor(asQuickPunch(p))}
                         aria-label="Fix this punch's times"
                         title="Fix times"
@@ -733,7 +733,7 @@ function EditEmployeeDialog({
           <div className="grid gap-2">
             <Label>Role</Label>
             <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -767,7 +767,7 @@ function EditEmployeeDialog({
         <div className="grid gap-2">
           <Label>Store</Label>
           <Select value={storeLocation} onValueChange={setStoreLocation}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

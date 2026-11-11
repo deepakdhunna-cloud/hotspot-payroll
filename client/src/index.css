@@ -180,9 +180,16 @@
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    /* The canvas behind the page is ink, so an iOS rubber-band past the top
+       bar or the bottom tabs shows chrome color, never a white gap. */
+    background-color: var(--ink);
   }
   body {
     @apply bg-background text-foreground;
+    min-height: 100svh;
     font-family: var(--font-sans);
     /* Layered canvas: warm light from the top, a cool settle at the base,
        and a whisper of brand red in the upper-right — depth without noise. */
@@ -264,6 +271,102 @@
   }
   .dark tbody tr {
     border-color: oklch(1 0 0 / 0.06);
+  }
+
+  /* ---------- Home-screen app chrome ----------
+     Safe areas: with viewport-fit=cover the page runs under the notch and
+     the home indicator, so the chrome pads itself by the device insets.   */
+  :root {
+    --tabbar-h: 3.75rem;
+    --app-header-h: calc(env(safe-area-inset-top) + 3.5rem + 2.5px);
+  }
+  .app-header {
+    padding-top: env(safe-area-inset-top);
+  }
+  .app-gutter {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  @media (min-width: 768px) {
+    .app-gutter {
+      padding-left: max(1.5rem, env(safe-area-inset-left));
+      padding-right: max(1.5rem, env(safe-area-inset-right));
+    }
+  }
+  .app-main {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Room for the fixed tab bar on phones. */
+  .app-main-with-tabs {
+    padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.5rem);
+  }
+  @media (min-width: 768px) {
+    .app-main-with-tabs {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+  .app-tabbar {
+    padding-bottom: env(safe-area-inset-bottom);
+    background: oklch(0.165 0.012 20 / 0.94);
+    -webkit-backdrop-filter: saturate(160%) blur(16px);
+    backdrop-filter: saturate(160%) blur(16px);
+  }
+  .tabbar-link {
+    @apply relative flex flex-1 min-w-0 flex-col items-center justify-center gap-1 text-[10.5px] font-medium leading-none text-white/55 transition-colors;
+    height: var(--tabbar-h);
+  }
+  .tabbar-link > span {
+    @apply max-w-full truncate px-0.5;
+  }
+  .tabbar-link[data-active="true"] {
+    @apply text-white font-semibold;
+  }
+  .tabbar-link[data-active="true"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2rem;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 0 0 999px 999px;
+    background: var(--brand-red-bright);
+  }
+  .tabbar-link:focus-visible {
+    outline: 2px solid var(--brand-red-bright);
+    outline-offset: -4px;
+    border-radius: 10px;
+  }
+  /* Sideways-scrolling rows (tab lists) without a visible scrollbar. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Chrome is controls, not content: no text-selection or link callouts
+     when a thumb rests on it. */
+  .app-chrome {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Launched from the home screen: no rubber-band bounce on the page. */
+  @media (display-mode: standalone) {
+    html,
+    body {
+      overscroll-behavior-y: none;
+    }
+  }
+
+  /* Phones: form fields at 16px so iOS never zooms the page on focus. */
+  @media (max-width: 767.98px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 
   /* Keyboard focus is always visible — including the ink top bar. */
@@ -449,6 +552,43 @@
     @apply text-[12.5px] font-semibold uppercase tracking-[0.13em];
     font-family: var(--font-display);
     color: var(--brand-red);
+  }
+
+  /* Phones: numbers scale down to fit two per row; an odd count lets the
+     headline cell take the whole first row. Chips may wrap. */
+  @media (max-width: 639.98px) {
+    .kpi-cell {
+      padding: 1rem;
+    }
+    .kpi-value {
+      font-size: 1.75rem;
+    }
+    .kpi-cell-hero .kpi-value {
+      font-size: 2.25rem;
+    }
+    .kpi-label {
+      font-size: 11.5px;
+      letter-spacing: 0.1em;
+    }
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) {
+      grid-column: 1 / -1;
+    }
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) ~ .kpi-cell:nth-child(even) {
+      border-left-width: 0;
+    }
+    .kpi-band > .kpi-cell-hero:first-child:nth-last-child(odd) ~ .kpi-cell:nth-child(odd) {
+      border-left-width: 1px;
+    }
+    .kpi-cell .chip-good,
+    .kpi-cell .chip-warn,
+    .kpi-cell .chip-bad,
+    .kpi-cell .chip-neutral {
+      white-space: normal;
+      max-width: 100%;
+    }
+    .page-title {
+      font-size: 2rem;
+    }
   }
 
   /* ---------- Status chips: state is icon + label, never color alone ---------- */

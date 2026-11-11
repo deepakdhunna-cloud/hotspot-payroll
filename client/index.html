@@ -5,15 +5,38 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0" />
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Hotspot Market · Payroll</title>
     <meta name="description" content="Payroll, schedules and time clock for the Hotspot Market stores." />
-    <meta name="theme-color" content="#b91c1c" />
+    <!-- Matches the ink top bar, so the phone's status bar blends into the app. -->
+    <meta name="theme-color" content="#1a1111" />
     <!-- Internal operations tool: keep it out of search engines. -->
     <meta name="robots" content="noindex, nofollow" />
     <meta property="og:title" content="Hotspot Market · Payroll" />
     <meta property="og:description" content="Payroll, schedules and time clock for the Hotspot Market stores." />
     <meta property="og:type" content="website" />
+
+    <!-- Home-screen app (iOS "Add to Home Screen", Android "Install app").
+         The kiosk pages swap in their own manifest + icon below, so a store
+         tablet installs a separate "Time Clock" app that opens on the clock. -->
+    <link id="app-manifest" rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta id="app-title" name="apple-mobile-web-app-title" content="Hotspot" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <link id="app-touch-icon" rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <script>
+      (function () {
+        var p = location.pathname;
+        if (p === "/clock" || p.indexOf("/clock/") === 0) {
+          document.getElementById("app-manifest").href = "/manifest-clock.webmanifest";
+          document.getElementById("app-title").content = "Time Clock";
+          document.getElementById("app-touch-icon").href = "/icons/clock-apple-touch-icon.png";
+        }
+      })();
+    </script>
+
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23b91c1c'/%3E%3Ctext x='50' y='68' font-size='52' font-family='Arial,sans-serif' font-weight='bold' fill='white' text-anchor='middle'%3EH%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,10 +47,6 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
   </body>
 
 </html>

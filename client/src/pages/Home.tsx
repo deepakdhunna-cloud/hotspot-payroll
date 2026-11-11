@@ -353,41 +353,41 @@ export default function Home() {
                       const hrs = (Date.now() - new Date(c.clockInAt).getTime()) / 3_600_000;
                       const long = hrs > 12;
                       return (
-                        <li key={c.punchId} className="flex items-center justify-between py-2.5">
-                          <div className="min-w-0 flex items-center gap-2.5">
-                            <InitialsBadge name={c.fullName} size="sm" />
-                            <span className="min-w-0">
-                              <Link
-                                href={`/employees/${c.employeeId}`}
-                                className="text-sm font-medium hover:text-primary transition-colors"
-                              >
-                                {c.fullName}
-                              </Link>
-                              <span className="ml-2 text-xs text-muted-foreground">
+                        <li key={c.punchId} className="flex items-center gap-2.5 py-2.5">
+                          <InitialsBadge name={c.fullName} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <Link
+                              href={`/employees/${c.employeeId}`}
+                              className="block truncate text-sm font-medium hover:text-primary transition-colors"
+                            >
+                              {c.fullName}
+                            </Link>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                              <span className="truncate">
                                 {c.role}
                                 {stores.length > 1
                                   ? ` · ${STORE_ABBR[c.storeLocation] ?? c.storeLocation}`
                                   : ""}
                               </span>
-                            </span>
+                              <span
+                                className={`tabular-nums whitespace-nowrap ${
+                                  long ? "chip-warn" : ""
+                                }`}
+                              >
+                                {long ? <AlertTriangle className="h-3 w-3" /> : <span aria-hidden="true">· </span>}
+                                {fmtDuration(hrs)} since{" "}
+                                {new Date(c.clockInAt).toLocaleTimeString("en-US", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
                           </div>
-                          <span className="flex shrink-0 items-center gap-1.5">
-                            <span
-                              className={`text-xs tabular-nums ${
-                                long ? "chip-warn" : "text-muted-foreground"
-                              }`}
-                            >
-                              {long ? <AlertTriangle className="h-3 w-3" /> : null}
-                              {fmtDuration(hrs)} · since{" "}
-                              {new Date(c.clockInAt).toLocaleTimeString("en-US", {
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </span>
+                          <span className="flex shrink-0 items-center gap-1">
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="h-7 w-7 text-muted-foreground"
+                              className="h-9 w-9 sm:h-7 sm:w-7 text-muted-foreground"
                               onClick={() => setFixTimeFor(asQuickPunch(c))}
                               aria-label={`Fix ${c.fullName}'s clock-in time`}
                               title="Fix clock-in time"
@@ -397,7 +397,7 @@ export default function Home() {
                             <Button
                               size="sm"
                               variant={long ? "default" : "outline"}
-                              className={`h-7 px-2.5 text-xs ${long ? "" : "bg-card"}`}
+                              className={`h-9 sm:h-7 px-2.5 text-xs ${long ? "" : "bg-card"}`}
                               onClick={() => setClockOutFor(asQuickPunch(c))}
                               title={
                                 long
@@ -548,8 +548,11 @@ export default function Home() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Employee</TableHead>
-                  <TableHead className="w-[38%]">Hours vs schedule</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
+                  <TableHead className="sm:w-[38%]">
+                    <span className="sm:hidden">Hours</span>
+                    <span className="hidden sm:inline">Hours vs schedule</span>
+                  </TableHead>
+                  <TableHead className="hidden sm:table-cell text-right">Status</TableHead>
                   <TableHead className="text-right">
                     {isLiveWeek ? "Labor cost" : "Saved gross"}
                   </TableHead>
@@ -580,6 +583,24 @@ export default function Home() {
                         emp.scheduledHours > 0
                           ? Math.min(1.25, emp.clockHours / emp.scheduledHours)
                           : 0;
+                      const status = onClockNow ? (
+                        <span className="chip-good">
+                          <Clock className="h-3 w-3" /> on the clock
+                        </span>
+                      ) : emp.overClocked ? (
+                        <span className="chip-warn">
+                          <AlertTriangle className="h-3 w-3" />+
+                          {emp.overClockedBy.toFixed(1)}h over
+                        </span>
+                      ) : !isLiveWeek && emp.clockHours > 0.25 && emp.hoursWorked === 0 ? (
+                        <span className="chip-warn">
+                          <AlertTriangle className="h-3 w-3" /> not saved
+                        </span>
+                      ) : !isLiveWeek && emp.hoursWorked > 0 ? (
+                        <span className="chip-good">
+                          <CheckCircle2 className="h-3 w-3" /> saved
+                        </span>
+                      ) : null;
                       return (
                         <TableRow key={emp.id}>
                           <TableCell>
@@ -598,12 +619,13 @@ export default function Home() {
                                     ? ` · ${STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}`
                                     : ""}
                                 </div>
+                                {status ? <div className="mt-1 sm:hidden">{status}</div> : null}
                               </div>
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-3">
-                              <div className="h-2.5 flex-1 max-w-56 rounded-full bg-muted shadow-inner overflow-hidden">
+                              <div className="hidden sm:block h-2.5 flex-1 max-w-56 rounded-full bg-muted shadow-inner overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all"
                                   style={{
@@ -622,27 +644,8 @@ export default function Home() {
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
-                            {onClockNow ? (
-                              <span className="chip-good">
-                                <Clock className="h-3 w-3" /> on the clock
-                              </span>
-                            ) : emp.overClocked ? (
-                              <span className="chip-warn">
-                                <AlertTriangle className="h-3 w-3" />+
-                                {emp.overClockedBy.toFixed(1)}h over
-                              </span>
-                            ) : !isLiveWeek && emp.clockHours > 0.25 && emp.hoursWorked === 0 ? (
-                              <span className="chip-warn">
-                                <AlertTriangle className="h-3 w-3" /> not saved
-                              </span>
-                            ) : !isLiveWeek && emp.hoursWorked > 0 ? (
-                              <span className="chip-good">
-                                <CheckCircle2 className="h-3 w-3" /> saved
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
+                          <TableCell className="hidden sm:table-cell text-right">
+                            {status ?? <span className="text-xs text-muted-foreground">—</span>}
                           </TableCell>
                           <TableCell className="text-right font-semibold">
                             {isLiveWeek ? (

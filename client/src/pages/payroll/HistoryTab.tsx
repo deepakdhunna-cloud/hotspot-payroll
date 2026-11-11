@@ -161,7 +161,7 @@ export default function HistoryTab({
   return (
     <div className="space-y-6">
       <Card className="surface-card border-0">
-        <CardContent className="p-4 flex flex-col md:flex-row md:items-end md:flex-wrap gap-3">
+        <CardContent className="p-4 grid grid-cols-2 gap-3 md:flex md:flex-row md:items-end md:flex-wrap">
           <div className="grid gap-1.5">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
               From pay week
@@ -173,7 +173,7 @@ export default function HistoryTab({
                 if (!e.target.value) return;
                 changeStart(startOfPayWeek(fromDateInput(e.target.value)));
               }}
-              className="w-44"
+              className="w-full md:w-44"
             />
           </div>
           <div className="grid gap-1.5">
@@ -187,30 +187,31 @@ export default function HistoryTab({
                 if (!e.target.value) return;
                 changeEnd(startOfPayWeek(fromDateInput(e.target.value)));
               }}
-              className="w-44"
+              className="w-full md:w-44"
             />
           </div>
-          <div className="grid gap-1.5">
+          <div className="grid gap-1.5 col-span-2">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
               Quick range
             </Label>
-            <div className="flex gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5 md:flex">
               {[4, 8, 13].map((w) => (
                 <Button
                   key={w}
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-9"
+                  className="h-9 px-2 md:px-3"
                   onClick={() => applyPreset(w)}
                   title={`Last ${w} closed pay weeks`}
                 >
-                  Last {w} weeks
+                  <span className="md:hidden">{w} weeks</span>
+                  <span className="hidden md:inline">Last {w} weeks</span>
                 </Button>
               ))}
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="col-span-2 md:ml-auto flex items-center justify-between md:justify-start gap-2">
             <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
               <CalendarRange className="h-3 w-3" />
               {weekCount} pay week{weekCount === 1 ? "" : "s"}

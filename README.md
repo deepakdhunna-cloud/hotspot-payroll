@@ -25,6 +25,16 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
   `audit_log` (deletes keep a JSON snapshot), employee deletion is
   transactional, and schedule uploads are kept as import records.
 
+- **Phone app** — add the site to a phone's home screen and it runs
+  full-screen like an app: bottom tab bar, notch/home-indicator safe areas,
+  pull down to refresh, and a branded offline screen. Account menu →
+  **Add to Home Screen** (iPhone shows the Share steps; Android installs in
+  one tap). The kiosk installs as its own **Time Clock** app that opens
+  straight on the clock. Implementation: `client/public/manifest*.webmanifest`,
+  `client/public/sw.js` (caches only hashed bundles + brand assets — never
+  pages or `/api` data), `client/src/lib/installApp.ts`,
+  `client/src/components/PullToRefresh.tsx`.
+
 Store isolation is enforced server-side on every procedure: a store PIN can
 only ever read or write its own store's data; the CEO PIN sees everything.
 

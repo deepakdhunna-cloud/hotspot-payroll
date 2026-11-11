@@ -192,8 +192,8 @@ export default function ClockKiosk() {
 
   if (!store) {
     return (
-      <div className="ink-panel min-h-screen">
-        <div className="container max-w-5xl pt-12 pb-16">
+      <div className="ink-panel min-h-svh">
+        <div className="container max-w-5xl pt-[calc(env(safe-area-inset-top)+3rem)] pb-[calc(env(safe-area-inset-bottom)+4rem)]">
           <div className="flex flex-col items-center text-center">
             <BrandMark size="lg" tone="ink" />
             <div className="mt-8 eyebrow flex items-center gap-2">
@@ -247,9 +247,9 @@ export default function ClockKiosk() {
       : "kiosk-flash-error";
 
   return (
-    <div className="ink-panel relative min-h-screen overflow-hidden">
+    <div className="ink-panel relative min-h-svh overflow-hidden pb-[env(safe-area-inset-bottom)]">
       {/* Header */}
-      <div className="container max-w-3xl pt-8">
+      <div className="container max-w-3xl pt-[calc(env(safe-area-inset-top)+2rem)]">
         <div className="flex items-center justify-between">
           <BrandMark size="md" className="items-start" tone="ink" />
           <LiveClock />

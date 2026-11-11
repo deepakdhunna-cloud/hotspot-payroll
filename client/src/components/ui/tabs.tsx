@@ -24,7 +24,9 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]",
+        // max-w-full + overflow: on a phone a long tab row scrolls sideways
+        // instead of pushing the whole page wider than the screen.
+        "bg-muted text-muted-foreground inline-flex h-9 w-fit max-w-full overflow-x-auto no-scrollbar items-center justify-start rounded-lg p-[3px]",
         className
       )}
       {...props}

@@ -994,7 +994,7 @@ export default function HoursAndPayTab({
 
       {/* ---------- Commit bar: appears only when there's unsaved work ---------- */}
       {dirtyIds.length > 0 && (
-        <div className="sticky bottom-4 z-20 px-2">
+        <div className="sticky bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+0.75rem)] md:bottom-4 z-20 px-2">
           <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-card/95 px-4 py-3 shadow-[0_8px_30px_-8px_rgb(16_24_40/0.3)] backdrop-blur">
             <span className="flex items-center gap-2 text-sm font-medium">
               <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />

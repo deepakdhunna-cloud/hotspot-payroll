@@ -5,7 +5,8 @@ export function DashboardLayoutSkeleton() {
   return (
     <div className="min-h-svh flex flex-col bg-background">
       {/* Top bar skeleton */}
-      <div className="ink-panel h-14 flex items-center gap-4 px-4 lg:px-6">
+      <div className="app-header ink-panel">
+      <div className="app-gutter h-14 flex items-center gap-4">
         <Skeleton className="h-7 w-32 rounded-md bg-white/10" />
         <div className="hidden md:flex items-center gap-4 ml-4">
           <Skeleton className="h-4 w-20 rounded bg-white/10" />
@@ -14,9 +15,10 @@ export function DashboardLayoutSkeleton() {
         </div>
         <Skeleton className="h-8 w-8 rounded-full bg-white/10 ml-auto" />
       </div>
+      </div>
 
       {/* Content skeleton */}
-      <div className="mx-auto w-full max-w-[1180px] px-4 md:px-6 py-8 space-y-6">
+      <div className="app-gutter mx-auto w-full max-w-[1180px] py-8 space-y-6">
         <div className="space-y-2">
           <Skeleton className="h-3 w-24 rounded" />
           <Skeleton className="h-9 w-64 rounded-lg" />

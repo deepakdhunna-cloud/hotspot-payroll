@@ -402,7 +402,7 @@ export default function CeoView() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
+                      <TableHead className="sticky left-0 z-10 bg-card">Employee</TableHead>
                       <TableHead>Store</TableHead>
                       <TableHead className="text-right">Clocked</TableHead>
                       <TableHead className="text-right">Saved hrs</TableHead>
@@ -440,9 +440,12 @@ export default function CeoView() {
                         )
                         .map((r) => (
                           <TableRow key={r.id}>
-                            <TableCell>
+                            {/* Pinned while the money columns scroll sideways on phones. */}
+                            <TableCell className="sticky left-0 z-10 bg-card shadow-[1px_0_0_var(--border)] sm:shadow-none">
                               <div className="flex items-center gap-2.5">
-                                <InitialsBadge name={r.fullName} size="sm" />
+                                <span className="hidden sm:inline-flex">
+                                  <InitialsBadge name={r.fullName} size="sm" />
+                                </span>
                                 <div className="min-w-0">
                                   <span className="font-medium">{r.fullName}</span>
                                   <div className="text-xs text-muted-foreground">{r.role}</div>

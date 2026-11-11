@@ -150,7 +150,41 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+/**
+ * Umami analytics, injected only when both env vars are set. (A literal
+ * `%VITE_ANALYTICS_ENDPOINT%` placeholder used to ship when they weren't,
+ * costing every page load a failed request and a console error.)
+ */
+function analyticsPlugin(): Plugin {
+  let env: Record<string, unknown> = {};
+  return {
+    name: "hotspot-analytics",
+    configResolved(config) {
+      env = config.env;
+    },
+    transformIndexHtml() {
+      const endpoint = String(env.VITE_ANALYTICS_ENDPOINT ?? "").replace(/\/+$/, "");
+      const websiteId = String(env.VITE_ANALYTICS_WEBSITE_ID ?? "");
+      if (!endpoint || !websiteId) return [];
+      return [
+        {
+          tag: "script",
+          attrs: { defer: true, src: `${endpoint}/umami`, "data-website-id": websiteId },
+          injectTo: "body",
+        },
+      ];
+    },
+  };
+}
+
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+  analyticsPlugin(),
+];
 
 export default defineConfig({
   plugins,

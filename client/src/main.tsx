@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import "./index.css";
+// Registers the install-prompt listener before the browser can fire it.
+import "./lib/installApp";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +36,18 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+// Home-screen app support: the service worker caches the hashed bundles for
+// instant launches and shows a branded offline screen when there's no
+// signal. It never caches pages or API data (see client/public/sw.js).
+// Production only — in dev it would fight Vite's hot reload.
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .catch((err) => console.warn("[sw] registration failed", err));
+  });
+}
 
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>

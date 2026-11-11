@@ -30,7 +30,17 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { fmtMoney, STORE_ABBR } from "@/lib/format";
-import { KeyRound, Phone, Plus, Search, Users, ArrowRight, Trash2, X } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronRight,
+  KeyRound,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -153,7 +163,7 @@ export default function Employees() {
         eyebrow="Roster"
         icon={<Users className="h-5 w-5" />}
         title="Employees"
-        description="Profiles, pay rates, and store assignments. Click a row to open the full profile."
+        description="Profiles, pay rates, and store assignments. Open anyone to see their full profile."
         actions={
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
@@ -173,7 +183,7 @@ export default function Employees() {
       <Card className="surface-card border-0 rise-in">
         <CardHeader className="pb-4">
           <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-            <div className="relative flex-1 max-w-md">
+            <div className="relative flex-1 md:max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by name or phone..."
@@ -182,9 +192,9 @@ export default function Employees() {
                 className="pl-9"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
               <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="h-9 w-[180px] bg-card shadow-sm">
+                <SelectTrigger className="h-10 md:h-9 w-full md:w-[180px] bg-card shadow-sm">
                   <SelectValue placeholder="All roles" />
                 </SelectTrigger>
                 <SelectContent>
@@ -200,7 +210,7 @@ export default function Employees() {
           </div>
         </CardHeader>
         {selected.size > 0 && (
-          <div className="mx-6 mb-4 rounded-xl border border-primary/30 bg-primary/5 shadow-sm px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="mx-4 md:mx-6 mb-4 rounded-xl border border-primary/30 bg-primary/5 shadow-sm px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex items-center gap-2 text-sm">
               <Badge className="bg-primary text-primary-foreground">{selected.size}</Badge>
               <span className="font-medium">selected</span>
@@ -215,7 +225,7 @@ export default function Employees() {
             </div>
             <div className="flex flex-wrap items-center gap-2 md:ml-auto">
               <Select value={bulkStore} onValueChange={setBulkStore}>
-                <SelectTrigger className="w-[200px] h-9 bg-background">
+                <SelectTrigger className="w-full sm:w-[200px] h-9 bg-background">
                   <SelectValue placeholder="Move to store…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -227,7 +237,7 @@ export default function Employees() {
                 </SelectContent>
               </Select>
               <Select value={bulkRole} onValueChange={setBulkRole}>
-                <SelectTrigger className="w-[180px] h-9 bg-background">
+                <SelectTrigger className="w-full sm:w-[180px] h-9 bg-background">
                   <SelectValue placeholder="Change role…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -268,7 +278,57 @@ export default function Employees() {
           </div>
         )}
         <CardContent className="px-0">
-          <div className="overflow-x-auto">
+          {/* Phones: a tappable list — name, role, store and rate at a glance. */}
+          <ul className="md:hidden divide-y divide-border border-t border-border">
+            {listQ.isLoading ? (
+              <li className="px-4 py-10 text-center text-sm text-muted-foreground">Loading…</li>
+            ) : filtered.length === 0 ? (
+              <li className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No employees match your filters.
+              </li>
+            ) : (
+              filtered.map((emp) => (
+                <li
+                  key={emp.id}
+                  className="flex items-center gap-1 data-[selected=true]:bg-primary/5"
+                  data-selected={selected.has(emp.id)}
+                >
+                  <label className="flex h-14 w-12 shrink-0 items-center justify-center">
+                    <Checkbox
+                      checked={selected.has(emp.id)}
+                      onCheckedChange={() => toggleOne(emp.id)}
+                      aria-label={`Select ${emp.fullName}`}
+                    />
+                  </label>
+                  <Link
+                    href={`/employees/${emp.id}`}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pr-4 active:bg-accent/60"
+                  >
+                    <InitialsBadge name={emp.fullName} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{emp.fullName}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="truncate">
+                          {emp.role} · {STORE_ABBR[emp.storeLocation] ?? emp.storeLocation}
+                        </span>
+                        {!emp.clockCodeHash ? (
+                          <span className="chip-neutral shrink-0 !px-1.5 !py-0 text-[10px]">
+                            <KeyRound className="h-2.5 w-2.5" /> no code
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-right text-sm font-medium tabular-nums">
+                      {fmtMoney(Number(emp.payRate))}
+                      <span className="text-xs font-normal text-muted-foreground">/hr</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                  </Link>
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -463,7 +523,7 @@ function AddEmployeeDialog({
           <div className="grid gap-2">
             <Label>Role</Label>
             <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Pick role" />
               </SelectTrigger>
               <SelectContent>
@@ -479,7 +539,7 @@ function AddEmployeeDialog({
         <div className="grid gap-2">
           <Label>Store</Label>
           <Select value={storeLocation} onValueChange={setStoreLocation}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Pick store" />
             </SelectTrigger>
             <SelectContent>

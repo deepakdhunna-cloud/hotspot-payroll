@@ -476,7 +476,10 @@ export default function ScheduleImport() {
                       <Upload className="h-6 w-6 text-primary" />
                     </div>
                     <div>
-                      <p className="font-medium">Drop your Homebase schedule here</p>
+                      <p className="font-medium">
+                        <span className="md:hidden">Tap to add your Homebase schedule</span>
+                        <span className="hidden md:inline">Drop your Homebase schedule here</span>
+                      </p>
                       <p className="text-sm text-muted-foreground mt-1">
                         PDF · photo (even handwritten) · spreadsheet (.xlsx/.csv) &nbsp;·&nbsp; up to 8MB &nbsp;·&nbsp; week of{" "}
                         {fmtWeekRange(weekStart)}
@@ -1189,7 +1192,9 @@ function WeekScheduleBoard({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[160px]">Employee</TableHead>
+                  <TableHead className="sticky left-0 z-10 bg-card min-w-[124px] sm:min-w-[160px]">
+                    Employee
+                  </TableHead>
                   {days.map((d) => {
                     const isToday = toDateInput(d) === todayKey;
                     return (
@@ -1220,10 +1225,13 @@ function WeekScheduleBoard({
                   .sort((a, b) => a[1].name.localeCompare(b[1].name))
                   .map(([empId, rec]) => (
                     <TableRow key={empId} className="group">
-                      <TableCell>
+                      {/* Pinned while the week scrolls sideways on phones. */}
+                      <TableCell className="sticky left-0 z-10 bg-card shadow-[1px_0_0_var(--border)] sm:shadow-none">
                         <div className="flex items-center gap-2.5">
-                          <InitialsBadge name={rec.name} size="sm" />
-                          <span className="font-medium">{rec.name}</span>
+                          <span className="hidden sm:inline-flex">
+                            <InitialsBadge name={rec.name} size="sm" />
+                          </span>
+                          <span className="font-medium whitespace-normal leading-tight">{rec.name}</span>
                         </div>
                       </TableCell>
                       {days.map((d) => {

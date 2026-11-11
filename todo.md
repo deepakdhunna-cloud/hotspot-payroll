@@ -189,3 +189,14 @@
 - [x] Verified end to end on MariaDB 10.11 with the production build: export → schema.sql + data.sql into an empty DB → all 11 tables row-for-row identical (also through a latin1-default client); data.sql re-run idempotent; COPY_FROM_DATABASE_URL copy of all 11 tables identical; feed gzip/keys/no hashes; CEO UI download + activity log in Chromium
 - [x] Large histories never freeze the site: formatting runs in 2,000-row slices and the ZIP streams 1 MB deflate slices, yielding between each (40k punches: longest event-loop pause 91 ms vs 1.4 s in one pass)
 - [x] Tests: 14 new (contents, credentials gate, exact values, SQL/CSV escaping, sliced JSON = JSON.stringify, manifest, responsiveness, route 401/403/200) — 173/173 passing; tsc + build clean
+
+## v14 — Phone app (Add to Home Screen)
+- [x] Installable: web app manifest (standalone, ink theme, icons 192/512/maskable + apple-touch-icon from the brand logo, Payroll/Punches/Employees shortcuts); iOS meta (capable, black-translucent status bar, title); viewport-fit=cover
+- [x] Kiosk pages swap in their own manifest + "TIME CLOCK" icon, so a store tablet installs a separate Time Clock app that opens on the clock
+- [x] Service worker: network-first pages with a branded offline screen (auto-returns when the connection does), cache-first hashed bundles, stale-while-revalidate logo/icons/fonts; never touches /api, /portal or other origins
+- [x] Server: sw.js + manifests always revalidate; a missing /assets bundle is a 404 instead of index.html (tests: serveStatic.test.ts)
+- [x] App chrome on phones: bottom tab bar (Dashboard, Employees, Payroll, Schedule, CEO; CFO in the account menu), safe-area padding for notch + home indicator, ink overscroll, no bounce when installed, 16px fields so iOS never zooms, toasts + the unsaved-changes bar sit above the tabs
+- [x] Pull-to-refresh when launched from the home screen (refetches on-screen data, no reload); account menu → Add to Home Screen / Install app with iPhone steps
+- [x] Phone layouts: week picker on one row, KPI numbers fit, attention center stacks actions + previews 3 items, dashboard clock-in rows and employee table fit, Employees + Punches as tappable lists, pinned name column on schedule grid + CEO payroll, tab rows scroll instead of widening the page, full-width form selects, dialogs scroll within the screen
+- [x] Analytics script only injected when VITE_ANALYTICS_* are set (no more failed `%VITE_ANALYTICS_ENDPOINT%` request on every load)
+- [x] Verified: tsc clean, 178/178 tests, production build; Chromium installability check passes with no errors; service worker active, no API responses cached; offline screen + recovery; every page at 390px with no sideways overflow; desktop unchanged

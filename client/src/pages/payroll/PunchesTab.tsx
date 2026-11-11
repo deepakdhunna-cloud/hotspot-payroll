@@ -60,6 +60,15 @@ import { toast } from "sonner";
 // Punch times are intentionally LOCAL time (the kiosk records wall-clock
 // time), so the datetime-local helpers below stay local — do not use the
 // UTC-based payweek helpers for these.
+/** Same calendar day in the viewer's time zone (for compact punch rows). */
+function sameLocalDay(a: Date | string, b: Date | string): boolean {
+  return new Date(a).toDateString() === new Date(b).toDateString();
+}
+
+function fmtTimeOnly(d: Date | string): string {
+  return new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
 function toLocalInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
@@ -197,7 +206,7 @@ export default function PunchesTab({
       </section>
 
       <Card className="surface-card border-0">
-        <CardContent className="p-4 flex flex-col md:flex-row md:items-end md:flex-wrap gap-3">
+        <CardContent className="p-4 grid grid-cols-2 gap-3 md:flex md:flex-row md:items-end md:flex-wrap">
           <div className="grid gap-1.5">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
               Range
@@ -206,7 +215,7 @@ export default function PunchesTab({
               value={rangeMode}
               onValueChange={(v) => setRangeMode(v as "week" | "range")}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full md:w-[160px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -228,7 +237,7 @@ export default function PunchesTab({
                     if (!e.target.value) return;
                     setRangeStart(fromDateInput(e.target.value));
                   }}
-                  className="w-40"
+                  className="w-full md:w-40"
                 />
               </div>
               <div className="grid gap-1.5">
@@ -245,7 +254,7 @@ export default function PunchesTab({
                     d.setUTCDate(d.getUTCDate() + 1);
                     setRangeEnd(d);
                   }}
-                  className="w-40"
+                  className="w-full md:w-40"
                 />
               </div>
             </>
@@ -255,7 +264,7 @@ export default function PunchesTab({
               Employee
             </Label>
             <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full md:w-[220px]">
                 <SelectValue placeholder="Any employee" />
               </SelectTrigger>
               <SelectContent>
@@ -268,7 +277,7 @@ export default function PunchesTab({
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-1.5 flex-1 min-w-[200px]">
+          <div className="grid gap-1.5 col-span-2 flex-1 md:min-w-[200px]">
             <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
               Search
             </Label>
@@ -282,7 +291,7 @@ export default function PunchesTab({
               />
             </div>
           </div>
-          <div className="grid gap-1.5 ml-auto">
+          <div className="grid gap-1.5 md:ml-auto">
             <Label
               className="text-[11px] uppercase tracking-wider text-muted-foreground"
               title="Anyone still on the clock past this many hours is clocked out automatically at the limit, and the attention center asks for a review."
@@ -295,7 +304,7 @@ export default function PunchesTab({
               disabled={!isAdmin || setAutoM.isPending || settingsQ.isLoading}
             >
               <SelectTrigger
-                className="w-[130px]"
+                className="w-full md:w-[130px]"
                 title={
                   isAdmin
                     ? "Pick a limit longer than your longest real shift"
@@ -315,7 +324,7 @@ export default function PunchesTab({
             </Select>
           </div>
           <div className="flex items-end">
-            <Button onClick={() => setAddOpen(true)}>
+            <Button onClick={() => setAddOpen(true)} className="w-full md:w-auto">
               <Plus className="h-4 w-4 mr-2" /> Add punch
             </Button>
           </div>
@@ -327,7 +336,82 @@ export default function PunchesTab({
           <CardTitle className="section-title">Punches</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
-          <div className="overflow-x-auto">
+          {/* Phones: one card per punch, edit/delete within thumb reach. */}
+          <ul className="md:hidden divide-y divide-border border-t border-border">
+            {listQ.isLoading ? (
+              <li className="px-4 py-10 text-center text-sm text-muted-foreground">
+                Loading punches…
+              </li>
+            ) : filteredRows.length === 0 ? (
+              <li className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No punches for this filter.
+              </li>
+            ) : (
+              filteredRows.map((p) => (
+                <li key={p.id} className="flex items-start gap-2 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="truncate font-medium">{p.employeeName}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {STORE_ABBR[p.storeLocation] ?? p.storeLocation}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm tabular-nums text-muted-foreground">
+                      <span>{fmtDateTime(p.clockInAt)}</span>
+                      <span aria-hidden="true">→</span>
+                      {p.clockOutAt ? (
+                        <span>
+                          {sameLocalDay(p.clockInAt, p.clockOutAt)
+                            ? fmtTimeOnly(p.clockOutAt)
+                            : fmtDateTime(p.clockOutAt)}
+                        </span>
+                      ) : (
+                        <span className="chip-good">
+                          <Clock className="h-3 w-3" /> Clocked in
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {fmtDuration(p.durationHours)}
+                      </span>
+                      {p.source === "manual" ? (
+                        <span className="chip-warn">
+                          <Pencil className="h-3 w-3" /> Manual
+                        </span>
+                      ) : null}
+                      {p.note ? (
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {p.note}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-0.5">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-10 w-10"
+                      onClick={() => setEditPunch(p)}
+                      aria-label={`Edit punch for ${p.employeeName}`}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-10 w-10 text-destructive hover:text-destructive/80"
+                      onClick={() => setDeleteId(p.id)}
+                      aria-label={`Delete punch for ${p.employeeName}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              ))
+            )}
+          </ul>
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -565,7 +649,7 @@ function AddPunchDialog({
         <div className="grid gap-2">
           <Label>Employee</Label>
           <Select value={employeeId} onValueChange={setEmployeeId}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Pick an employee" />
             </SelectTrigger>
             <SelectContent>

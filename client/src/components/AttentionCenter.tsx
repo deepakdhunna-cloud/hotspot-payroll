@@ -22,6 +22,10 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { toDateInput } from "@/lib/payweek";
+import { useIsMobile } from "@/hooks/useMobile";
+
+/** Phones show this many tasks before a "Show all" row. */
+const PHONE_PREVIEW = 3;
 
 type Item = {
   id: number;
@@ -106,6 +110,8 @@ export function AttentionCenter({ className }: { className?: string }) {
   });
   const [clockOutFormFor, setClockOutFormFor] = useState<number | null>(null);
   const [clockOutValue, setClockOutValue] = useState("");
+  const isMobile = useIsMobile();
+  const [showAll, setShowAll] = useState(false);
 
   const resolveM = trpc.attention.resolve.useMutation({
     onSuccess: (data) => {
@@ -127,12 +133,14 @@ export function AttentionCenter({ className }: { className?: string }) {
     (max, i) => Math.max(max, pendingFor(i.createdAt).days),
     0,
   );
+  const collapsed = isMobile && !showAll && items.length > PHONE_PREVIEW;
+  const visibleItems = collapsed ? items.slice(0, PHONE_PREVIEW) : items;
 
   return (
     <section
       className={cn("ink-panel rounded-xl border border-white/10 rise-in overflow-hidden", className)}
     >
-      <header className="flex flex-wrap items-center gap-3 px-5 pt-4 pb-3 border-b border-white/10">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 sm:px-5 pt-4 pb-3 border-b border-white/10">
         <ShieldAlert className={cn("h-5 w-5", items.length > 0 ? "text-[oklch(0.68_0.21_27)]" : "text-white/40")} />
         <h2 className="section-title text-white">Attention center</h2>
         {items.length > 0 ? (
@@ -140,7 +148,7 @@ export function AttentionCenter({ className }: { className?: string }) {
             {items.length}
           </span>
         ) : null}
-        <span className="ml-auto text-[11px] uppercase tracking-[0.14em] text-white/60 font-semibold">
+        <span className="w-full sm:w-auto sm:ml-auto text-[11px] uppercase tracking-[0.14em] text-white/60 font-semibold">
           {items.length === 0
             ? "live checks · all clear"
             : oldest >= 1
@@ -158,7 +166,7 @@ export function AttentionCenter({ className }: { className?: string }) {
         </p>
       ) : (
         <ul className="divide-y divide-white/8">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const p = pendingFor(item.createdAt);
             const fix = fixHref(item);
             const isManual = MANUAL_KINDS.has(item.kind);
@@ -169,7 +177,7 @@ export function AttentionCenter({ className }: { className?: string }) {
             const showsClockOutForm =
               isOpenLongPunch || item.kind === "auto_clockout";
             return (
-              <li key={item.id} className="px-5 py-3.5">
+              <li key={item.id} className="px-4 sm:px-5 py-3.5">
                 <div className="flex items-start gap-3">
                   <span
                     className={cn(
@@ -180,12 +188,13 @@ export function AttentionCenter({ className }: { className?: string }) {
                     )}
                     aria-hidden="true"
                   />
+                  <div className="flex-1 min-w-0 flex flex-col gap-2.5 sm:flex-row sm:items-start sm:gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white leading-snug">{item.title}</p>
                     {item.detail ? (
                       <p className="text-xs text-white/70 mt-0.5 leading-relaxed">{item.detail}</p>
                     ) : null}
-                    <p className="text-[11px] mt-1.5 flex items-center gap-2">
+                    <p className="text-[11px] mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold uppercase tracking-wide",
@@ -197,9 +206,9 @@ export function AttentionCenter({ className }: { className?: string }) {
                         {p.days >= 3 ? <AlertTriangle className="h-3 w-3" /> : null}
                         {p.label}
                       </span>
-                      <span className="text-white/55">first flagged {p.since}</span>
+                      <span className="text-white/55 whitespace-nowrap">first flagged {p.since}</span>
                       {item.storeLocation ? (
-                        <span className="text-white/55">· {item.storeLocation}</span>
+                        <span className="text-white/55 whitespace-nowrap">· {item.storeLocation}</span>
                       ) : null}
                     </p>
 
@@ -209,7 +218,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                           type="datetime-local"
                           value={clockOutValue}
                           onChange={(e) => setClockOutValue(e.target.value)}
-                          className="h-8 w-56 bg-white/10 border-white/20 text-white text-xs [color-scheme:dark]"
+                          className="h-9 sm:h-8 w-full sm:w-56 bg-white/10 border-white/20 text-white text-xs [color-scheme:dark]"
                         />
                         <Button
                           size="sm"
@@ -238,11 +247,11 @@ export function AttentionCenter({ className }: { className?: string }) {
                     ) : null}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 shrink-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0 sm:justify-end">
                     {isManual && showsClockOutForm ? (
                       <Button
                         size="sm"
-                        className="h-7 text-xs"
+                        className="h-9 sm:h-7 text-xs"
                         onClick={() => {
                           setClockOutFormFor(item.id);
                           setClockOutValue("");
@@ -261,8 +270,8 @@ export function AttentionCenter({ className }: { className?: string }) {
                         }
                         className={
                           item.kind === "auto_clockout"
-                            ? "h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
-                            : "h-7 text-xs"
+                            ? "h-9 sm:h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                            : "h-9 sm:h-7 text-xs"
                         }
                         onClick={() =>
                           resolveM.mutate({
@@ -291,7 +300,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                            className="h-9 sm:h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
                           >
                             {fix.label}
                             <ArrowUpRight className="h-3 w-3 ml-1" />
@@ -302,7 +311,7 @@ export function AttentionCenter({ className }: { className?: string }) {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
+                            className="h-9 sm:h-7 text-xs border-white/25 bg-transparent text-white/85 hover:bg-white/10 hover:text-white"
                           >
                             {fix.label}
                             <ArrowUpRight className="h-3 w-3 ml-1" />
@@ -311,10 +320,22 @@ export function AttentionCenter({ className }: { className?: string }) {
                       )
                     ) : null}
                   </div>
+                  </div>
                 </div>
               </li>
             );
           })}
+          {collapsed ? (
+            <li>
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="flex w-full items-center justify-center gap-1.5 px-4 py-3.5 text-sm font-semibold text-white/85 hover:bg-white/5"
+              >
+                Show all {items.length} items
+              </button>
+            </li>
+          ) : null}
         </ul>
       )}
     </section>

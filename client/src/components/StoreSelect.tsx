@@ -21,6 +21,7 @@ export function StoreSelect({
   onChange,
   className,
   tone = "card",
+  compact = false,
 }: {
   stores: string[];
   isAdmin: boolean;
@@ -29,6 +30,8 @@ export function StoreSelect({
   className?: string;
   /** "card" on porcelain pages, "ink" inside the dark top bar */
   tone?: "card" | "ink";
+  /** Show the short store name ("HM 11") in the closed control. */
+  compact?: boolean;
 }) {
   const canPickAll = isAdmin || stores.length > 1;
 
@@ -65,7 +68,15 @@ export function StoreSelect({
           className,
         )}
       >
-        <SelectValue placeholder="Store" />
+        <SelectValue placeholder="Store">
+          {compact
+            ? value === "all"
+              ? isAdmin
+                ? "All stores"
+                : "All mine"
+              : (STORE_ABBR[value] ?? value)
+            : undefined}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="all">{isAdmin ? "All stores" : "All my stores"}</SelectItem>

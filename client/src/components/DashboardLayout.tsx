@@ -1,9 +1,10 @@
 /**
- * App chrome v3: a slim ink top bar carries the brand, the horizontal nav
+ * App chrome v4: a slim ink top bar carries the brand, the horizontal nav
  * (signal-red underline marks the active section) and the account chip.
  * Content sits on a porcelain canvas in a centered column so tables get
- * their full width. On small screens the nav becomes a second scrollable
- * row — every section stays one tap away.
+ * their full width. On phones the sections move to a bottom tab bar, the
+ * way a native app works — and the chrome respects the notch and home
+ * indicator when the site is launched from the home screen.
  */
 import React from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -28,9 +29,17 @@ import {
   LayoutDashboard,
   LogOut,
   ShieldCheck,
+  Smartphone,
   Upload,
   Users,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { BrandMark } from "./BrandMark";
@@ -40,6 +49,9 @@ import {
   useStoreScope,
 } from "@/contexts/StoreScopeContext";
 import { trpc } from "@/lib/trpc";
+import { useInstallApp } from "@/lib/installApp";
+import { PullToRefresh } from "./PullToRefresh";
+import { toast } from "sonner";
 
 type MenuItem = {
   icon: typeof LayoutDashboard;
@@ -88,6 +100,7 @@ function TopbarStoreScope({ className }: { className?: string }) {
   return (
     <StoreSelect
       tone="ink"
+      compact
       stores={stores}
       isAdmin={isAdmin}
       value={scope}
@@ -192,6 +205,25 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       ? location === "/"
       : location === path || location.startsWith(`${path}/`);
 
+  // Phones: sections live in a bottom tab bar. Five tabs at most (the CFO
+  // analytics page moves into the account menu for the CEO), and none at
+  // all when a login only has one page.
+  const tabItems = menuItems.filter(item => !(isAdmin && item.path === "/cfo"));
+  const showTabBar = tabItems.length > 1;
+
+  const install = useInstallApp();
+  const [installHelpOpen, setInstallHelpOpen] = React.useState(false);
+  const onInstall = async () => {
+    if (install.canPrompt) {
+      const accepted = await install.prompt();
+      if (accepted) toast.success("Installed — open Hotspot from your home screen.");
+      return;
+    }
+    setInstallHelpOpen(true);
+  };
+
+  const openKiosk = () => window.open("/clock", "_blank", "noopener,noreferrer");
+
   return (
     <div className="min-h-svh flex flex-col">
       <a
@@ -200,14 +232,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <header className="ink-panel sticky top-0 z-50 border-b border-white/10">
-        <div className="flex h-14 items-center gap-2 px-4 lg:px-6">
+      <header className="app-chrome app-header ink-panel sticky top-0 z-50 border-b border-white/10">
+        <div className="app-gutter flex h-14 items-center gap-1.5 sm:gap-2">
           <button
             onClick={() => setLocation("/")}
             className="shrink-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Go to dashboard"
           >
-            <BrandMark size="sm" tone="ink" />
+            <BrandMark size="sm" tone="ink" className="h-[26px] sm:h-8 md:h-9" />
           </button>
 
           <NavLinks
@@ -217,15 +249,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
             className="hidden md:flex items-center ml-4"
           />
 
-          <div className="ml-auto flex items-center gap-2">
-            {!isCfo && <TopbarStoreScope className="hidden md:flex w-40" />}
+          <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-2">
+            {!isCfo && (
+              <TopbarStoreScope className="w-[7.5rem] sm:w-36 md:w-40" />
+            )}
             {!isCfo && <AttentionBell onNavigate={() => setLocation("/")} />}
             {!isCfo && (
               <button
-                onClick={() =>
-                  window.open("/clock", "_blank", "noopener,noreferrer")
-                }
-                className="hidden sm:flex items-center gap-1.5 h-9 rounded-lg border border-white/15 px-3 text-xs font-medium text-white/80 hover:text-white hover:border-white/30 transition-colors"
+                onClick={openKiosk}
+                className="hidden md:flex items-center gap-1.5 h-9 rounded-lg border border-white/15 px-3 text-xs font-medium text-white/80 hover:text-white hover:border-white/30 transition-colors"
                 title="Open the punch-in kiosk in a new tab"
               >
                 <Clock className="h-3.5 w-3.5" />
@@ -236,7 +268,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-white/10 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <button
+                  className="flex shrink-0 items-center gap-2.5 rounded-lg p-0.5 sm:px-1.5 sm:py-1 hover:bg-white/10 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Account menu"
+                >
                   <Avatar className="h-8 w-8 border border-white/20 shrink-0">
                     <AvatarFallback className="text-xs font-semibold bg-primary text-primary-foreground">
                       {isAdmin ? "C" : isCfo ? "F" : (displayName[0]?.toUpperCase() ?? "M")}
@@ -253,7 +288,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   <ChevronDown className="hidden lg:block h-3.5 w-3.5 text-white/50" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuLabel>
                   <p className="text-sm font-semibold leading-tight">{displayName}</p>
                   <p className="text-xs text-muted-foreground font-normal mt-0.5 flex items-center gap-1">
@@ -270,15 +305,30 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   </p>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() =>
-                    window.open("/clock", "_blank", "noopener,noreferrer")
-                  }
-                  className="cursor-pointer sm:hidden"
-                >
-                  <Clock className="mr-2 h-4 w-4" />
-                  <span>Time clock kiosk</span>
-                </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem
+                    onClick={() => setLocation("/cfo")}
+                    className="cursor-pointer md:hidden"
+                  >
+                    <Landmark className="mr-2 h-4 w-4" />
+                    <span>CFO analytics</span>
+                  </DropdownMenuItem>
+                )}
+                {!isCfo && (
+                  <DropdownMenuItem
+                    onClick={openKiosk}
+                    className="cursor-pointer md:hidden"
+                  >
+                    <Clock className="mr-2 h-4 w-4" />
+                    <span>Time clock kiosk</span>
+                  </DropdownMenuItem>
+                )}
+                {install.available && (
+                  <DropdownMenuItem onClick={onInstall} className="cursor-pointer">
+                    <Smartphone className="mr-2 h-4 w-4" />
+                    <span>{install.ios ? "Add to Home Screen" : "Install app"}</span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
@@ -291,31 +341,6 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Small screens: nav as a scrollable second row. The right edge
-            fades out so it's obvious more sections are a swipe away, and
-            the store scope sits pinned at the end of the row. */}
-        <div className="flex md:hidden items-center border-t border-white/10">
-          <div className="relative min-w-0 flex-1">
-            <NavLinks
-              items={menuItems}
-              isPathActive={isPathActive}
-              onNavigate={setLocation}
-              className="flex items-center overflow-x-auto [&>.topbar-link]:h-11 [&>.topbar-link]:shrink-0"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-0 w-8"
-              style={{
-                background: "linear-gradient(to left, var(--ink), transparent)",
-              }}
-            />
-          </div>
-          {!isCfo && (
-            <div className="shrink-0 px-2">
-              <TopbarStoreScope className="w-36" />
-            </div>
-          )}
-        </div>
         {/* The brand thread: a signal-red hairline closing the chrome */}
         <div
           aria-hidden="true"
@@ -327,8 +352,13 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         />
       </header>
 
-      <main id="main-content" className="flex-1">
-        <div className="mx-auto w-full max-w-[1180px] px-4 md:px-6 py-6 md:py-8">
+      <PullToRefresh />
+
+      <main
+        id="main-content"
+        className={showTabBar ? "flex-1 app-main-with-tabs" : "flex-1 app-main"}
+      >
+        <div className="app-gutter mx-auto w-full max-w-[1180px] py-5 md:py-8">
           {roleBlocked ? (
             <div
               className="flex items-center justify-center py-24"
@@ -342,6 +372,124 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           )}
         </div>
       </main>
+
+      {showTabBar && (
+        <BottomTabBar
+          items={tabItems}
+          isPathActive={isPathActive}
+          onNavigate={setLocation}
+        />
+      )}
+
+      <Dialog open={installHelpOpen} onOpenChange={setInstallHelpOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add to Home Screen</DialogTitle>
+            <DialogDescription>
+              Hotspot then opens full-screen from its own icon, like an app.
+            </DialogDescription>
+          </DialogHeader>
+          {install.ios ? (
+            <ol className="space-y-3 text-sm">
+              <InstallStep n={1}>
+                Tap the <strong>Share</strong> button{" "}
+                <ShareGlyph /> in Safari's toolbar.
+              </InstallStep>
+              <InstallStep n={2}>
+                Scroll down and tap <strong>Add to Home Screen</strong>.
+              </InstallStep>
+              <InstallStep n={3}>
+                Tap <strong>Add</strong>, open Hotspot from its new icon, and
+                enter your PIN once — it remembers you for 7 days.
+              </InstallStep>
+            </ol>
+          ) : (
+            <ol className="space-y-3 text-sm">
+              <InstallStep n={1}>
+                Open your browser's menu (<strong>⋮</strong>).
+              </InstallStep>
+              <InstallStep n={2}>
+                Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.
+              </InstallStep>
+            </ol>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function InstallStep({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+        {n}
+      </span>
+      <span className="pt-0.5 leading-relaxed">{children}</span>
+    </li>
+  );
+}
+
+/** The iOS share glyph, drawn inline so the steps match what people see. */
+function ShareGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="inline-block h-4 w-4 -mt-0.5 align-middle text-[#0a84ff]"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-label="Share"
+      role="img"
+    >
+      <path d="M12 3v12" />
+      <path d="m8 7 4-4 4 4" />
+      <path d="M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2" />
+    </svg>
+  );
+}
+
+/**
+ * Phone navigation: a fixed bottom bar, thumb-reachable, sitting above the
+ * home indicator. Active tab: bright icon + label with a signal-red cap.
+ */
+function BottomTabBar({
+  items,
+  isPathActive,
+  onNavigate,
+}: {
+  items: MenuItem[];
+  isPathActive: (path: string) => boolean;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <nav
+      aria-label="Sections"
+      className="app-chrome app-tabbar md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-white/10"
+    >
+      <div className="app-gutter flex items-stretch">
+        {items.map(item => {
+          const active = isPathActive(item.path);
+          return (
+            <button
+              key={item.path}
+              type="button"
+              onClick={() => {
+                if (active) window.scrollTo({ top: 0, behavior: "smooth" });
+                else onNavigate(item.path);
+              }}
+              aria-current={active ? "page" : undefined}
+              data-active={active}
+              className="tabbar-link"
+            >
+              <item.icon className="h-[22px] w-[22px]" strokeWidth={active ? 2.25 : 1.75} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }

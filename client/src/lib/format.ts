@@ -26,6 +26,24 @@ export const fmtWeekRange = (weekStart: Date | string) => {
   return `${start.toLocaleDateString("en-US", opt)} – ${end.toLocaleDateString("en-US", opt)}`;
 };
 
+/** Tighter week label for small controls: "Nov 5 – 11", "Oct 29 – Nov 4". */
+export const fmtWeekRangeCompact = (weekStart: Date | string) => {
+  const start = typeof weekStart === "string" ? new Date(weekStart) : weekStart;
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth();
+  const startLabel = start.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  const endLabel = end.toLocaleDateString(
+    "en-US",
+    sameMonth ? { day: "numeric", timeZone: "UTC" } : { month: "short", day: "numeric", timeZone: "UTC" },
+  );
+  return `${startLabel} – ${endLabel}`;
+};
+
 export const STORE_COLORS: Record<string, string> = {
   "Hotspot Market 11": "from-red-500/30 to-red-500/5",
   "Hotspot Market 13": "from-orange-500/30 to-orange-500/5",

@@ -187,7 +187,12 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Toaster />
+          {/* Phones: toasts float above the bottom tab bar + home indicator. */}
+          <Toaster
+            mobileOffset={{
+              bottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px)",
+            }}
+          />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

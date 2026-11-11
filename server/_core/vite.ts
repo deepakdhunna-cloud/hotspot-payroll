@@ -47,11 +47,12 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
-export function serveStatic(app: Express) {
-  const distPath =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
-      : path.resolve(import.meta.dirname, "public");
+export function serveStatic(
+  app: Express,
+  distPath: string = process.env.NODE_ENV === "development"
+    ? path.resolve(import.meta.dirname, "../..", "dist", "public")
+    : path.resolve(import.meta.dirname, "public"),
+) {
   if (!fs.existsSync(distPath)) {
     console.error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
@@ -65,12 +66,25 @@ export function serveStatic(app: Express) {
       setHeaders(res, filePath) {
         if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-        } else if (filePath.endsWith("index.html")) {
+        } else if (
+          filePath.endsWith("index.html") ||
+          filePath.endsWith(".webmanifest") ||
+          filePath.endsWith(`${path.sep}sw.js`)
+        ) {
+          // The service worker and app manifests must always revalidate so
+          // installed home-screen apps pick up every deploy.
           res.setHeader("Cache-Control", "no-cache");
         }
       },
     })
   );
+
+  // A bundle that isn't on disk (an old hash from before a deploy) is a real
+  // 404 — answering with index.html would hand a page to a script import
+  // and let caches store HTML under a .js URL.
+  app.use("/assets", (_req, res) => {
+    res.status(404).end();
+  });
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {

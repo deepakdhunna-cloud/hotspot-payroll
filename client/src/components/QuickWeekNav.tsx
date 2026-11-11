@@ -16,7 +16,7 @@ import {
   startOfPayWeek,
   toDateInput,
 } from "@/lib/payweek";
-import { fmtWeekRange } from "@/lib/format";
+import { fmtWeekRange, fmtWeekRangeCompact } from "@/lib/format";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,14 +37,14 @@ export function QuickWeekNav({
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-lg border border-border bg-card shadow-sm overflow-hidden",
+        "flex w-full sm:inline-flex sm:w-auto items-center rounded-lg border border-border bg-card shadow-sm overflow-hidden",
         className,
       )}
     >
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-8 rounded-none"
+        className="h-10 w-10 sm:h-9 sm:w-8 shrink-0 rounded-none"
         onClick={() => onChange(shiftPayWeek(weekStart, -1))}
         aria-label="Previous pay week"
       >
@@ -54,7 +54,7 @@ export function QuickWeekNav({
       <button
         onClick={() => onChange(new Date(live))}
         className={cn(
-          "h-9 px-3 text-xs font-semibold border-x border-border transition-colors",
+          "h-10 sm:h-9 shrink-0 whitespace-nowrap px-2.5 sm:px-3 text-xs font-semibold border-x border-border transition-colors",
           isLive
             ? "bg-primary text-primary-foreground"
             : "hover:bg-accent text-muted-foreground",
@@ -65,7 +65,7 @@ export function QuickWeekNav({
       <button
         onClick={() => onChange(new Date(lastClosed))}
         className={cn(
-          "h-9 px-3 text-xs font-semibold transition-colors",
+          "h-10 sm:h-9 shrink-0 whitespace-nowrap px-2.5 sm:px-3 text-xs font-semibold transition-colors",
           isLastClosed
             ? "bg-primary text-primary-foreground"
             : "hover:bg-accent text-muted-foreground",
@@ -77,11 +77,11 @@ export function QuickWeekNav({
       <Popover>
         <PopoverTrigger asChild>
           <button
-            className="flex h-9 items-center gap-2 border-l border-border px-3 text-sm font-medium tabular-nums hover:bg-accent transition-colors"
-            aria-label="Pick pay week"
+            className="flex h-10 sm:h-9 min-w-0 flex-1 sm:flex-none items-center justify-center gap-2 whitespace-nowrap border-l border-border px-2.5 sm:px-3 text-sm font-medium tabular-nums hover:bg-accent transition-colors"
+            aria-label={`Pick pay week (showing ${fmtWeekRange(weekStart)})`}
           >
-            <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-            {fmtWeekRange(weekStart)}
+            <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {fmtWeekRangeCompact(weekStart)}
           </button>
         </PopoverTrigger>
         <PopoverContent align="center" className="w-64 space-y-2">
@@ -106,7 +106,7 @@ export function QuickWeekNav({
       <Button
         variant="ghost"
         size="icon"
-        className="h-9 w-8 rounded-none border-l border-border"
+        className="h-10 w-10 sm:h-9 sm:w-8 shrink-0 rounded-none border-l border-border"
         onClick={() => onChange(shiftPayWeek(weekStart, 1))}
         disabled={isLive}
         aria-label="Next pay week"

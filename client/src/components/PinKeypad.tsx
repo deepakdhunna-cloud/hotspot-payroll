@@ -90,7 +90,7 @@ export default function PinKeypad() {
   const dotCount = Math.max(MIN_PIN, pin.length);
 
   return (
-    <div className="ink-panel min-h-screen grid lg:grid-cols-[1.15fr_1fr]">
+    <div className="ink-panel min-h-svh grid lg:grid-cols-[1.15fr_1fr]">
       {/* Brand statement panel — first impression, desktop only */}
       <div className="hidden lg:flex flex-col justify-between p-12 xl:p-16 border-r border-white/10">
         <BrandMark size="lg" tone="ink" className="self-start" />
@@ -113,7 +113,7 @@ export default function PinKeypad() {
         </p>
       </div>
 
-      <div className="flex items-center justify-center p-4">
+      <div className="app-gutter flex items-center justify-center pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
       <div className="w-full max-w-sm flex flex-col items-center gap-7">
         <div className="lg:hidden">
           <BrandMark size="lg" tone="ink" />
