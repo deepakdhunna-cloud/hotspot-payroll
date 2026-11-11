@@ -68,7 +68,8 @@ import {
   toDateInput,
 } from "@/lib/payweek";
 import { errorMessage } from "@/lib/errors";
-import { buildXlsx, exportXlsx, prefetchXlsx, type XlsxSheet } from "@/lib/xlsx";
+import { buildXlsx, exportXlsx, prefetchXlsx } from "@/lib/xlsx";
+import { buildWeekSheet, type WeekSheetRow } from "@/lib/payrollSheet";
 import { ShareDialog, sharePayload, type SharePayload } from "@/components/SharePayroll";
 import { cn } from "@/lib/utils";
 import {
@@ -739,29 +740,12 @@ export default function HoursAndPayTab({
 
   /* ------------------------------- export ------------------------------- */
 
-  type ExportRow = {
-    employee: string;
-    store: string;
-    role: string;
-    payType: string;
-    rate: number;
-    scheduled: number;
-    hours: number;
-    gross: number;
-    status: string;
-  };
-
   /**
    * The week on screen as a spreadsheet, plus the words that go with it when
-   * it is shared. One builder for Export and Share, so they can never differ.
+   * it is shared. One builder for Export and Share — and the same one the
+   * command center uses (lib/payrollSheet) — so the file never differs.
    */
   const buildWeekFile = (justSaved?: Set<number>) => {
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-    const year = weekEnd.getUTCFullYear();
-    const storeLabel = scopeStore ?? "All stores";
-    const storeSlug = (scopeStore ? (STORE_ABBR[scopeStore] ?? scopeStore) : "All-stores").replace(/\s+/g, "-");
-    const filename = `Hotspot-Payroll-${toDateInput(weekStart)}_to_${toDateInput(weekEnd)}-${storeSlug}.xlsx`;
     const statusLabel = (v: RowView) => {
       if (justSaved?.has(v.id)) return "Saved";
       if (v.status === "saved") return "Saved";
@@ -769,7 +753,7 @@ export default function HoursAndPayTab({
       if (v.status === "unsaved" || v.status === "saving") return "Not saved";
       return "No hours";
     };
-    const exportRows: ExportRow[] = views.map((v) => ({
+    const sheetRows: WeekSheetRow[] = views.map((v) => ({
       employee: v.former ? `${v.name} (former)` : v.name,
       store: v.row.employee.storeLocation,
       role: v.row.employee.role,
@@ -780,56 +764,7 @@ export default function HoursAndPayTab({
       gross: v.calc.gross,
       status: statusLabel(v),
     }));
-    const paid = exportRows.filter((r) => r.status !== "No hours");
-    const savedN = paid.filter((r) => r.status === "Saved").length;
-    const pendingN = paid.length - savedN;
-    const sheet: XlsxSheet<ExportRow> = {
-      name: "Hours & pay",
-      title: "Weekly payroll",
-      subtitle: `Pay week ${range}, ${year} · ${storeLabel}`,
-      summary: [
-        { label: "Gross pay", value: fmtMoney(totals.gross) },
-        { label: "Hours worked", value: fmtHours(totals.hours, 2) },
-        { label: "People paid", value: String(paid.length) },
-        { label: "Saved to payroll", value: `${savedN} of ${paid.length}` },
-      ],
-      columns: [
-        { header: "Employee", key: "employee", width: 26 },
-        { header: "Store", key: "store", width: 20 },
-        { header: "Role", key: "role", width: 18 },
-        { header: "Pay type", key: "payType", width: 11 },
-        { header: "Hourly rate", key: "rate", width: 12, numFmt: "$#,##0.00", align: "right" },
-        { header: "Scheduled hours", key: "scheduled", width: 16, numFmt: "#,##0.0", align: "right" },
-        { header: "Hours worked", key: "hours", width: 14, numFmt: "#,##0.00", align: "right" },
-        { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
-        {
-          header: "Status",
-          key: "status",
-          width: 18,
-          tone: (r) => (r.status === "Saved" ? "good" : r.status === "No hours" ? "muted" : "warn"),
-        },
-      ],
-      rows: exportRows,
-      totals: {
-        scheduled: Number(totals.scheduled.toFixed(2)),
-        hours: Number(totals.hours.toFixed(2)),
-        gross: Number(totals.gross.toFixed(2)),
-      },
-      totalsLabelKey: "employee",
-      totalsLabel: "Total",
-    };
-    return {
-      filename,
-      sheet,
-      title: `Hotspot payroll · ${range}`,
-      text: [
-        `${storeLabel} — pay week ${range}, ${year}`,
-        `${paid.length} ${plural(paid.length, "person", "people")} · ${fmtHours(totals.hours, 2)} hours · ${fmtMoney(totals.gross)} gross`,
-        pendingN > 0
-          ? `${pendingN} ${plural(pendingN, "row")} not saved to payroll yet`
-          : "Everyone is saved to payroll",
-      ].join("\n"),
-    };
+    return buildWeekSheet({ weekStart, scopeStore, rows: sheetRows, totals });
   };
 
   const buildFailed = (err: unknown) => {

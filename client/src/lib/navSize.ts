@@ -57,6 +57,8 @@ export function maxFullWidth(viewport: number): number {
 
 /** The width actually used, given the window and the choice. */
 export function resolveNavWidth(viewport: number, pref: NavPref): number {
+  // Below 768px there is no side navigation at all (phones use the tab bar).
+  if (viewport < 768) return 0;
   const max = maxFullWidth(viewport);
   if (pref === "rail" || max === 0) return NAV_RAIL;
   if (pref === null) {
@@ -88,7 +90,7 @@ export function useNavSize() {
   const width = resolveNavWidth(viewport, pref);
   const mode: "rail" | "full" = width > NAV_RAIL ? "full" : "rail";
   const max = maxFullWidth(viewport);
-  const resizable = max > 0;
+  const resizable = max > 0 && viewport >= 768;
 
   const commit = useCallback((next: NavPref) => {
     if (typeof next === "number") lastFull.current = next;

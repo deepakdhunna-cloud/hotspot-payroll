@@ -59,6 +59,7 @@ import {
   updateEmployee,
   updatePunch,
   upsertPayrollEntry,
+  getPunchesByIds,
 } from "./db";
 import {
   AUTO_CLOCKOUT_MAX_HOURS,
@@ -1054,7 +1055,21 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       const scope = getScope(ctx.session);
       const stores = resolveStores(scope) ?? allStores();
-      const items = await syncAttention(stores);
+      const rows = await syncAttention(stores);
+      // When the shift behind a punch-related item started, so a screen can
+      // tell which pay week the item belongs to (a forgotten clock-out this
+      // week is no reason to hold last week's payroll).
+      const punchIds = rows
+        .map(r => r.punchId)
+        .filter((id): id is number => id != null);
+      const inAtById = new Map(
+        (await getPunchesByIds(punchIds)).map(p => [p.id, p.clockInAt])
+      );
+      const items = rows.map(r => ({
+        ...r,
+        punchClockInAt:
+          r.punchId != null ? (inAtById.get(r.punchId) ?? null) : null,
+      }));
       return { items, count: items.length };
     }),
 
@@ -1959,11 +1974,18 @@ export const appRouter = router({
             Math.max(lastPunchByStore.get(p.storeLocation) ?? 0, t)
           );
         }
+        // `people` is the store's active headcount: a store with no team yet
+        // (just added) has no clock to report, which is not the same as silent.
+        const headcount = new Map<string, number>();
+        for (const e of employees) {
+          headcount.set(e.storeLocation, (headcount.get(e.storeLocation) ?? 0) + 1);
+        }
         const feeds = allStores().map(s => ({
           store: s as string,
           lastPunchAt: lastPunchByStore.has(s)
             ? new Date(lastPunchByStore.get(s)!)
             : null,
+          people: headcount.get(s) ?? 0,
         }));
 
         return { weeks, latestWeekPeople, feeds, lastClosedWeekStart: lastClosed };
@@ -2070,6 +2092,15 @@ export const appRouter = router({
             role: emp.role,
             storeLocation: emp.storeLocation,
             payRate: Number(emp.payRate),
+            // Standing set pay (active people only): they cost this each
+            // week whatever they clock, so live labor must not price their
+            // hours at the hourly rate.
+            weeklyPay:
+              Number(emp.active) !== 0 &&
+              emp.weeklyPay != null &&
+              Number(emp.weeklyPay) > 0
+                ? Number(emp.weeklyPay)
+                : null,
             hoursWorked,
             scheduledHours: scheduled,
             clockHours: clocked,
@@ -2188,12 +2219,15 @@ export const appRouter = router({
           .object({
             actorScope: z.string().max(64).optional(),
             limit: z.number().int().min(1).max(500).optional(),
+            /** Changes and failures only: leave out routine successful sign-ins. */
+            changesOnly: z.boolean().optional(),
           })
           .optional()
       )
       .query(async ({ input }) => {
         return listAuditLog({
           actorScope: input?.actorScope,
+          excludeActions: input?.changesOnly ? ["auth.pin_success"] : undefined,
           limit: input?.limit ?? 100,
         });
       }),

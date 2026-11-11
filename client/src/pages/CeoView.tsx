@@ -46,12 +46,15 @@ import {
   storeColor,
 } from "@/lib/format";
 import {
+  BUSINESS_TIME_ZONE,
   currentPayPeriodStart,
   fmtDateTime,
   fmtDayHeading,
+  fmtDuration,
   fmtTime,
   fromDateInput,
   inProgressPayWeekStart,
+  payWeekBounds,
   startOfPayWeek,
   storeDayKey,
   toDateInput,
@@ -61,6 +64,7 @@ import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertTriangle,
+  ArrowUpRight,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -75,20 +79,32 @@ import {
   KeyRound,
   Landmark,
   LayoutDashboard,
+  Radar,
   Radio,
   RefreshCw,
+  Rocket,
   Satellite,
+  ScanLine,
   ShieldCheck,
+  SlidersHorizontal,
   Users,
   Wallet,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Link } from "wouter";
+import { Autopilot } from "./ceo/Autopilot";
+import { ControlRoom } from "./ceo/ControlRoom";
+import { Insights } from "./ceo/Insights";
+import { OrbitCore, type OrbitStore } from "./ceo/OrbitCore";
+import { CountMoney, CountNumber, HudPanel, Led, LiveClock, Readout } from "./ceo/hud";
 
 /* ------------------------------ URL state ------------------------------ */
 
-const TAB_KEYS = ["overview", "payroll", "pins", "activity", "portal"] as const;
+const TAB_KEYS = ["overview", "payroll", "optimize", "control", "activity"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
+/** Addresses from before the command center keep working. */
+const LEGACY_TABS: Record<string, TabKey> = { pins: "control", portal: "control" };
 
 function searchParams(): URLSearchParams {
   return new URLSearchParams(
@@ -110,6 +126,7 @@ function replaceSearchParam(key: string, value: string | null) {
 
 function initialTab(): TabKey {
   const t = searchParams().get("tab") ?? "";
+  if (LEGACY_TABS[t]) return LEGACY_TABS[t];
   return (TAB_KEYS as readonly string[]).includes(t)
     ? (t as TabKey)
     : "overview";
@@ -131,6 +148,8 @@ type WeeklyRow = {
   role: string;
   storeLocation: string;
   payRate: number;
+  /** Standing weekly set pay, or null for someone paid by the hour. */
+  weeklyPay: number | null;
   hoursWorked: number;
   scheduledHours: number;
   clockHours: number;
@@ -148,12 +167,43 @@ const isUnsaved = (r: WeeklyRow) => !isSaved(r) && r.clockHours > 0.25;
 
 const storeShort = (s: string) => STORE_ABBR[s] ?? s;
 
+const onSetPay = (r: WeeklyRow) => r.weeklyPay != null && r.weeklyPay > 0;
+/**
+ * What someone has cost so far in a week that is still running.
+ *
+ *  - Paid by the hour: clocked hours at their rate.
+ *  - On set pay: their weekly amount, for the share of the week gone by.
+ *    Their hours don't change what they are paid, so pricing those hours at
+ *    an hourly rate would be a number payroll never matches.
+ *
+ * At the week's end this adds up to exactly what payroll will be — the same
+ * rule the projection uses, so the two figures meet.
+ */
+const laborSoFar = (r: WeeklyRow, elapsed: number) =>
+  // Hours to two decimals and dollars to the cent — the rounding payroll
+  // itself is saved with, so a live figure and the saved one never drift.
+  cents(onSetPay(r) ? r.weeklyPay! * elapsed : Number(r.clockHours.toFixed(2)) * r.payRate);
+const cents = (n: number) => Math.round(n * 100) / 100;
+/** Share of a pay week that has gone by, 0–1 (1 for any closed week). */
+function weekElapsed(weekStart: Date): number {
+  const { start, end } = payWeekBounds(weekStart);
+  return Math.min(1, Math.max(0, (Date.now() - start.getTime()) / (end.getTime() - start.getTime())));
+}
+
 export default function CeoView() {
-  usePageTitle("Executive");
+  usePageTitle("Command center");
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [tab, setTabState] = useState<TabKey>(initialTab);
+  // The Live view follows the week in progress; Autopilot works on the week
+  // to be paid (the last closed one) unless another is picked.
   const [weekStart, setWeekState] = useState<Date>(initialWeek);
+  const [payWeek, setPayWeek] = useState<Date>(() => {
+    const linked = initialWeek();
+    return linked.getTime() === inProgressPayWeekStart().getTime()
+      ? currentPayPeriodStart()
+      : linked;
+  });
   const { scope: storeFilter, setScope: setStoreFilter } = useStoreScope();
 
   const setTab = (next: string) => {
@@ -162,6 +212,7 @@ export default function CeoView() {
       : "overview";
     setTabState(t);
     replaceSearchParam("tab", t === "overview" ? null : t);
+    window.scrollTo({ top: 0 });
   };
   const setWeekStart = (next: Date) => {
     setWeekState(next);
@@ -172,19 +223,61 @@ export default function CeoView() {
     );
   };
 
-  // Always fetch every store — the store cards ARE the filter, so the
-  // all-stores picture must stay on screen while one store is focused.
+  // Always fetch every store — the orbit IS the filter, so the all-stores
+  // picture must stay on screen while one store is focused.
   const ceoQ = trpc.ceo.weekly.useQuery(
     { weekStart },
     { enabled: !!isAdmin, refetchInterval: 60_000 }
   );
+  const storeArg = storeFilter === "all" ? undefined : (storeFilter as any);
+  const summaryQ = trpc.dashboard.summary.useQuery(
+    { weekStart, store: storeArg },
+    { enabled: !!isAdmin, refetchInterval: 60_000 }
+  );
   const trendQ = trpc.dashboard.trend.useQuery(
-    {
-      weeks: 8,
-      store: storeFilter === "all" ? undefined : (storeFilter as any),
-    },
+    { weeks: 8, store: storeArg },
     { enabled: !!isAdmin, refetchInterval: 5 * 60_000 }
   );
+  const attentionQ = trpc.attention.list.useQuery(undefined, {
+    enabled: !!isAdmin,
+    refetchInterval: 60_000,
+  });
+  const cfoQ = trpc.cfo.summary.useQuery(
+    { weeks: 5 },
+    { enabled: !!isAdmin, refetchInterval: 5 * 60_000 }
+  );
+  // The saved-payroll ledger under Autopilot, for the week being paid.
+  const ledgerQ = trpc.ceo.weekly.useQuery(
+    { weekStart: payWeek },
+    { enabled: !!isAdmin && tab === "payroll", refetchInterval: 60_000 }
+  );
+
+  // The Autopilot tab's "so far" figures and the ledger under them come from
+  // the same rows at the same instant, so they are the same numbers.
+  const ledgerIsLive = payWeek.getTime() === inProgressPayWeekStart().getTime();
+  const ledgerRows = useMemo(
+    () =>
+      ((ledgerQ.data?.rows ?? []) as WeeklyRow[]).filter(
+        r => storeFilter === "all" || r.storeLocation === storeFilter
+      ),
+    [ledgerQ.data, storeFilter]
+  );
+  const ledgerElapsed = useMemo(
+    () => weekElapsed(payWeek),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [payWeek, ledgerQ.dataUpdatedAt]
+  );
+  const ledgerSoFar = useMemo(() => {
+    if (!ledgerIsLive || !ledgerQ.data) return null;
+    const perStore = new Map<string, number>();
+    let total = 0;
+    for (const r of ledgerRows) {
+      const v = laborSoFar(r, ledgerElapsed);
+      total += v;
+      perStore.set(r.storeLocation, (perStore.get(r.storeLocation) ?? 0) + v);
+    }
+    return { total, byStore: perStore };
+  }, [ledgerIsLive, ledgerQ.data, ledgerRows, ledgerElapsed]);
 
   const data = ceoQ.data;
   const byStore = (data?.byStore ?? {}) as Record<string, any>;
@@ -192,7 +285,7 @@ export default function CeoView() {
   const isLiveWeek = weekStart.getTime() === inProgressPayWeekStart().getTime();
   const loading = ceoQ.isPending && !ceoQ.isError;
 
-  /* ------------- filter-aware aggregates (client-side, instant) ------------- */
+  /* ------------- focus-aware aggregates (client-side, instant) ------------- */
 
   const rows = useMemo(
     () =>
@@ -201,407 +294,571 @@ export default function CeoView() {
         : allRows.filter(r => r.storeLocation === storeFilter),
     [allRows, storeFilter]
   );
-
-  const perStore = useMemo(() => {
-    const m = new Map<string, { liveLabor: number; unsaved: number }>();
+  // How much of the pay week has gone by (store time): the core's dial, and
+  // how far set pay has accrued. Refreshed with every data refresh.
+  const elapsed = useMemo(
+    () => (isLiveWeek ? weekElapsed(weekStart) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isLiveWeek, weekStart, ceoQ.dataUpdatedAt]
+  );
+  const perStoreLabor = useMemo(() => {
+    const m = new Map<string, number>();
     for (const r of allRows) {
-      const cur = m.get(r.storeLocation) ?? { liveLabor: 0, unsaved: 0 };
-      cur.liveLabor += r.clockHours * r.payRate;
-      if (isUnsaved(r)) cur.unsaved += 1;
-      m.set(r.storeLocation, cur);
+      m.set(r.storeLocation, (m.get(r.storeLocation) ?? 0) + laborSoFar(r, elapsed ?? 1));
     }
     return m;
+  }, [allRows, elapsed]);
+  const headcountByStore = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of allRows) m.set(r.storeLocation, (m.get(r.storeLocation) ?? 0) + 1);
+    return m;
   }, [allRows]);
+  const alertsByStore = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of attentionQ.data?.items ?? []) {
+      if (i.storeLocation) m.set(i.storeLocation, (m.get(i.storeLocation) ?? 0) + 1);
+    }
+    return m;
+  }, [attentionQ.data]);
 
-  const agg = useMemo(() => {
-    const keys =
-      storeFilter === "all"
-        ? Object.keys(byStore)
-        : Object.keys(byStore).filter(k => k === storeFilter);
-    const zero = {
-      totalHours: 0,
-      totalClockHours: 0,
-      totalScheduled: 0,
-      totalGross: 0,
-      totalFederal: 0,
-      totalState: 0,
-      totalNet: 0,
-      employeeCount: 0,
-      clockedInCount: 0,
-      overClockedCount: 0,
-    };
-    return keys.reduce((acc, k) => {
+  const focusKeys =
+    storeFilter === "all"
+      ? Object.keys(byStore)
+      : Object.keys(byStore).filter(k => k === storeFilter);
+  const agg = focusKeys.reduce(
+    (acc, k) => {
       const s = byStore[k];
       return {
-        totalHours: acc.totalHours + s.totalHours,
         totalClockHours: acc.totalClockHours + s.totalClockHours,
         totalScheduled: acc.totalScheduled + s.totalScheduled,
         totalGross: acc.totalGross + s.totalGross,
-        totalFederal: acc.totalFederal + s.totalFederal,
-        totalState: acc.totalState + s.totalState,
-        totalNet: acc.totalNet + s.totalNet,
-        employeeCount: acc.employeeCount + s.employeeCount,
         clockedInCount: acc.clockedInCount + s.clockedInCount,
         overClockedCount: acc.overClockedCount + s.overClockedCount,
       };
-    }, zero);
-  }, [byStore, storeFilter]);
-
-  const liveLabor = rows.reduce((s, r) => s + r.clockHours * r.payRate, 0);
-  const savedCount = rows.filter(isSaved).length;
-  const unsavedCount = rows.filter(isUnsaved).length;
-  const payableCount = rows.filter(r => isSaved(r) || isUnsaved(r)).length;
+    },
+    { totalClockHours: 0, totalScheduled: 0, totalGross: 0, clockedInCount: 0, overClockedCount: 0 }
+  );
+  const liveLabor = rows.reduce((t, r) => t + laborSoFar(r, elapsed ?? 1), 0);
   const storesWithClockedIn = Object.values(byStore).filter(
     (s: any) => s.clockedInCount > 0
   ).length;
 
-  // Last closed week's saved payroll — the live week's point of comparison.
   const lastClosed = currentPayPeriodStart();
   const lastClosedTrend = (trendQ.data?.weeks ?? []).find(
     w => new Date(w.weekStart).getTime() === lastClosed.getTime()
   );
+  const totals = summaryQ.data?.totals;
+  const overPlan =
+    totals && totals.totalScheduledCost > 0
+      ? totals.totalProjectedGross - totals.totalScheduledCost
+      : 0;
+
+  // Only stores with a team have a clock to report; a store just added and
+  // not staffed yet is "being set up", not silent.
+  const feeds = (cfoQ.data?.feeds ?? []).filter(f => f.people > 0);
+  const liveFeeds = feeds.filter(
+    f => f.lastPunchAt && Date.now() - new Date(f.lastPunchAt).getTime() <= 24 * 3_600_000
+  ).length;
+  // Follows the focus, like everything else on the page.
+  const alertCount =
+    storeFilter === "all"
+      ? (attentionQ.data?.count ?? 0)
+      : (attentionQ.data?.items ?? []).filter(
+          i => !i.storeLocation || i.storeLocation === storeFilter
+        ).length;
 
   const focusLabel =
     storeFilter === "all" ? "all stores" : storeShort(storeFilter);
 
+  const orbitStores: OrbitStore[] = Object.entries(byStore).map(([store, s]) => ({
+    name: store,
+    short: storeShort(store),
+    color: storeColor(store),
+    clockHours: s.totalClockHours,
+    scheduled: s.totalScheduled,
+    labor: isLiveWeek ? (perStoreLabor.get(store) ?? 0) : s.totalGross,
+    onClock: s.clockedInCount,
+    alerts: alertsByStore.get(store) ?? 0,
+    people: headcountByStore.get(store) ?? 0,
+  }));
+
+  const showWeekNav = tab === "overview" || tab === "payroll";
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Executive"
-        description={
-          isLiveWeek
-            ? `This week · ${focusLabel} · tap a store card to focus on it`
-            : `Closed week · ${fmtWeekRange(weekStart)} · ${focusLabel}`
-        }
-        actions={<QuickWeekNav weekStart={weekStart} onChange={setWeekStart} />}
-      />
-
-      {/* The assistant — same persistent task stack, all stores in scope */}
-      <AttentionCenter />
-
-      {/* Everything the CEO does here, one tap away at the top of the page */}
-      <Tabs value={tab} onValueChange={setTab} className="gap-4 md:gap-5">
-        <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
-          <TabsList className="w-max md:self-start">
-            <TabsTrigger value="overview">
-              <LayoutDashboard /> Overview
-            </TabsTrigger>
-            <TabsTrigger value="payroll">
-              <Wallet /> Payroll
-            </TabsTrigger>
-            <TabsTrigger value="pins">
-              <KeyRound /> Access &amp; PINs
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              <History /> Activity
-            </TabsTrigger>
-            <TabsTrigger value="portal">
-              <Radio /> Live portal
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
-        <TabsContent value="overview" className="space-y-5 md:space-y-6">
-          {ceoQ.isError ? (
-            <Card className="surface-card gap-0 py-0">
-              <CardContent className="p-4 sm:p-5">
-                <BlockState isError onRetry={() => ceoQ.refetch()}>
-                  {null}
-                </BlockState>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              {/* Company pulse — one strip, the money leads */}
-              {loading ? (
-                <Skeleton className="h-[124px] rounded-xl" />
-              ) : (
-                <KpiBand>
-                  <KpiCell
-                    hero
-                    icon={<Wallet />}
-                    label={isLiveWeek ? "Labor cost so far" : "Gross payroll"}
-                    value={
-                      <Money value={isLiveWeek ? liveLabor : agg.totalGross} />
-                    }
-                    sub={
-                      isLiveWeek
-                        ? `earned this week · ${focusLabel}`
-                        : `saved for that week · ${focusLabel}`
-                    }
-                    footer={
-                      !isLiveWeek && unsavedCount > 0 ? (
-                        <span className="chip-warn">
-                          <AlertTriangle className="h-3 w-3" />
-                          {unsavedCount} worked, not saved
-                        </span>
-                      ) : !isLiveWeek && savedCount > 0 ? (
-                        <span className="chip-good">
-                          <CheckCircle2 className="h-3 w-3" /> Payroll complete
-                        </span>
-                      ) : null
-                    }
-                  />
-                  <KpiCell
-                    hue="blue"
-                    icon={<Clock />}
-                    label="Hours clocked"
-                    value={fmtHours(agg.totalClockHours)}
-                    sub={
-                      agg.totalScheduled > 0
-                        ? `of ${fmtHoursLabel(agg.totalScheduled)} scheduled`
-                        : isLiveWeek
-                          ? "no schedule this week"
-                          : "no schedule for that week"
-                    }
-                    footer={
-                      agg.overClockedCount > 0 ? (
-                        <span className="chip-warn">
-                          <AlertTriangle className="h-3 w-3" />
-                          {agg.overClockedCount} over schedule
-                        </span>
-                      ) : agg.totalScheduled > 0 ? (
-                        <span className="chip-good">
-                          <CheckCircle2 className="h-3 w-3" /> Within schedule
-                        </span>
-                      ) : null
-                    }
-                  />
-                  {isLiveWeek ? (
-                    <KpiCell
-                      hue="green"
-                      icon={<Users />}
-                      label="On the clock now"
-                      value={agg.clockedInCount}
-                      sub={
-                        agg.clockedInCount === 0
-                          ? "nobody is clocked in"
-                          : storeFilter === "all"
-                            ? `across ${storesWithClockedIn} store${storesWithClockedIn === 1 ? "" : "s"}`
-                            : `at ${focusLabel}`
-                      }
-                    />
-                  ) : (
-                    <KpiCell
-                      hue="teal"
-                      icon={<CheckCircle2 />}
-                      label="Saved to payroll"
-                      value={
-                        payableCount > 0
-                          ? `${savedCount} of ${payableCount}`
-                          : "—"
-                      }
-                      sub={
-                        payableCount > 0
-                          ? `people who worked · ${fmtHoursLabel(agg.totalHours)} saved`
-                          : "nobody worked that week"
-                      }
-                    />
-                  )}
-                  {isLiveWeek ? (
-                    <KpiCell
-                      hue="teal"
-                      icon={<History />}
-                      label="Last week's payroll"
-                      value={
-                        lastClosedTrend && lastClosedTrend.savedGross > 0 ? (
-                          <Money value={lastClosedTrend.savedGross} />
-                        ) : (
-                          "—"
-                        )
-                      }
-                      sub={
-                        trendQ.isPending
-                          ? "loading…"
-                          : lastClosedTrend && lastClosedTrend.savedGross > 0
-                            ? `${fmtWeekRange(lastClosed)} · saved`
-                            : `${fmtWeekRange(lastClosed)} · not saved yet`
-                      }
-                    />
-                  ) : (
-                    <KpiCell
-                      hue="violet"
-                      icon={<Landmark />}
-                      label="Net pay (est.)"
-                      value={<Money value={agg.totalNet} />}
-                      sub={`≈ ${fmtMoney(agg.totalFederal + agg.totalState)} withheld (est.)`}
-                    />
-                  )}
-                </KpiBand>
-              )}
-
-              {/* Every store at one glance — the cards are the filter */}
-              <section
-                className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-5"
-                aria-label="Stores"
+    <div className="cc">
+      <div className="cc-backdrop" aria-hidden="true" />
+      <div className="cc-body space-y-4 sm:space-y-5">
+        {/* ---------------- Masthead: where you are, and the vital signs ---------------- */}
+        <header className="cc-mast">
+          <div className="min-w-0">
+            <p className="hud-label">Hotspot Market // Executive</p>
+            <h1 className="page-title mt-1">Command center</h1>
+            <p className="page-subtitle">
+              {tab === "payroll"
+                ? `Payroll for ${fmtWeekRange(payWeek)} · ${focusLabel}`
+                : isLiveWeek
+                  ? `This week, live · ${focusLabel}`
+                  : `Closed week · ${fmtWeekRange(weekStart)} · ${focusLabel}`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <LiveClock />
+            {feeds.length > 0 ? (
+              <span
+                className="hud-chip"
+                title="Stores whose time clock has sent a punch in the last day"
               >
-                {loading
-                  ? [0, 1, 2, 3, 4].map(i => (
-                      <Skeleton key={i} className="h-36 rounded-xl" />
-                    ))
-                  : Object.entries(byStore).map(([store, s]) => {
-                      const focused = storeFilter === store;
-                      const dimmed = storeFilter !== "all" && !focused;
-                      const stat = perStore.get(store) ?? {
-                        liveLabor: 0,
-                        unsaved: 0,
-                      };
-                      const money = isLiveWeek ? stat.liveLabor : s.totalGross;
-                      const hue = dimmed
-                        ? `color-mix(in oklab, ${storeColor(store)} 28%, var(--border))`
-                        : storeColor(store);
-                      const toggle = () =>
-                        setStoreFilter(focused ? "all" : store);
-                      return (
-                        <Card
-                          key={store}
-                          role="button"
-                          tabIndex={0}
-                          aria-pressed={focused}
-                          aria-label={`${store}: ${fmtMoney(money)}, ${fmtHoursLabel(s.totalClockHours)} of ${fmtHoursLabel(s.totalScheduled)}. ${focused ? "Showing this store only — press to show all stores." : "Press to focus on this store."}`}
-                          onClick={toggle}
-                          onKeyDown={e => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              toggle();
-                            }
-                          }}
-                          className={cn(
-                            "surface-card gap-0 py-0 cursor-pointer transition-transform select-none overflow-hidden",
-                            !focused && "hover:-translate-y-px"
-                          )}
-                          style={
-                            { ["--hue" as string]: hue } as React.CSSProperties
+                <Led tone={liveFeeds === feeds.length ? "ok" : liveFeeds === 0 ? "bad" : "warn"} />
+                <b className="tabular-nums">
+                  {liveFeeds}/{feeds.length}
+                </b>
+                clocks reporting
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="hud-chip"
+              onClick={() => {
+                setTab("overview");
+                window.setTimeout(
+                  () => document.getElementById("attention")?.scrollIntoView({ block: "start" }),
+                  60
+                );
+              }}
+              title="Open the items that need attention"
+            >
+              <Led tone={alertCount > 0 ? "bad" : "ok"} pulse={alertCount > 0} />
+              <b className="tabular-nums">{alertCount}</b>
+              {alertCount === 1 ? "alert" : "alerts"}
+            </button>
+            {showWeekNav ? (
+              <QuickWeekNav
+                weekStart={tab === "payroll" ? payWeek : weekStart}
+                onChange={tab === "payroll" ? setPayWeek : setWeekStart}
+              />
+            ) : null}
+          </div>
+        </header>
+
+        <Tabs value={tab} onValueChange={setTab} className="gap-4 sm:gap-5">
+          <TabsList className="w-full sm:justify-start">
+              <TabsTrigger value="overview">
+                <Radar /> Live
+              </TabsTrigger>
+              <TabsTrigger value="payroll">
+                <Rocket /> Autopilot
+              </TabsTrigger>
+              <TabsTrigger value="optimize">
+                <ScanLine /> Optimize
+              </TabsTrigger>
+              <TabsTrigger value="control">
+                <SlidersHorizontal /> Control
+              </TabsTrigger>
+              <TabsTrigger value="activity">
+                <History /> Log
+              </TabsTrigger>
+            </TabsList>
+
+          {/* ============================== LIVE ============================== */}
+          <TabsContent value="overview" className="space-y-4 sm:space-y-5">
+            {ceoQ.isError ? (
+              <HudPanel>
+                <div className="p-4 sm:p-5">
+                  <BlockState isError onRetry={() => ceoQ.refetch()}>
+                    {null}
+                  </BlockState>
+                </div>
+              </HudPanel>
+            ) : (
+              <>
+                <div className="cc-cols-live">
+                  {/* The company at the center, every store around it */}
+                  <HudPanel
+                    title="Orbit"
+                    meta={
+                      storeFilter === "all"
+                        ? "tap a store to focus on it"
+                        : `focused on ${focusLabel} · tap the center for all stores`
+                    }
+                    bodyClassName="p-2 sm:p-4"
+                  >
+                    {loading ? (
+                      <div className="mx-auto aspect-square w-full max-w-[38rem] p-6">
+                        <Skeleton className="h-full w-full rounded-full" />
+                      </div>
+                    ) : (
+                      <div className="mx-auto w-full max-w-[38rem]">
+                        <OrbitCore
+                          stores={orbitStores}
+                          focus={storeFilter}
+                          onFocus={setStoreFilter}
+                          label={
+                            storeFilter === "all"
+                              ? isLiveWeek
+                                ? "LABOR · THIS WEEK"
+                                : "GROSS PAYROLL"
+                              : `${focusLabel.toUpperCase()} · ${isLiveWeek ? "LABOR" : "GROSS"}`
                           }
-                          title={
-                            focused
-                              ? "Tap to show all stores"
-                              : `Tap to focus on ${store}`
-                          }
-                        >
-                          <div
-                            className="h-1 w-full"
-                            style={{ background: "var(--hue)" }}
-                            aria-hidden="true"
-                          />
-                          <CardContent className="p-4 space-y-2.5">
-                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                              <span className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold">
-                                <span
-                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{ background: "var(--hue)" }}
-                                  aria-hidden="true"
-                                />
-                                {storeShort(store)}
-                              </span>
-                              {isLiveWeek && s.clockedInCount > 0 ? (
-                                <span className="chip-good shrink-0">
-                                  {s.clockedInCount} clocked in
-                                </span>
-                              ) : null}
-                            </div>
-                            <div>
-                              <p className="text-xl font-semibold tabular-nums tracking-tight">
-                                <Money value={money} />
-                              </p>
-                              <p className="text-xs text-muted-foreground tabular-nums">
-                                {fmtHoursLabel(s.totalClockHours)} of{" "}
-                                {fmtHoursLabel(s.totalScheduled)}
-                              </p>
-                              <div className="sk-track mt-1.5 h-2 rounded-full bg-[color-mix(in_oklab,var(--hue)_14%,transparent)] overflow-hidden">
-                                <div
-                                  className="sk-fill h-full rounded-full"
-                                  style={{
-                                    width: `${s.totalScheduled > 0 ? Math.min(100, (s.totalClockHours / s.totalScheduled) * 100) : 0}%`,
-                                    background: "var(--hue)",
-                                  }}
-                                />
-                              </div>
-                            </div>
-                            {!isLiveWeek && stat.unsaved > 0 ? (
+                          labor={isLiveWeek ? liveLabor : agg.totalGross}
+                          hours={agg.totalClockHours}
+                          scheduled={agg.totalScheduled}
+                          elapsed={elapsed}
+                        />
+                      </div>
+                    )}
+                  </HudPanel>
+
+                  <div className="space-y-4 sm:space-y-5">
+                    {/* Vital signs */}
+                    <section className="hud hud-rise grid grid-cols-2 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(odd)]:border-r [&>*]:border-[var(--hud-line)]">
+                      <Readout
+                        label="On the clock now"
+                        value={loading ? "—" : <CountNumber value={agg.clockedInCount} />}
+                        sub={
+                          agg.clockedInCount === 0
+                            ? "nobody is clocked in"
+                            : storeFilter === "all"
+                              ? `across ${storesWithClockedIn} store${storesWithClockedIn === 1 ? "" : "s"}`
+                              : `at ${focusLabel}`
+                        }
+                      />
+                      <Readout
+                        label="Hours clocked"
+                        value={loading ? "—" : <CountNumber value={agg.totalClockHours} digits={1} />}
+                        sub={
+                          agg.totalScheduled > 0
+                            ? `of ${fmtHoursLabel(agg.totalScheduled)} scheduled`
+                            : "no schedule this week"
+                        }
+                        footer={
+                          agg.overClockedCount > 0 ? (
+                            <span className="chip-warn">
+                              <AlertTriangle className="h-3 w-3" />
+                              {agg.overClockedCount} over schedule
+                            </span>
+                          ) : agg.totalScheduled > 0 ? (
+                            <span className="chip-good">
+                              <CheckCircle2 className="h-3 w-3" /> Within schedule
+                            </span>
+                          ) : null
+                        }
+                      />
+                      <Readout
+                        label={isLiveWeek ? "Projected payroll" : "Net pay (est.)"}
+                        value={
+                          isLiveWeek ? (
+                            totals ? (
+                              <CountMoney value={totals.totalProjectedGross} />
+                            ) : (
+                              "—"
+                            )
+                          ) : (
+                            <CountMoney
+                              value={rows.reduce((t, r) => t + r.netPay, 0)}
+                            />
+                          )
+                        }
+                        sub={
+                          isLiveWeek
+                            ? totals && totals.totalScheduledCost > 0
+                              ? `${fmtMoney(totals.totalScheduledCost)} planned`
+                              : "worked + still scheduled"
+                            : "after estimated withholding"
+                        }
+                        footer={
+                          isLiveWeek && totals && totals.totalScheduledCost > 0 ? (
+                            overPlan > 25 ? (
                               <span className="chip-warn">
                                 <AlertTriangle className="h-3 w-3" />
-                                {stat.unsaved} not saved
-                              </span>
-                            ) : s.overClockedCount > 0 ? (
-                              <span className="chip-warn">
-                                <AlertTriangle className="h-3 w-3" />
-                                {s.overClockedCount} over schedule
-                              </span>
-                            ) : !isLiveWeek && s.totalGross > 0 ? (
-                              <span className="chip-good">
-                                <CheckCircle2 className="h-3 w-3" /> All saved
+                                {fmtMoney(overPlan)} over plan
                               </span>
                             ) : (
                               <span className="chip-good">
-                                <CheckCircle2 className="h-3 w-3" /> On track
+                                <CheckCircle2 className="h-3 w-3" /> On plan
                               </span>
-                            )}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-              </section>
-            </>
-          )}
+                            )
+                          ) : null
+                        }
+                      />
+                      <Readout
+                        label="Last week's payroll"
+                        value={
+                          lastClosedTrend && lastClosedTrend.savedGross > 0 ? (
+                            <CountMoney value={lastClosedTrend.savedGross} />
+                          ) : (
+                            "—"
+                          )
+                        }
+                        sub={
+                          trendQ.isPending
+                            ? "loading…"
+                            : `${fmtWeekRange(lastClosed)} · ${
+                                lastClosedTrend && lastClosedTrend.savedGross > 0
+                                  ? "saved so far"
+                                  : "not saved yet"
+                              }`
+                        }
+                        footer={
+                          <button
+                            type="button"
+                            className="mono inline-flex items-center gap-1 text-[11px] uppercase tracking-wider text-[var(--brand-text)] hover:underline"
+                            onClick={() => {
+                              setPayWeek(lastClosed);
+                              setTab("payroll");
+                            }}
+                          >
+                            Open Autopilot <ArrowUpRight className="h-3 w-3" aria-hidden />
+                          </button>
+                        }
+                      />
+                    </section>
 
-          {/* Eight-week filmstrip — older payroll is one click away */}
-          <Card className="surface-card gap-0 py-0">
-            <CardHeader className="card-head flex flex-row items-center justify-between px-4 sm:px-5 py-3">
-              <CardTitle className="section-title">
-                <span className="icon-badge icon-badge-sm">
-                  <History />
-                </span>
-                Last 8 pay weeks
-                {storeFilter !== "all" ? ` · ${focusLabel}` : ""}
-              </CardTitle>
-              <span className="hidden sm:inline text-xs text-muted-foreground">
-                Tap a week to open it
-              </span>
-            </CardHeader>
-            <CardContent className="px-4 sm:px-5 pt-4 pb-4">
-              <BlockState
-                isLoading={trendQ.isPending && !trendQ.isError}
-                isError={trendQ.isError}
-                onRetry={() => trendQ.refetch()}
-                skeletonClassName="h-24 rounded-md"
-              >
-                <WeekTrend
-                  weeks={(trendQ.data?.weeks ?? []) as any}
-                  selected={weekStart}
-                  onSelect={w => setWeekStart(w)}
-                />
-              </BlockState>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                    <LiveRoster
+                      people={summaryQ.data?.clockedInNow ?? []}
+                      loading={summaryQ.isLoading}
+                      multiStore={storeFilter === "all"}
+                    />
+                  </div>
+                </div>
 
-        <TabsContent value="payroll">
-          <PayrollPanel
-            rows={rows}
-            isLiveWeek={isLiveWeek}
-            weekStart={weekStart}
-            showGroups={storeFilter === "all"}
-            focusLabel={focusLabel}
-            loading={loading}
-            isError={ceoQ.isError}
-            onRetry={() => ceoQ.refetch()}
-          />
-        </TabsContent>
+                <div className="cc-cols-wide">
+                  {/* Everything waiting on a person, with its fix */}
+                  <AttentionCenter store={storeFilter === "all" ? undefined : storeFilter} />
+                  <SystemLog onOpenLog={() => setTab("activity")} />
+                </div>
 
-        <TabsContent value="pins">
-          <PinsPanel />
-        </TabsContent>
+                <HudPanel
+                  title="Last 8 pay weeks"
+                  meta="pick a week to open it"
+                  bodyClassName="p-4 sm:p-5"
+                >
+                  <BlockState
+                    isLoading={trendQ.isPending}
+                    isError={trendQ.isError}
+                    onRetry={() => trendQ.refetch()}
+                  >
+                    <WeekTrend
+                      weeks={(trendQ.data?.weeks ?? []) as any}
+                      selected={weekStart}
+                      onSelect={w => setWeekStart(w)}
+                    />
+                  </BlockState>
+                </HudPanel>
+              </>
+            )}
+          </TabsContent>
 
-        <TabsContent value="activity">
-          <ActivityPanel />
-        </TabsContent>
+          {/* ============================ AUTOPILOT ============================ */}
+          <TabsContent value="payroll">
+            <Autopilot weekStart={payWeek} storeFocus={storeFilter} soFar={ledgerSoFar}>
+              <PayrollPanel
+                rows={ledgerRows}
+                isLiveWeek={ledgerIsLive}
+                elapsed={ledgerElapsed}
+                weekStart={payWeek}
+                showGroups={storeFilter === "all"}
+                focusLabel={focusLabel}
+                loading={ledgerQ.isPending && !ledgerQ.isError}
+                isError={ledgerQ.isError}
+                onRetry={() => ledgerQ.refetch()}
+              />
+            </Autopilot>
+          </TabsContent>
 
-        <TabsContent value="portal">
-          <LivePortalPanel />
-        </TabsContent>
-      </Tabs>
+          {/* ============================= OPTIMIZE ============================= */}
+          <TabsContent value="optimize">
+            <Insights
+              storeFocus={storeFilter}
+              onOpenAutopilot={() => {
+                setPayWeek(lastClosed);
+                setTab("payroll");
+              }}
+            />
+          </TabsContent>
+
+          {/* ============================== CONTROL ============================== */}
+          <TabsContent value="control">
+            <ControlRoom access={<PinsPanel />} data={<LivePortalPanel />} />
+          </TabsContent>
+
+          {/* ================================ LOG ================================ */}
+          <TabsContent value="activity">
+            <ActivityPanel />
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
+  );
+}
+
+/** Who is on the clock right now, longest shift first. */
+function LiveRoster({
+  people,
+  loading,
+  multiStore,
+}: {
+  people: {
+    punchId: number;
+    employeeId: number;
+    fullName: string;
+    role: string;
+    storeLocation: string;
+    clockInAt: Date | string;
+  }[];
+  loading: boolean;
+  multiStore: boolean;
+}) {
+  const settingsQ = trpc.settings.get.useQuery(undefined, { staleTime: 60_000 });
+  const longShiftHours = settingsQ.data?.rules.longShiftHours ?? 12;
+  // Durations tick forward between refreshes.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setTick(n => n + 1), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const sorted = [...people].sort(
+    (a, b) => new Date(a.clockInAt).getTime() - new Date(b.clockInAt).getTime()
+  );
+  return (
+    <HudPanel
+      title="On the clock"
+      meta={loading ? undefined : `${people.length} right now`}
+      actions={
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" asChild>
+          <Link href="/payroll?tab=punches">Punches</Link>
+        </Button>
+      }
+    >
+      {loading ? (
+        <div className="space-y-2 p-4">
+          {[0, 1, 2].map(i => (
+            <Skeleton key={i} className="h-9" />
+          ))}
+        </div>
+      ) : sorted.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+          Nobody is on the clock. People appear here the moment they clock in.
+        </p>
+      ) : (
+        <ul className="max-h-[19rem] divide-y divide-[var(--hud-line)] overflow-y-auto">
+          {sorted.map(c => {
+            const hrs = (Date.now() - new Date(c.clockInAt).getTime()) / 3_600_000;
+            const long = hrs > longShiftHours;
+            return (
+              <li key={c.punchId} className="flex items-center gap-3 px-4 py-2.5">
+                <InitialsBadge name={c.fullName} />
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/employees/${c.employeeId}`}
+                    className="block truncate text-sm font-medium hover:underline underline-offset-2"
+                  >
+                    {c.fullName}
+                  </Link>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {multiStore ? `${storeShort(c.storeLocation)} · ` : ""}
+                    {c.role} · in at {fmtTime(c.clockInAt)}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "mono shrink-0 text-sm tabular-nums",
+                    long ? "chip-warn" : "text-muted-foreground"
+                  )}
+                >
+                  {long ? <AlertTriangle className="h-3 w-3" /> : null}
+                  {fmtDuration(hrs)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </HudPanel>
+  );
+}
+
+/** The latest entries of the activity log, as a console feed. */
+/** Time for something from today (store time); the date for anything older. */
+function logStamp(at: Date | string): string {
+  const d = new Date(at);
+  return storeDayKey(d) === storeDayKey(new Date())
+    ? fmtTime(d)
+    : d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BUSINESS_TIME_ZONE });
+}
+
+function SystemLog({ onOpenLog }: { onOpenLog: () => void }) {
+  // Successful sign-ins are routine; the feed is for changes and failures,
+  // so they are left out on the server (before the limit, not after it).
+  const auditQ = trpc.ceo.auditLog.useQuery(
+    { limit: 14, changesOnly: true },
+    { refetchInterval: 30_000 }
+  );
+  const peopleQ = trpc.employees.list.useQuery(
+    { includeInactive: true },
+    { staleTime: 5 * 60_000 }
+  );
+  const nameOf = (id: unknown) => {
+    const p = (peopleQ.data ?? []).find(e => e.id === Number(id));
+    return p?.fullName ?? `#${id}`;
+  };
+  const entries = (auditQ.data ?? []).slice(0, 12);
+  return (
+    <HudPanel
+      title="System log"
+      meta="every change, as it happens"
+      actions={
+        <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={onOpenLog}>
+          Full log
+        </Button>
+      }
+    >
+      {auditQ.isLoading ? (
+        <div className="space-y-2 p-4">
+          {[0, 1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-5" />
+          ))}
+        </div>
+      ) : auditQ.isError && !auditQ.data ? (
+        <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+          Couldn&apos;t load the log just now.
+        </p>
+      ) : entries.length === 0 ? (
+        <p className="hud-log hud-cursor px-4 py-6 text-muted-foreground">
+          No changes recorded yet. Listening
+        </p>
+      ) : (
+        <ul className="hud-log py-1.5">
+          {entries.map(e => {
+            const d = parseDetail(e.detail);
+            const summary = summarize(e, d, nameOf);
+            const failed = e.action.includes("failed");
+            return (
+              <li key={e.id}>
+                <time dateTime={new Date(e.createdAt).toISOString()} title={fmtDateTime(e.createdAt)}>
+                  {logStamp(e.createdAt)}
+                </time>
+                <span className="min-w-0 break-words">
+                  {/* "Automatic · Automatic clock-out" would say it twice. */}
+                  {e.actorScope === "system" ? null : (
+                    <>
+                      <span className="text-muted-foreground">{actorName(e.actorScope, d)}</span>{" "}
+                    </>
+                  )}
+                  <span className={failed ? "text-[var(--bad-fg)]" : "text-foreground"}>
+                    {ACTION_LABELS[e.action] ?? e.action}
+                  </span>
+                  {summary ? <span className="text-muted-foreground"> · {summary}</span> : null}
+                </span>
+              </li>
+            );
+          })}
+          <li aria-hidden="true">
+            <time>{fmtTime(new Date())}</time>
+            <span className="hud-cursor text-muted-foreground">listening</span>
+          </li>
+        </ul>
+      )}
+    </HudPanel>
   );
 }
 
@@ -616,6 +873,7 @@ export default function CeoView() {
 function PayrollPanel({
   rows,
   isLiveWeek,
+  elapsed,
   weekStart,
   showGroups,
   focusLabel,
@@ -625,6 +883,8 @@ function PayrollPanel({
 }: {
   rows: WeeklyRow[];
   isLiveWeek: boolean;
+  /** Share of this week gone by (1 once it is closed): set pay accrues with it. */
+  elapsed: number;
   weekStart: Date;
   showGroups: boolean;
   focusLabel: string;
@@ -633,6 +893,12 @@ function PayrollPanel({
   onRetry: () => void;
 }) {
   const colSpan = isLiveWeek ? 5 : 7;
+  // The estimate rates are set in Control; say the ones in force right now.
+  const rulesQ = trpc.settings.get.useQuery(undefined, { staleTime: 60_000 });
+  const pctOf = (rate: number | undefined, fallback: number) =>
+    `${Math.round((rate ?? fallback) * 1000) / 10}%`;
+  const fedPct = pctOf(rulesQ.data?.rules.estFederalRate, 0.18);
+  const statePct = pctOf(rulesQ.data?.rules.estStateRate, 0.05);
 
   const groups = useMemo(() => {
     const order: string[] = [];
@@ -658,11 +924,11 @@ function PayrollPanel({
             Number(b.overClocked) - Number(a.overClocked) ||
             a.fullName.localeCompare(b.fullName)
       );
-      return { store, list, totals: totalsOf(list) };
+      return { store, list, totals: totalsOf(list, elapsed) };
     });
-  }, [rows, isLiveWeek]);
+  }, [rows, isLiveWeek, elapsed]);
 
-  const grand = useMemo(() => totalsOf(rows), [rows]);
+  const grand = useMemo(() => totalsOf(rows, elapsed), [rows, elapsed]);
 
   return (
     <Card className="surface-card gap-0 py-0">
@@ -678,8 +944,8 @@ function PayrollPanel({
             {fmtWeekRange(weekStart)} · {focusLabel}.
           </span>{" "}
           {isLiveWeek
-            ? "Earned so far is clocked hours × each person's pay rate. Saved pay and tax estimates appear once the week closes and managers save it."
-            : "Taxes are estimates on saved payroll: federal (income tax and FICA) about 18%, state about 5%."}
+            ? "Earned so far is clocked hours × each person's pay rate; anyone on set pay counts at their weekly amount for the share of the week gone by. Saved pay and tax estimates appear once the week closes and it is saved."
+            : `Taxes are estimates on saved payroll: federal (income tax and FICA) about ${fedPct}, state about ${statePct}. Change the rates in Control.`}
         </p>
       </CardHeader>
       <CardContent className="px-0">
@@ -705,7 +971,9 @@ function PayrollPanel({
                       Clocked
                     </TableHead>
                     <TableHead className="text-right">Saved hours</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
+                    <TableHead className="hidden sm:table-cell text-right">
+                      Status
+                    </TableHead>
                     <TableHead className="text-right">Gross</TableHead>
                     <TableHead className="hidden md:table-cell text-right">
                       Est. tax
@@ -782,10 +1050,27 @@ function PayrollPanel({
                                     ? null
                                     : ` · ${storeShort(r.storeLocation)}`}
                                 </div>
-                                {isLiveWeek && r.overClocked ? (
-                                  <span className="chip-warn mt-1 sm:hidden">
-                                    <AlertTriangle className="h-3 w-3" /> Over
-                                    schedule
+                                {/* On a phone the exceptions sit under the
+                                    name; the status column is for wider screens. */}
+                                {isLiveWeek ? (
+                                  r.overClocked ? (
+                                    <span className="chip-warn mt-1 sm:hidden">
+                                      <AlertTriangle className="h-3 w-3" /> Over
+                                      schedule
+                                    </span>
+                                  ) : null
+                                ) : isUnsaved(r) || r.overClocked ? (
+                                  <span className="mt-1 flex flex-wrap gap-1 sm:hidden">
+                                    {isUnsaved(r) ? (
+                                      <span className="chip-warn">
+                                        <AlertTriangle className="h-3 w-3" /> Not saved
+                                      </span>
+                                    ) : null}
+                                    {r.overClocked ? (
+                                      <span className="chip-warn">
+                                        <AlertTriangle className="h-3 w-3" /> Over schedule
+                                      </span>
+                                    ) : null}
                                   </span>
                                 ) : null}
                               </div>
@@ -807,9 +1092,18 @@ function PayrollPanel({
                                 <StatusChips row={r} isLiveWeek />
                               </TableCell>
                               <TableCell className="text-right tabular-nums font-semibold">
-                                {r.clockHours > 0
-                                  ? fmtMoney(r.clockHours * r.payRate)
-                                  : "—"}
+                                {onSetPay(r) ? (
+                                  <>
+                                    {fmtMoney(laborSoFar(r, elapsed))}
+                                    <span className="block text-[11px] font-normal text-muted-foreground">
+                                      of {fmtMoney(r.weeklyPay!)} set pay
+                                    </span>
+                                  </>
+                                ) : r.clockHours > 0 ? (
+                                  fmtMoney(laborSoFar(r, elapsed))
+                                ) : (
+                                  "—"
+                                )}
                               </TableCell>
                             </>
                           ) : (
@@ -824,7 +1118,7 @@ function PayrollPanel({
                                   ? fmtHours(r.hoursWorked)
                                   : "—"}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="hidden sm:table-cell text-right">
                                 <StatusChips row={r} isLiveWeek={false} />
                               </TableCell>
                               <TableCell className="text-right tabular-nums font-semibold">
@@ -874,7 +1168,7 @@ function PayrollPanel({
                       <TableCell className="text-right tabular-nums font-semibold">
                         {fmtHours(grand.saved)}
                       </TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">
+                      <TableCell className="hidden sm:table-cell text-right text-xs text-muted-foreground">
                         {grand.unsaved > 0 ? `${grand.unsaved} not saved` : ""}
                       </TableCell>
                       <TableCell className="text-right tabular-nums font-semibold">
@@ -898,13 +1192,13 @@ function PayrollPanel({
   );
 }
 
-function totalsOf(list: WeeklyRow[]) {
+function totalsOf(list: WeeklyRow[], elapsed: number) {
   return list.reduce(
     (t, r) => ({
       scheduled: t.scheduled + r.scheduledHours,
       clock: t.clock + r.clockHours,
       saved: t.saved + r.hoursWorked,
-      earned: t.earned + r.clockHours * r.payRate,
+      earned: t.earned + laborSoFar(r, elapsed),
       gross: t.gross + r.grossPay,
       tax: t.tax + r.federal + r.state,
       net: t.net + r.netPay,
@@ -1332,6 +1626,9 @@ const ACTION_LABELS: Record<string, string> = {
   "clock.autoClockOutCorrected": "Corrected an automatic clock-out",
   "attention.resolve": "Signed off an alert",
   "settings.autoClockOut": "Changed automatic clock-out",
+  "settings.rules": "Changed the rules",
+  "settings.addStore": "Added a store",
+  "settings.addRole": "Added a role",
   "ceo.updatePin": "Changed a PIN",
   "portal.syncNow": "Pushed a snapshot to the portal",
   "export.full": "Downloaded the full data export",
@@ -1528,6 +1825,19 @@ function summarize(
         return d?.hours
           ? `After ${fmtHoursLabel(num(d.hours), 0)}`
           : "Turned off";
+      case "settings.rules":
+        return (
+          join(
+            d?.estFederalPct !== undefined && `federal estimate ${d.estFederalPct}%`,
+            d?.estStatePct !== undefined && `state estimate ${d.estStatePct}%`,
+            d?.longShiftHours !== undefined &&
+              `long-shift alert after ${d.longShiftHours} h`
+          ) || null
+        );
+      case "settings.addStore":
+        return d?.store ? String(d.store) : null;
+      case "settings.addRole":
+        return d?.role ? String(d.role) : null;
       case "ceo.updatePin":
         return d?.scope
           ? pinMeta(String(d.scope), String(d.scope)).title

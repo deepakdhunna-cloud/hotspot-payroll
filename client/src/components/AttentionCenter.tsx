@@ -176,7 +176,18 @@ const SIGN_OFF: Record<
   },
 };
 
-export function AttentionCenter({ className }: { className?: string }) {
+export function AttentionCenter({
+  className,
+  store,
+}: {
+  className?: string;
+  /**
+   * Show one store's items only (the command center's focus). The count in
+   * the head is then that store's, with the rest of the company's noted
+   * beside it so nothing is hidden. Company-wide items stay in every view.
+   */
+  store?: string;
+}) {
   const utils = trpc.useUtils();
   const listQ = trpc.attention.list.useQuery(undefined, {
     refetchInterval: 60_000,
@@ -217,7 +228,11 @@ export function AttentionCenter({ className }: { className?: string }) {
     },
   });
 
-  const items = (listQ.data?.items ?? []) as Item[];
+  const everything = (listQ.data?.items ?? []) as Item[];
+  const items = store
+    ? everything.filter((i) => !i.storeLocation || i.storeLocation === store)
+    : everything;
+  const elsewhere = everything.length - items.length;
   const oldest = items.reduce(
     (max, i) => Math.max(max, pendingFor(i.createdAt).days),
     0,
@@ -279,7 +294,10 @@ export function AttentionCenter({ className }: { className?: string }) {
         </span>
         <span>
           <span className="font-semibold callout-title">All clear.</span> Punches,
-          schedules and payroll all check out.
+          schedules and payroll all check out
+          {store && elsewhere > 0
+            ? ` here. ${elsewhere} open at other stores.`
+            : "."}
         </span>
       </p>
     );
@@ -327,7 +345,9 @@ export function AttentionCenter({ className }: { className?: string }) {
             <span className="sr-only">, {items.length} open</span>
           </h2>
           <p className="mt-0.5 hidden text-xs leading-snug text-muted-foreground sm:block">
-            Each stays here until someone signs it off
+            {store && elsewhere > 0
+              ? `This store only · ${elsewhere} more at other stores`
+              : "Each stays here until someone signs it off"}
           </p>
         </div>
         {oldest >= 1 ? (

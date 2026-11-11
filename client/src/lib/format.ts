@@ -43,7 +43,7 @@ export function storeIndex(store: string): number {
  */
 export function storeColor(store: string): string {
   const i = storeOrder.indexOf(store);
-  return `var(--chart-${(i < 0 ? 0 : i % 5) + 1})`;
+  return `var(--chart-${(i < 0 ? 0 : i % 8) + 1})`;
 }
 
 /** Short store labels for chips and tight places. Filled by `registerStores`. */

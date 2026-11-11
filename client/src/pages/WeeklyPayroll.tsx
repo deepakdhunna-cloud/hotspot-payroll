@@ -86,6 +86,22 @@ function initialWeek(draftWeek: string | undefined): Date {
   return currentPayPeriodStart();
 }
 
+/**
+ * `?who=<employee id>` opens Punches on one person (the command center links
+ * here to fix a flagged shift). Read once and removed from the address, so a
+ * refresh or Back doesn't re-apply a filter the manager has since changed.
+ */
+function readWhoParam(): number | null {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  const raw = url.searchParams.get("who");
+  if (raw === null) return null;
+  url.searchParams.delete("who");
+  window.history.replaceState(window.history.state, "", url.toString());
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 type PendingSwitch = { kind: "week"; to: Date } | { kind: "store"; to: string };
 
 const storeName = (s: string) => (s === "all" ? "all stores" : s);
@@ -122,7 +138,7 @@ export default function WeeklyPayroll() {
   // Punches in "custom dates" mode don't use the header's week picker.
   const [punchRange, setPunchRange] = useState(false);
   // "See punches" on a timesheet row opens Punches on that one person.
-  const [punchWho, setPunchWho] = useState<number | null>(null);
+  const [punchWho, setPunchWho] = useState<number | null>(readWhoParam);
 
   /** Change week — but ask first if Hours & pay has unsaved edits. */
   const requestWeek = useCallback(
