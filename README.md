@@ -7,7 +7,8 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
 - **PIN sign-in** — one PIN per store (manager scope) plus a CEO master PIN.
   Sessions last 7 days; rotating a PIN instantly revokes every session that
   used the old one. Brute-force attempts are rate-limited and logged.
-- **Manager dashboard** — live "on the clock" list, hours vs schedule, pace
+- **Manager dashboard** — last week's payroll status with one button to
+  review and save it, live "on the clock" list, hours vs schedule, pace
   projection, day-by-day schedule coverage, over-clock alerts, gross pay.
 - **Schedule import** — upload a Homebase schedule (PDF/photo); every shift is
   extracted day by day, hours are totalled per employee, unknown names go to a
@@ -27,6 +28,55 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
 
 Store isolation is enforced server-side on every procedure: a store PIN can
 only ever read or write its own store's data; the CEO PIN sees everything.
+
+## Design, themes and the home-screen app
+
+**Light and dark.** The site follows the device by default; the account menu
+(avatar) has an Appearance switch — Auto, Light, Dark. The choice is kept in
+`localStorage` under `theme` and applied by a small script in
+`client/index.html` before first paint, so there is never a flash of the
+wrong theme. `client/src/contexts/ThemeContext.tsx` keeps it in sync
+afterwards. The time clock (`/clock`) is always dark.
+
+**One design system.** Every color is a token in `client/src/index.css` with
+a light and a dark value (`--background`, `--card`, `--primary`, status pairs
+like `--ok-fg` / `--ok-bg`, …). Components use the tokens — never a literal
+color and never a `dark:` override — so anything new is right in both themes
+by default. Brand red is for the brand and the one main action on a screen;
+status uses its own colors and always carries an icon or a word.
+
+**Layouts.** The app has three shapes, picked by width:
+
+| Width | Device | Navigation |
+| --- | --- | --- |
+| under 768px | phones, a foldable's cover screen, a foldable opened upright | brand bar + floating tab bar with the **+** quick add |
+| 768px and up | a foldable opened sideways, tablets, small laptops | navigation rail on the left edge |
+| 1360px and up | desktop | sidebar with search, store picker and account |
+
+Tailwind's `sm` / `md` / `lg` / `xl` are redefined in `index.css` so they
+describe the **content column** rather than the window (`md:` still means
+"my column is at least 768px wide", whatever navigation is beside it). `sm`
+starts at 600px so a foldable opened upright gets two-up layouts. On touch
+devices controls are at least 40px tall and fields use 16px type (so iOS
+never zooms the page on focus), and dialogs open as bottom sheets on phones.
+
+**Home-screen app.** Managers add the site to their phone's home screen and
+use it full screen, like an app (it is not an App Store app):
+
+- iPhone / iPad: open the site in Safari → **Share** → **Add to Home
+  Screen** → **Add**.
+- Android / Chrome: browser menu → **Install app** (or the Install button in
+  the guide).
+
+The account menu has **Add to Home Screen** with these steps, and the
+dashboard shows a one-time reminder on phones. What makes it work:
+`client/public/manifest.webmanifest`, the icons in `client/public/icons/`
+(cut from the real logo — the speed stripes and the H), and the Apple meta
+tags in `client/index.html`. A store tablet saved from `/clock` uses
+`kiosk.webmanifest` instead, so its icon reopens the time clock. From the
+home screen the account menu offers **Refresh** (there is no browser reload
+button there), spreadsheet exports open the share sheet, and the app icon
+shows the number of open attention items where the device supports it.
 
 ## Portal integration (this site is the system of record)
 

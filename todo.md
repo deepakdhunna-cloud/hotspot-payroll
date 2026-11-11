@@ -189,3 +189,13 @@
 - [x] Verified end to end on MariaDB 10.11 with the production build: export → schema.sql + data.sql into an empty DB → all 11 tables row-for-row identical (also through a latin1-default client); data.sql re-run idempotent; COPY_FROM_DATABASE_URL copy of all 11 tables identical; feed gzip/keys/no hashes; CEO UI download + activity log in Chromium
 - [x] Large histories never freeze the site: formatting runs in 2,000-row slices and the ZIP streams 1 MB deflate slices, yielding between each (40k punches: longest event-loop pause 91 ms vs 1.4 s in one pass)
 - [x] Tests: 14 new (contents, credentials gate, exact values, SQL/CSV escaping, sliced JSON = JSON.stringify, manifest, responsiveness, route 401/403/200) — 173/173 passing; tsc + build clean
+
+## v14 — Light + dark redesign, app shell, home-screen app
+- [x] Design system rewritten as tokens with a light and a dark value each; theme follows the device, with Auto / Light / Dark in the account menu; applied before first paint; time clock always dark
+- [x] App shell: phone brand bar + floating tab bar with "+" quick add; navigation rail from 768px (foldable opened sideways, tablets); sidebar from 1360px; breakpoints follow the content column; `sm` at 600px for a foldable opened upright
+- [x] Home-screen app: manifest, icons cut from the real logo, Apple meta tags, safe-area padding, install guide + one-time reminder, kiosk manifest so store tablets reopen the time clock, Refresh in the account menu when running from the home screen, app-icon badge for open attention items
+- [x] Touch: 40px controls, 16px fields (no iOS focus zoom), dialogs as bottom sheets on phones, exports through the share sheet on phones and tablets
+- [x] Dashboard: "Payroll to run" hero for the last closed week (hours, saved count, one button), attention list compact and folded after three rows, quick-action tiles replaced by the global "+"
+- [x] Payroll: compact expandable rows below desktop width; "See punches" / Clock chip opens that person's punches for the week; quick add separates "Fix a punch" from "Add a missed punch"
+- [x] Hard-coded colors removed from pages (schedule, trend, loading states); avatars theme-aware
+- [x] Verified in Chromium at 393×852, 466×678 (cover), 626×890 and 890×626 (unfolded), 1180 and 1440 wide, light and dark; 189 tests passing; tsc + production build clean
