@@ -5,8 +5,10 @@
  *
  *  - on dark  (/brand/hotspot-logo.png)     white lettering — the original.
  *  - on light (/brand/hotspot-logo-ink.png) the same logo with the HOTSPOT
- *    lettering in solid ink, so it never washes out on a white page. The red
- *    stripes and the MARKET pill are identical.
+ *    lettering in solid ink, so it never washes out on a white page, and the
+ *    red stripes as flat red bars: the original's black edge on each stripe
+ *    disappears into a dark page but reads as a heavy outline on a white
+ *    one, so it is left off here. The MARKET pill is identical.
  *
  * Which one shows is plain CSS (the `dark:` variant), so it follows the
  * theme — and any always-dark surface such as the time clock — without
