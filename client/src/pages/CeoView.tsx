@@ -758,11 +758,18 @@ export default function CeoView() {
           <StoresBoard
             stores={storeCards}
             loading={storesLiveQ.isPending && !storesLiveQ.isError}
+            failed={storesLiveQ.isError && !storesLiveQ.data}
+            onRetry={() => storesLiveQ.refetch()}
             lastWeek={lastClosed}
             lastWeekLoading={lastWeekQ.isPending && !lastWeekQ.isError}
+            lastWeekFailed={lastWeekQ.isError && !lastWeekQ.data}
+            onRetryLastWeek={() => lastWeekQ.refetch()}
             focus={storeFilter}
             onFocus={store => {
+              // "Live" means the week in progress, whatever week Command
+              // was last looking at.
               setStoreFilter(store);
+              setWeekStart(inProgressPayWeekStart());
               setTab("overview");
             }}
             onDesk={store => {

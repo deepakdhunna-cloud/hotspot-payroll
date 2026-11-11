@@ -15,7 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtHours, fmtMoney, fmtWeekRange } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, ArrowUpRight, CheckCircle2, Clock, Crosshair, Store, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+  Crosshair,
+  RotateCw,
+  Store,
+  Users,
+} from "lucide-react";
 import { HudPanel, Led } from "./hud";
 
 export type StoreCard = {
@@ -55,8 +64,12 @@ function ago(at: Date | string | null): { text: string; fresh: boolean } {
 export function StoresBoard({
   stores,
   loading,
+  failed,
+  onRetry,
   lastWeek,
   lastWeekLoading,
+  lastWeekFailed,
+  onRetryLastWeek,
   focus,
   onFocus,
   onDesk,
@@ -64,9 +77,15 @@ export function StoresBoard({
 }: {
   stores: StoreCard[];
   loading: boolean;
+  /** This week's figures couldn't be loaded: say so, never an empty board. */
+  failed: boolean;
+  onRetry: () => void;
   /** Start of the last closed pay week (the one being paid). */
   lastWeek: Date;
   lastWeekLoading: boolean;
+  /** Last week's payroll couldn't be loaded: unknown is not "nothing to pay". */
+  lastWeekFailed: boolean;
+  onRetryLastWeek: () => void;
   focus: string;
   /** Focus the portal on a store and show it live. */
   onFocus: (store: string) => void;
@@ -82,6 +101,19 @@ export function StoresBoard({
           <Skeleton key={i} className="h-72 rounded-lg" />
         ))}
       </div>
+    );
+  }
+  if (failed) {
+    return (
+      <HudPanel title="Stores">
+        <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+          <AlertTriangle className="h-6 w-6 text-warning" aria-hidden />
+          <p className="text-sm font-medium">Couldn&apos;t load the stores just now.</p>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            <RotateCw className="h-3.5 w-3.5" aria-hidden /> Try again
+          </Button>
+        </div>
+      </HudPanel>
     );
   }
   const companyCph = (() => {
@@ -157,6 +189,8 @@ export function StoresBoard({
                     <p className="hud-label">Last week</p>
                     {lastWeekLoading ? (
                       <Skeleton className="mt-1 h-7 w-24" />
+                    ) : lastWeekFailed ? (
+                      <p className="hud-value mt-1 text-[1.4rem]">—</p>
                     ) : (
                       <p className="hud-value mt-1 text-[1.4rem]">
                         {s.lastGross && s.lastGross > 0 ? whole(s.lastGross) : "—"}
@@ -166,7 +200,20 @@ export function StoresBoard({
                       payroll saved · {fmtWeekRange(lastWeek)}
                     </p>
                     <p className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs">
-                      {lastWeekLoading ? null : s.lastUnsaved > 0 ? (
+                      {lastWeekLoading ? null : lastWeekFailed ? (
+                        <>
+                          <span className="chip-warn">
+                            <AlertTriangle className="h-3 w-3" aria-hidden /> Couldn&apos;t load
+                          </span>
+                          <button
+                            type="button"
+                            className="font-medium text-[var(--brand-text)] underline-offset-2 hover:underline"
+                            onClick={onRetryLastWeek}
+                          >
+                            Try again
+                          </button>
+                        </>
+                      ) : s.lastUnsaved > 0 ? (
                         <span className="chip-warn">
                           <AlertTriangle className="h-3 w-3" aria-hidden />
                           {s.lastUnsaved} of {paid} not saved
@@ -179,7 +226,7 @@ export function StoresBoard({
                         <span className="text-muted-foreground">nothing to pay</span>
                       )}
                     </p>
-                    {s.costPerHour !== null ? (
+                    {s.costPerHour !== null && !lastWeekFailed ? (
                       <p className="mono mt-1.5 text-[11px] text-muted-foreground">
                         <span className="text-foreground">{fmtMoney(s.costPerHour)}</span>/h
                         {companyCph !== null && Math.abs(s.costPerHour - companyCph) >= 0.25
@@ -216,7 +263,7 @@ export function StoresBoard({
                     <Crosshair className="h-3.5 w-3.5" aria-hidden /> See it live
                   </Button>
                 ) : null}
-                {staffed && s.lastUnsaved > 0 ? (
+                {staffed && s.lastUnsaved > 0 && !lastWeekFailed ? (
                   <Button size="sm" variant="tint" className="h-9" onClick={() => onReview(s.name)}>
                     Approve its payroll <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
                   </Button>
