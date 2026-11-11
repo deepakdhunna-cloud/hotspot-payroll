@@ -136,6 +136,8 @@ type WeeklyRow = {
   clockHours: number;
   overClocked: boolean;
   grossPay: number;
+  /** The week's cost by the shared rule (server @shared/weekPay). */
+  laborCost: number;
   federal: number;
   state: number;
   netPay: number;
@@ -206,7 +208,7 @@ export default function CeoView() {
     const m = new Map<string, { liveLabor: number; unsaved: number }>();
     for (const r of allRows) {
       const cur = m.get(r.storeLocation) ?? { liveLabor: 0, unsaved: 0 };
-      cur.liveLabor += r.clockHours * r.payRate;
+      cur.liveLabor += r.laborCost;
       if (isUnsaved(r)) cur.unsaved += 1;
       m.set(r.storeLocation, cur);
     }
@@ -247,7 +249,7 @@ export default function CeoView() {
     }, zero);
   }, [byStore, storeFilter]);
 
-  const liveLabor = rows.reduce((s, r) => s + r.clockHours * r.payRate, 0);
+  const liveLabor = rows.reduce((s, r) => s + r.laborCost, 0);
   const savedCount = rows.filter(isSaved).length;
   const unsavedCount = rows.filter(isUnsaved).length;
   const payableCount = rows.filter(r => isSaved(r) || isUnsaved(r)).length;
@@ -678,7 +680,7 @@ function PayrollPanel({
             {fmtWeekRange(weekStart)} · {focusLabel}.
           </span>{" "}
           {isLiveWeek
-            ? "Earned so far is clocked hours × each person's pay rate. Saved pay and tax estimates appear once the week closes and managers save it."
+            ? "Earned so far is clocked hours × each person's pay rate — or their full weekly amount for anyone on set pay. Saved pay and tax estimates appear once the week closes and managers save it."
             : "Taxes are estimates on saved payroll: federal (income tax and FICA) about 18%, state about 5%."}
         </p>
       </CardHeader>
@@ -807,8 +809,8 @@ function PayrollPanel({
                                 <StatusChips row={r} isLiveWeek />
                               </TableCell>
                               <TableCell className="text-right tabular-nums font-semibold">
-                                {r.clockHours > 0
-                                  ? fmtMoney(r.clockHours * r.payRate)
+                                {r.laborCost > 0
+                                  ? fmtMoney(r.laborCost)
                                   : "—"}
                               </TableCell>
                             </>
@@ -904,7 +906,7 @@ function totalsOf(list: WeeklyRow[]) {
       scheduled: t.scheduled + r.scheduledHours,
       clock: t.clock + r.clockHours,
       saved: t.saved + r.hoursWorked,
-      earned: t.earned + r.clockHours * r.payRate,
+      earned: t.earned + r.laborCost,
       gross: t.gross + r.grossPay,
       tax: t.tax + r.federal + r.state,
       net: t.net + r.netPay,

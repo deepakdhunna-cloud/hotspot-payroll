@@ -17,8 +17,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { STORES } from "@shared/hotspot";
 import { payWeekBounds, payWeekOf } from "@shared/hotspot";
+import { weekPay } from "@shared/weekPay";
 import { FEED_SILENCE_HOURS } from "./attention";
 import {
+  getPayrollByWeek,
   hoursWorkedForWeekBulk,
   listEmployees,
   listOpenPunches,
@@ -81,15 +83,17 @@ export async function buildPortalSummary(
   const { start: weekStartAt, end: weekEnd } = payWeekBounds(weekStart);
   const lookbackStart = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 
-  const [employees, openPunches, weekHoursByEmployee, recentPunches] =
+  const [employees, openPunches, weekHoursByEmployee, recentPunches, entries] =
     await Promise.all([
       listEmployees({ activeOnly: true }),
       listOpenPunches(),
       hoursWorkedForWeekBulk(weekStartAt, weekEnd, undefined, now),
       listPunchesInRange(lookbackStart, now),
+      getPayrollByWeek(weekStart),
     ]);
 
   const employeeById = new Map(employees.map((e) => [e.id, e]));
+  const entryByEmployee = new Map(entries.map((e) => [e.employeeId, e]));
 
   // Newest punch activity per store — open punches count as activity too.
   const lastPunchByStore = new Map<string, number>();
@@ -122,9 +126,16 @@ export async function buildPortalSummary(
     let weekHours = 0;
     let weekLaborCost = 0;
     for (const emp of staff) {
-      const hrs = weekHoursByEmployee.get(emp.id) ?? 0;
-      weekHours += hrs;
-      weekLaborCost += hrs * Number(emp.payRate);
+      const hrs = weekHoursByEmployee.get(emp.id);
+      weekHours += hrs ?? 0;
+      // Same rule as the dashboard and Payroll (@shared/weekPay): saved
+      // gross, else set pay in full, else clocked hours × pay rate.
+      weekLaborCost += weekPay({
+        entry: entryByEmployee.get(emp.id),
+        clockHours: hrs,
+        payRate: emp.payRate,
+        weeklyPay: emp.weeklyPay,
+      }).gross;
     }
 
     const last = lastPunchByStore.get(store) ?? null;
@@ -353,7 +364,7 @@ export function renderPortalDashboardPage(): string {
      <div class="kpis">
        <div class="kpi"><div class="label">On the clock now</div><div class="value" id="kpi-in">–</div><div class="sub">all stores</div></div>
        <div class="kpi"><div class="label">Hours this week</div><div class="value" id="kpi-hours">–</div><div class="sub">from clock punches</div></div>
-       <div class="kpi"><div class="label">Live labor cost</div><div class="value" id="kpi-cost">–</div><div class="sub">hours × pay rate, this week</div></div>
+       <div class="kpi"><div class="label">Live labor cost</div><div class="value" id="kpi-cost">–</div><div class="sub">hours × pay rate or set pay, this week</div></div>
        <div class="kpi"><div class="label">Stores reporting</div><div class="value" id="kpi-feed">–</div><div class="sub">punched within 24h</div></div>
      </div>
      <div class="stores" id="stores"></div>

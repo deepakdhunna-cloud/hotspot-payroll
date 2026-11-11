@@ -717,7 +717,7 @@ export default function Home() {
                       </div>
                       <span className="text-right text-sm font-medium tabular-nums sm:order-last">
                         {isLiveWeek ? (
-                          <Money value={emp.clockHours * emp.payRate} />
+                          <Money value={emp.laborCost} />
                         ) : emp.grossPay > 0 ? (
                           <Money value={emp.grossPay} />
                         ) : (

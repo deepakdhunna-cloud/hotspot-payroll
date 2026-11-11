@@ -90,6 +90,7 @@ import {
   parseLooseDateNearAnchor,
   resolveScheduleDay,
 } from "@shared/hotspot";
+import { FIXED_PAY_NOTE, SCHEDULE_ONLY_NOTE, weekPay } from "@shared/weekPay";
 import { TRPCError } from "@trpc/server";
 import {
   ALL_SCOPES,
@@ -111,19 +112,11 @@ import { getPortalSyncStatus, pushPortalSnapshot } from "./portalSync";
 const StoreEnum = z.enum(STORES);
 const RoleEnum = z.enum(ROLES);
 
-/**
- * Marker stored in a payroll entry's notes when the week was saved as a
- * flat "set pay" amount rather than hours × rate. The client reads it to
- * re-open the row in set-pay mode.
- */
-const FIXED_PAY_NOTE = "fixed-pay";
-/**
- * Marker for payroll entries that exist only because a schedule was
- * committed (they carry scheduledHours). The manager has NOT entered hours
- * for these rows yet, so the Hours & pay grid must keep auto-prefilling
- * them from clock punches instead of treating them as a saved 0.
- */
-const SCHEDULE_ONLY_NOTE = "schedule-only";
+// FIXED_PAY_NOTE ("fixed-pay") marks a week saved as a flat set-pay amount;
+// SCHEDULE_ONLY_NOTE ("schedule-only") marks a placeholder entry a schedule
+// commit created — the manager has NOT entered hours on it, so the Hours &
+// pay grid keeps prefilling it from clock punches. Both live in
+// @shared/weekPay with the rule for what a week costs.
 
 /**
  * Is this payroll entry a week that was actually paid? Excludes the
@@ -1283,15 +1276,27 @@ export const appRouter = router({
             byStore[e.storeLocation].employeeCount++;
         }
         // The dashboard's headline numbers are LIVE: hours come straight from
-        // clock punches and labor cost from clocked hours × pay rate, so the
-        // page moves in real time. Saved payroll entries are reported
-        // alongside (totalEntered / totalSavedGross) — money that has
-        // actually been committed to payroll.
+        // clock punches. Labor cost is each person's week priced by the one
+        // shared rule (@shared/weekPay) — saved gross once their week is
+        // saved; until then set pay in full, or clocked hours × pay rate —
+        // so it always equals the gross the Payroll page shows for the same
+        // people. Saved payroll entries are reported alongside
+        // (totalEntered / totalSavedGross) — money that has actually been
+        // committed to payroll.
+        const entryByEmp = new Map(entries.map(e => [e.employeeId, e]));
+        const laborCostByEmp = new Map<number, number>();
         for (const emp of employees) {
+          const clocked = clockHours.get(emp.id);
+          const laborCost = weekPay({
+            entry: entryByEmp.get(emp.id),
+            clockHours: clocked,
+            payRate: emp.payRate,
+            weeklyPay: emp.weeklyPay,
+          }).gross;
+          laborCostByEmp.set(emp.id, laborCost);
           if (!byStore[emp.storeLocation]) continue;
-          const clocked = clockHours.get(emp.id) ?? 0;
-          byStore[emp.storeLocation].totalHours += clocked;
-          byStore[emp.storeLocation].totalGross += clocked * Number(emp.payRate);
+          byStore[emp.storeLocation].totalHours += clocked ?? 0;
+          byStore[emp.storeLocation].totalGross += laborCost;
         }
         for (const e of entries) {
           if (!byStore[e.storeLocation]) continue;
@@ -1319,7 +1324,6 @@ export const appRouter = router({
           0
         );
 
-        const entryByEmp = new Map(entries.map(e => [e.employeeId, e]));
         // Scheduled hours can come from the payroll entry or, if that is
         // still 0, from the sum of imported day-level shifts.
         const shiftHoursByEmp = new Map<number, number>();
@@ -1355,6 +1359,9 @@ export const appRouter = router({
             overClocked,
             overClockedBy,
             grossPay,
+            // What this person's week costs by the shared rule — the same
+            // figure the Payroll page shows on their row.
+            laborCost: laborCostByEmp.get(emp.id) ?? 0,
           };
         });
 
@@ -1643,8 +1650,9 @@ export const appRouter = router({
    * this endpoint carries NO employee PII (no names, phones, or per-person
    * rates), no punch-level detail and no operational state: a CFO reads
    * cost, trend and ratios, not the shop floor. Numbers of record come
-   * from SAVED payroll; a week that was never finalized falls back to
-   * clocked hours × current pay rate and is flagged `estimated`.
+   * from SAVED payroll; a week that was never finalized falls back to the
+   * shared week-cost rule (@shared/weekPay: set pay in full, otherwise
+   * clocked hours × current pay rate) and is flagged `estimated`.
    */
   cfo: router({
     summary: protectedProcedure
@@ -1754,6 +1762,21 @@ export const appRouter = router({
           perEmp.set(p.employeeId, (perEmp.get(p.employeeId) ?? 0) + hrs);
         }
 
+        // Entries per (week, employee): a never-finalized week can still
+        // hold placeholders, which the week-cost rule needs to see.
+        const entryByWeekEmp = new Map<string, (typeof entries)[number]>();
+        for (const e of entries) {
+          entryByWeekEmp.set(
+            `${new Date(e.weekStart).toISOString()}|${e.employeeId}`,
+            e
+          );
+        }
+        // The people an estimated week is made of, kept for the role mix.
+        const estimateRowsByIso = new Map<
+          string,
+          { role: string; hours: number; gross: number }[]
+        >();
+
         for (const w of weeks) {
           const iso = w.weekStart.toISOString();
           const perEmp = clockAgg.get(iso)!;
@@ -1764,15 +1787,25 @@ export const appRouter = router({
             w.peoplePaid = paidByIso.get(iso)?.size ?? 0;
             continue;
           }
-          // Never finalized: estimate from the time clock at current rates —
-          // except standing set pay, which is their flat weekly amount.
-          perEmp.forEach((hrs, empId) => {
-            const emp = empById.get(empId);
-            if (!emp || hrs <= 0) return;
-            const gross =
-              emp.weeklyPay != null && Number(emp.weeklyPay) > 0
-                ? Number(emp.weeklyPay)
-                : hrs * Number(emp.payRate);
+          // Never finalized: estimate each person's week with the shared
+          // rule (@shared/weekPay) — set pay in full, clocked or not;
+          // everyone else at clocked hours × their current rate. A week
+          // with no clocked time anywhere has nothing to estimate from and
+          // stays empty rather than showing set pay alone.
+          if (perEmp.size === 0) continue;
+          const estimateRows: { role: string; hours: number; gross: number }[] =
+            [];
+          for (const emp of employees) {
+            const clocked = perEmp.get(emp.id);
+            const hrs = clocked ?? 0;
+            const gross = weekPay({
+              entry: entryByWeekEmp.get(`${iso}|${emp.id}`),
+              clockHours: clocked,
+              payRate: emp.payRate,
+              weeklyPay: emp.weeklyPay,
+            }).gross;
+            if (hrs <= 0 && gross <= 0) continue;
+            estimateRows.push({ role: emp.role, hours: hrs, gross });
             w.estimated = true;
             w.gross += gross;
             w.hours += hrs;
@@ -1785,7 +1818,8 @@ export const appRouter = router({
               w.byStore[emp.storeLocation].gross += gross;
               w.byStore[emp.storeLocation].hours += hrs;
             }
-          });
+          }
+          estimateRowsByIso.set(iso, estimateRows);
         }
 
         // Role mix for the latest closed week — role/hours/gross only,
@@ -1808,18 +1842,8 @@ export const appRouter = router({
             });
           }
         } else {
-          clockAgg.get(latestIso)?.forEach((hrs, empId) => {
-            const emp = empById.get(empId);
-            if (!emp || hrs <= 0) return;
-            latestWeekPeople.push({
-              role: emp.role,
-              hours: hrs,
-              gross:
-                emp.weeklyPay != null && Number(emp.weeklyPay) > 0
-                  ? Number(emp.weeklyPay)
-                  : hrs * Number(emp.payRate),
-            });
-          });
+          // Not saved yet: the same people and amounts as the week's estimate.
+          latestWeekPeople.push(...(estimateRowsByIso.get(latestIso) ?? []));
         }
 
         // Per-store feed freshness: the newest punch timestamp seen in the
@@ -1930,6 +1954,15 @@ export const appRouter = router({
           const { overClocked } = overclockStatus(clocked, scheduled);
           const { federal, state, totalTax, netPay } =
             estimateWithholding(grossPay);
+          // The week's cost by the shared rule (@shared/weekPay): saved
+          // gross, else set pay in full, else clocked hours × pay rate. It
+          // is the Executive view's "earned so far" and matches Payroll.
+          const laborCost = weekPay({
+            entry,
+            clockHours: clockHours.get(emp.id),
+            payRate: emp.payRate,
+            weeklyPay: emp.weeklyPay,
+          }).gross;
           if (byStore[emp.storeLocation]) {
             byStore[emp.storeLocation].employeeCount++;
             byStore[emp.storeLocation].totalHours += hoursWorked;
@@ -1953,6 +1986,7 @@ export const appRouter = router({
             variance: hoursWorked - scheduled,
             overClocked,
             grossPay,
+            laborCost,
             federal,
             state,
             totalTax,

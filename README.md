@@ -28,6 +28,22 @@ Payroll, scheduling and time clock for the five Hotspot Market stores.
 Store isolation is enforced server-side on every procedure: a store PIN can
 only ever read or write its own store's data; the CEO PIN sees everything.
 
+### One rule for labor cost
+
+Every "labor cost" / "gross" figure — the Hours & pay grid, the manager
+dashboard, the Executive view, the Finance estimate and the live portal —
+prices a person's week with the same function, `weekPay()` in
+`shared/weekPay.ts`:
+
+- a **saved** week costs the saved entry's gross pay;
+- a week that is **not saved yet** costs the standing **set pay** in full
+  (whether or not they clocked in) or, for hourly people, clocked hours ×
+  pay rate.
+
+So for the same week and the same people, the dashboard's labor cost is the
+gross the Payroll page shows. Tests: `server/weekPay.test.ts`,
+`server/laborCost.test.ts`.
+
 ## Portal integration (this site is the system of record)
 
 This website hosts and owns all payroll data, and serves the live portal

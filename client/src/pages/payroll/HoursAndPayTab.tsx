@@ -39,6 +39,7 @@ import { BlockState, TableStateRows } from "@/components/QueryStates";
 import { trpc } from "@/lib/trpc";
 import { useStoreScope } from "@/contexts/StoreScopeContext";
 import { computeGrossPay } from "@shared/hotspot";
+import { isScheduleOnlyEntry, weekPay } from "@shared/weekPay";
 import {
   fmtHours,
   fmtHoursLabel,
@@ -161,46 +162,33 @@ function tidy2(raw: string): string {
 }
 
 /**
- * A payroll entry that only exists to carry scheduled hours (created by a
- * schedule import/commit) — the manager never entered hours on it. Legacy
- * rows from before the "schedule-only" marker are detected by their saved
- * 0 hours alongside real clock punches.
+ * The values a row opens with when nobody is editing it — straight from the
+ * shared week rule (@shared/weekPay), the same one the dashboard, Executive
+ * and Finance figures use, so an untouched row here and its labor cost
+ * there are always the same number:
+ *  - a saved week reopens with its saved hours, its own rate and, when it
+ *    was saved as set pay, its amount;
+ *  - a week that isn't saved yet fills hours from the clock and, for
+ *    someone with a standing weekly amount, opens as set pay — a week
+ *    deliberately saved hourly stays hourly.
  */
-function isScheduleOnlyEntry(entry: WeekRow["entry"], clockH: number | undefined): boolean {
-  if (!entry) return false;
-  if (entry.notes === "schedule-only") return true;
-  return (
-    entry.notes !== "fixed-pay" &&
-    Number(entry.hoursWorked) === 0 &&
-    clockH !== undefined &&
-    clockH > 0
-  );
-}
-
-/** The values a row opens with when nobody is editing it. */
 function freshRow(row: WeekRow, clockH: number | undefined): { edit: RowEdit; base: RowBaseline } {
-  const saved = row.entry && !isScheduleOnlyEntry(row.entry, clockH) ? row.entry : null;
-  let hours = "";
-  let manual = false;
-  if (saved) {
-    const n = Number(saved.hoursWorked);
-    hours = n.toFixed(2);
-    // Saved hours that no longer match the clock open as typed hours, with
-    // the current clock figure offered next to them.
-    if (clockH !== undefined && Math.abs(n - clockH) > CLOCK_MATCH_SLACK) manual = true;
-  } else if (clockH !== undefined && clockH > 0) {
-    hours = clockH.toFixed(2);
-  }
-  // Set pay: a week SAVED as set pay reopens with its amount. A standing
-  // weekly amount on the profile only fills weeks that aren't saved yet —
-  // a week deliberately saved hourly stays hourly.
-  const standing = Number(row.employee.weeklyPay ?? 0);
-  let fixed: string | null = null;
-  if (saved?.notes === "fixed-pay") fixed = Number(saved.grossPay).toFixed(2);
-  else if (!saved && standing > 0) fixed = standing.toFixed(2);
-  // A saved week keeps the rate it was paid at; anything else uses today's
-  // profile rate.
-  const rate = Number(saved?.payRateSnapshot ?? row.employee.payRate ?? 0).toFixed(2);
+  const pay = weekPay({
+    entry: row.entry,
+    clockHours: clockH,
+    payRate: row.employee.payRate,
+    weeklyPay: row.employee.weeklyPay,
+  });
+  const hours = pay.hours === null ? "" : pay.hours.toFixed(2);
+  // Saved hours that no longer match the clock open as typed hours, with
+  // the current clock figure offered next to them.
+  const manual =
+    pay.saved &&
+    pay.hours !== null &&
+    clockH !== undefined &&
+    Math.abs(pay.hours - clockH) > CLOCK_MATCH_SLACK;
+  const fixed = pay.fixed === null ? null : pay.fixed.toFixed(2);
+  const rate = pay.rate.toFixed(2);
   return { edit: { hours, rate, fixed, manual }, base: { hours, rate, fixed } };
 }
 
