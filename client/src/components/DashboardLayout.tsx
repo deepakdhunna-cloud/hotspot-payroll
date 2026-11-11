@@ -668,7 +668,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           >
             <BrandMark size="sm" className="h-[1.9rem] max-w-full" />
           </Link>
-          {ops ? <StoreScope className="w-auto" /> : null}
+          {/* The picker keeps its label whole; on a narrow phone the logo gives way. */}
+          {ops ? <StoreScope className="w-auto shrink-0" /> : null}
           {ops ? (
             <button
               type="button"
