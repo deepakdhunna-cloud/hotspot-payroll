@@ -250,16 +250,18 @@ export function InstallNudge() {
 
   return (
     <>
-      <div className="surface-card flex items-center gap-3 py-2.5 pl-3 pr-1.5">
+      <div className="surface-card flex items-center gap-3 py-2 pl-3 pr-1.5">
         <span className="ink flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.7rem] bg-[var(--ink)]">
           <BrandGlyph className="h-4" />
         </span>
-        <p className="min-w-0 flex-1 text-sm leading-snug">
-          <span className="font-medium">Use Hotspot like an app.</span>{" "}
-          <span className="text-muted-foreground">Add it to your Home Screen.</span>
+        <p className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate text-sm font-medium">Add Hotspot to your Home Screen</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            Opens full screen, like an app
+          </span>
         </p>
         <Button size="sm" variant="outline" className="h-9 shrink-0" onClick={() => setOpen(true)}>
-          Show me
+          How
         </Button>
         <Button
           size="icon"

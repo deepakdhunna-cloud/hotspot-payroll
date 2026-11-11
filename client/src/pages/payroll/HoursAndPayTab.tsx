@@ -53,7 +53,7 @@ import {
   toDateInput,
 } from "@/lib/payweek";
 import { errorMessage } from "@/lib/errors";
-import { exportXlsx } from "@/lib/xlsx";
+import { deliveryMessage, exportXlsx } from "@/lib/xlsx";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
@@ -472,6 +472,7 @@ export default function HoursAndPayTab({
   controllerRef,
   onEditedChange,
   onOpenWeek,
+  onShowPunches,
 }: {
   weekStart: Date;
   storeFilter: string;
@@ -479,6 +480,8 @@ export default function HoursAndPayTab({
   onEditedChange?: (count: number) => void;
   /** Jump to another week (used by the "unsaved edits waiting" banner). */
   onOpenWeek?: (weekStart: Date) => void;
+  /** Open the Punches tab on one person's punches for this week. */
+  onShowPunches?: (employeeId: number) => void;
 }) {
   const store = storeFilter === "all" ? undefined : (storeFilter as any);
   const { stores: visibleStores } = useStoreScope();
@@ -897,7 +900,7 @@ export default function HoursAndPayTab({
     }));
     setExporting(true);
     try {
-      await exportXlsx(filename, {
+      const delivery = await exportXlsx(filename, {
         name: "Hours & pay",
         title: "Hotspot Market — Weekly payroll",
         subtitle: `Pay week ${range}, ${weekEnd.getUTCFullYear()} · ${storeLabel}`,
@@ -921,7 +924,8 @@ export default function HoursAndPayTab({
         totalsLabelKey: "employee",
         totalsLabel: "Total",
       });
-      toast.success("Spreadsheet downloaded.", { description: filename });
+      const done = deliveryMessage(delivery);
+      if (done) toast.success(done, { description: filename });
     } catch (err) {
       console.error("[Export] failed:", err);
       toast.error(
@@ -1132,7 +1136,8 @@ export default function HoursAndPayTab({
                             )}
                           </span>
                         </span>
-                        <RowStatusDot status={v.status} liveWeek={liveWeek} />
+                        {/* While open, the row's status sits beside its Save button. */}
+                        {open ? null : <RowStatusDot status={v.status} liveWeek={liveWeek} />}
                         <ChevronDown
                           className={cn(
                             "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
@@ -1241,6 +1246,18 @@ export default function HoursAndPayTab({
                               {v.scheduled > 0
                                 ? `${fmtHoursLabel(v.scheduled)} scheduled`
                                 : "Not on the schedule"}
+                              {onShowPunches && v.hasClock ? (
+                                <>
+                                  {" · "}
+                                  <button
+                                    type="button"
+                                    className="inline-flex min-h-8 items-center font-medium text-foreground underline underline-offset-2"
+                                    onClick={() => onShowPunches(v.id)}
+                                  >
+                                    See punches
+                                  </button>
+                                </>
+                              ) : null}
                               {v.clockDiffers && !v.showClock ? (
                                 <>
                                   {" · "}
@@ -1374,9 +1391,21 @@ export default function HoursAndPayTab({
                           <div className="flex flex-col items-end gap-1">
                             {v.showClock ? (
                               <div className="flex h-9 items-center justify-end gap-2">
-                                <span className="chip-good" title="Filled in from time clock punches">
-                                  <Clock className="h-3 w-3" /> Clock
-                                </span>
+                                {onShowPunches ? (
+                                  <button
+                                    type="button"
+                                    className="chip-good transition-opacity hover:opacity-80"
+                                    onClick={() => onShowPunches(v.id)}
+                                    title="Filled in from the time clock. Click to see the punches behind these hours."
+                                    aria-label={`See ${v.name}'s punches for this week`}
+                                  >
+                                    <Clock className="h-3 w-3" /> Clock
+                                  </button>
+                                ) : (
+                                  <span className="chip-good" title="Filled in from time clock punches">
+                                    <Clock className="h-3 w-3" /> Clock
+                                  </span>
+                                )}
                                 <span className="w-14 text-right font-medium tabular-nums">
                                   {fmtHours(v.calc.hoursOk, 2)}
                                 </span>

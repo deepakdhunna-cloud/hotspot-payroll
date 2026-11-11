@@ -59,7 +59,9 @@ function downloadBlob(blob: Blob, filename: string) {
  * old by the time the file is built) it falls back to a normal download,
  * which is also what every desktop browser gets.
  */
-async function deliverFile(buf: ArrayBuffer, filename: string) {
+export type Delivery = "shared" | "downloaded" | "cancelled";
+
+async function deliverFile(buf: ArrayBuffer, filename: string): Promise<Delivery> {
   const blob = new Blob([buf], { type: XLSX_MIME });
   const touch =
     typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
@@ -68,25 +70,32 @@ async function deliverFile(buf: ArrayBuffer, filename: string) {
       const file = new File([blob], filename, { type: XLSX_MIME });
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: filename });
-        return;
+        return "shared";
       }
     } catch (err) {
       // Closing the share sheet is a choice, not a failure.
-      if ((err as { name?: string } | null)?.name === "AbortError") return;
+      if ((err as { name?: string } | null)?.name === "AbortError") return "cancelled";
       /* anything else: download instead */
     }
   }
   downloadBlob(blob, filename);
+  return "downloaded";
+}
+
+/** What to tell the manager once a spreadsheet has been handed over. */
+export function deliveryMessage(d: Delivery): string | null {
+  if (d === "cancelled") return null;
+  return d === "shared" ? "Spreadsheet shared." : "Spreadsheet downloaded.";
 }
 
 /**
- * Build and download a single-sheet xlsx with bold header, frozen header
+ * Build and hand over a single-sheet xlsx with bold header, frozen header
  * row, column formatting, zebra striping, and an optional "Total" row.
  */
 export async function exportXlsx<T extends Record<string, any>>(
   filename: string,
   sheet: XlsxSheet<T>,
-) {
+): Promise<Delivery> {
   const { default: ExcelJS } = await import("exceljs");
   const wb = new ExcelJS.Workbook();
   wb.creator = "Hotspot Market Payroll";
@@ -176,5 +185,5 @@ export async function exportXlsx<T extends Record<string, any>>(
   }
 
   const buf = await wb.xlsx.writeBuffer();
-  await deliverFile(buf as ArrayBuffer, filename);
+  return deliverFile(buf as ArrayBuffer, filename);
 }

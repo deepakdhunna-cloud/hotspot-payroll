@@ -292,8 +292,6 @@
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01";
-    /* The page never rubber-bands sideways or pulls the browser chrome. */
-    overscroll-behavior-y: none;
   }
   h1, h2, h3, h4 {
     letter-spacing: -0.011em;

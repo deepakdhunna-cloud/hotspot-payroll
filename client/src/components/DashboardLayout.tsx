@@ -48,7 +48,9 @@ import {
   Landmark,
   LayoutDashboard,
   LogOut,
+  Pencil,
   Plus,
+  RotateCw,
   Search,
   ShieldCheck,
   Smartphone,
@@ -92,9 +94,15 @@ const baseMenuItems: MenuItem[] = [
 /** The everyday jobs, one tap from anywhere (the "+" button). */
 const QUICK_ACTIONS: { icon: LucideIcon; label: string; hint: string; href: string }[] = [
   {
+    icon: Pencil,
+    label: "Fix a punch",
+    hint: "Change a wrong clock-in or clock-out",
+    href: "/payroll?tab=punches",
+  },
+  {
     icon: Clock,
-    label: "Fix or add a punch",
-    hint: "A missed or wrong clock-in or clock-out",
+    label: "Add a missed punch",
+    hint: "A shift the time clock didn't catch",
     href: "/payroll?tab=punches&add=1",
   },
   {
@@ -375,12 +383,18 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         <ThemeSwitch />
       </div>
       <DropdownMenuSeparator />
-      {!install.standalone ? (
+      {install.standalone ? (
+        // From the home screen there is no browser reload button.
+        <DropdownMenuItem className="cursor-pointer" onSelect={() => window.location.reload()}>
+          <RotateCw className="mr-2 h-4 w-4" aria-hidden />
+          <span>Refresh</span>
+        </DropdownMenuItem>
+      ) : (
         <DropdownMenuItem className="cursor-pointer" onSelect={() => setInstallOpen(true)}>
           <Smartphone className="mr-2 h-4 w-4" aria-hidden />
           <span>Add to Home Screen</span>
         </DropdownMenuItem>
-      ) : null}
+      )}
       {ops ? (
         <DropdownMenuItem asChild className="cursor-pointer">
           <a href="/clock" target="_blank" rel="noopener noreferrer">
