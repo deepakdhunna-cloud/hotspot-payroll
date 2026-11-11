@@ -127,11 +127,15 @@ export default function Home() {
   // One definition of "saved" everywhere: hours or pay on the saved entry
   // (a set-pay week can carry pay with 0 hours recorded).
   const isSaved = (e: (typeof employees)[number]) => e.hoursWorked > 0 || e.grossPay > 0;
-  // Worked that week but nothing saved to payroll yet (matters once closed).
-  const unsaved = employees.filter((e) => e.clockHours > 0.25 && !isSaved(e));
+  // Owed something that week: clocked time, or a standing weekly amount
+  // (set pay is owed whether or not they clocked in).
+  const needsPay = (e: (typeof employees)[number]) =>
+    e.clockHours > 0.25 || (e.weeklyPay ?? 0) > 0;
+  // Owed pay that week but nothing saved to payroll yet (matters once closed).
+  const unsaved = employees.filter((e) => needsPay(e) && !isSaved(e));
   const savedCount = employees.filter(isSaved).length;
   // "Saved X of Y" counts only people with something to pay.
-  const payableCount = employees.filter((e) => isSaved(e) || e.clockHours > 0.25).length;
+  const payableCount = employees.filter((e) => isSaved(e) || needsPay(e)).length;
   // Never show zeros for a week that failed to load.
   const summaryFailed = summaryQ.isError && !data;
   // Open punches running longer than 12h are almost always forgotten.

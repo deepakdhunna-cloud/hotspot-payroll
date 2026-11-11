@@ -330,6 +330,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const install = useInstallState();
   const [installOpen, setInstallOpen] = React.useState(false);
   const [quickOpen, setQuickOpen] = React.useState(false);
+  // The rail / sidebar "+" menu is controlled so picking an action closes it.
+  const [railQuickOpen, setRailQuickOpen] = React.useState(false);
   // Command bar: Ctrl+K / ⌘K from anywhere.
   const [cmdOpen, setCmdOpen] = React.useState(false);
   const isMac =
@@ -354,6 +356,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
 
   const pickQuick = (href: string) => {
     setQuickOpen(false);
+    setRailQuickOpen(false);
     setLocation(href);
     // A page already on screen picks up flags like ?add=1 from this event.
     setTimeout(announceQueryFlags, 0);
@@ -446,7 +449,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 {shortcut}
               </kbd>
             </button>
-            <DropdownMenu>
+            <DropdownMenu open={railQuickOpen} onOpenChange={setRailQuickOpen}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>

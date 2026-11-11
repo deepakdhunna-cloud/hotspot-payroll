@@ -39,11 +39,16 @@ export function PayrollHero({ store }: { store?: string }) {
   if (!data) return null;
 
   const employees = data.employees;
+  type Emp = (typeof employees)[number];
   // One definition of "saved" everywhere: hours or pay on the saved entry.
-  const isSaved = (e: (typeof employees)[number]) => e.hoursWorked > 0 || e.grossPay > 0;
+  const isSaved = (e: Emp) => e.hoursWorked > 0 || e.grossPay > 0;
+  // Owed something that week: clocked time, or a standing weekly amount
+  // (set pay is owed whether or not they clocked in — Payroll lists them
+  // as "Not saved" too).
+  const needsPay = (e: Emp) => e.clockHours > 0.25 || (e.weeklyPay ?? 0) > 0;
   const saved = employees.filter(isSaved).length;
-  const unsaved = employees.filter((e) => e.clockHours > 0.25 && !isSaved(e)).length;
-  const payable = employees.filter((e) => isSaved(e) || e.clockHours > 0.25).length;
+  const unsaved = employees.filter((e) => needsPay(e) && !isSaved(e)).length;
+  const payable = employees.filter((e) => isSaved(e) || needsPay(e)).length;
   if (payable === 0) return null;
 
   const range = fmtWeekRange(weekStart);
@@ -95,7 +100,7 @@ export function PayrollHero({ store }: { store?: string }) {
             </span>
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Worked by {people(payable)}, straight from the time clock
+            On the time clock · {people(payable)} to pay
           </p>
         </div>
 
