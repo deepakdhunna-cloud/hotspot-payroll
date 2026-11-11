@@ -38,7 +38,22 @@ import { PositionBreakdown } from "@/components/PositionBreakdown";
 import { BlockState, TableStateRows } from "@/components/QueryStates";
 import { trpc } from "@/lib/trpc";
 import { useStoreScope } from "@/contexts/StoreScopeContext";
-import { computeGrossPay } from "@shared/hotspot";
+import {
+  CLOCK_MATCH_SLACK,
+  OVER_SCHEDULE_SLACK,
+  calcRow,
+  freshRow,
+  isDirty,
+  isScheduleOnlyEntry,
+  sameValue,
+  saveInputFor,
+  tidy2,
+  type RowBaseline,
+  type RowCalc,
+  type RowEdit,
+  type SaveHoursInput,
+  type WeekRow,
+} from "@/lib/payrollRow";
 import {
   fmtHours,
   fmtHoursLabel,
@@ -53,7 +68,8 @@ import {
   toDateInput,
 } from "@/lib/payweek";
 import { errorMessage } from "@/lib/errors";
-import { buildXlsx, exportXlsx, prefetchXlsx, type XlsxSheet } from "@/lib/xlsx";
+import { buildXlsx, exportXlsx, prefetchXlsx } from "@/lib/xlsx";
+import { buildWeekSheet, type WeekSheetRow } from "@/lib/payrollSheet";
 import { ShareDialog, sharePayload, type SharePayload } from "@/components/SharePayroll";
 import { cn } from "@/lib/utils";
 import {
@@ -78,25 +94,9 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import type { inferRouterOutputs } from "@trpc/server";
-import type { AppRouter } from "../../../../server/routers";
 
-type WeekRow =
-  inferRouterOutputs<AppRouter>["payroll"]["week"]["employees"][number];
 
-/** Limits that match the server's validation, stated in plain words. */
-const HOURS_MAX = 168;
-const RATE_MAX = 1000;
-const SET_PAY_MAX = 100_000;
-/** Hours this far past the schedule get flagged (15 minutes of slack). */
-const OVER_SCHEDULE_SLACK = 0.25;
-/** Saved vs clock differences under 3 minutes are rounding, not a change. */
-const CLOCK_MATCH_SLACK = 0.05;
 
-/** What the manager sees and types for one row. `fixed` null = hourly. */
-type RowEdit = { hours: string; rate: string; fixed: string | null; manual: boolean };
-/** The last saved (or prefilled) values; a row is "Edited" when it differs. */
-type RowBaseline = { hours: string; rate: string; fixed: string | null };
 type Draft = Record<number, { edit: RowEdit; base: RowBaseline }>;
 
 /**
@@ -129,131 +129,6 @@ export type HoursController = {
   discardEdits: () => void;
 };
 
-/* ---------------------------- value helpers ---------------------------- */
-
-/** null = empty, NaN = not a number. */
-function parseNum(raw: string): number | null {
-  const t = raw.trim();
-  if (t === "") return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : NaN;
-}
-
-/** Same value for dirtiness — "15" and "15.00" are the same rate. */
-function sameValue(a: string, b: string): boolean {
-  const x = parseNum(a);
-  const y = parseNum(b);
-  if (x === null || y === null) return x === y;
-  if (Number.isNaN(x) || Number.isNaN(y)) return a.trim() === b.trim();
-  return Math.abs(x - y) < 0.005;
-}
-
-function sameFixed(a: string | null, b: string | null): boolean {
-  if (a === null || b === null) return a === b;
-  return sameValue(a, b);
-}
-
-function isDirty(e: RowEdit, b: RowBaseline): boolean {
-  return !sameValue(e.hours, b.hours) || !sameValue(e.rate, b.rate) || !sameFixed(e.fixed, b.fixed);
-}
-
-/** Tidy a typed number to two decimals once the field loses focus. */
-function tidy2(raw: string): string {
-  const n = parseNum(raw);
-  return n === null || Number.isNaN(n) || n < 0 ? raw : n.toFixed(2);
-}
-
-/**
- * A payroll entry that only exists to carry scheduled hours (created by a
- * schedule import/commit) — the manager never entered hours on it. Legacy
- * rows from before the "schedule-only" marker are detected by their saved
- * 0 hours alongside real clock punches.
- */
-function isScheduleOnlyEntry(entry: WeekRow["entry"], clockH: number | undefined): boolean {
-  if (!entry) return false;
-  if (entry.notes === "schedule-only") return true;
-  return (
-    entry.notes !== "fixed-pay" &&
-    Number(entry.hoursWorked) === 0 &&
-    clockH !== undefined &&
-    clockH > 0
-  );
-}
-
-/** The values a row opens with when nobody is editing it. */
-function freshRow(row: WeekRow, clockH: number | undefined): { edit: RowEdit; base: RowBaseline } {
-  const saved = row.entry && !isScheduleOnlyEntry(row.entry, clockH) ? row.entry : null;
-  let hours = "";
-  let manual = false;
-  if (saved) {
-    const n = Number(saved.hoursWorked);
-    hours = n.toFixed(2);
-    // Saved hours that no longer match the clock open as typed hours, with
-    // the current clock figure offered next to them.
-    if (clockH !== undefined && Math.abs(n - clockH) > CLOCK_MATCH_SLACK) manual = true;
-  } else if (clockH !== undefined && clockH > 0) {
-    hours = clockH.toFixed(2);
-  }
-  // Set pay: a week SAVED as set pay reopens with its amount. A standing
-  // weekly amount on the profile only fills weeks that aren't saved yet —
-  // a week deliberately saved hourly stays hourly.
-  const standing = Number(row.employee.weeklyPay ?? 0);
-  let fixed: string | null = null;
-  if (saved?.notes === "fixed-pay") fixed = Number(saved.grossPay).toFixed(2);
-  else if (!saved && standing > 0) fixed = standing.toFixed(2);
-  // A saved week keeps the rate it was paid at; anything else uses today's
-  // profile rate.
-  const rate = Number(saved?.payRateSnapshot ?? row.employee.payRate ?? 0).toFixed(2);
-  return { edit: { hours, rate, fixed, manual }, base: { hours, rate, fixed } };
-}
-
-type RowCalc = {
-  /** Parsed hours: null when empty, NaN when not a number. */
-  hours: number | null;
-  rate: number | null;
-  isFixed: boolean;
-  fixed: number | null;
-  /** Hours that count (0 when empty or invalid). */
-  hoursOk: number;
-  /** Rate that counts (0 when empty or invalid). */
-  rateOk: number;
-  /** The ONE gross used by the row, the totals, the role breakdown and the export. */
-  gross: number;
-  errors: { hours?: string; rate?: string; fixed?: string };
-};
-
-function calcRow(e: RowEdit): RowCalc {
-  const errors: RowCalc["errors"] = {};
-  const hours = parseNum(e.hours);
-  if (hours !== null) {
-    if (Number.isNaN(hours) || hours < 0) errors.hours = "Enter hours as a number, like 38.5.";
-    else if (hours > HOURS_MAX) errors.hours = `A week has at most ${HOURS_MAX} hours.`;
-  }
-  const rate = parseNum(e.rate);
-  const isFixed = e.fixed !== null;
-  if (rate === null) {
-    if (!isFixed) errors.rate = "Enter an hourly rate.";
-  } else if (Number.isNaN(rate) || rate < 0) {
-    errors.rate = "Enter the rate as a number, like 15.50.";
-  } else if (rate > RATE_MAX) {
-    errors.rate = "The rate can't be over $1,000 an hour.";
-  }
-  let fixed: number | null = null;
-  if (isFixed) {
-    const f = parseNum(e.fixed ?? "");
-    if (f === null || Number.isNaN(f) || f < 0) errors.fixed = "Enter the set pay amount.";
-    else if (f > SET_PAY_MAX) errors.fixed = "Set pay can't be over $100,000.";
-    else fixed = f;
-  }
-  const hoursOk = hours !== null && !errors.hours ? hours : 0;
-  const rateOk = rate !== null && !Number.isNaN(rate) && !errors.rate ? rate : 0;
-  // Cents, rounded exactly the way the server rounds what it saves, so the
-  // grid, its totals and the saved payroll can never be a cent apart.
-  const gross = Number(
-    (isFixed ? (fixed ?? 0) : computeGrossPay(hoursOk, rateOk).grossPay).toFixed(2),
-  );
-  return { hours, rate, isFixed, fixed, hoursOk, rateOk, gross, errors };
-}
 
 type Status = "saving" | "edited" | "unsaved" | "saved" | "empty";
 
@@ -690,39 +565,24 @@ export default function HoursAndPayTab({
 
   /* ------------------------------- saving ------------------------------- */
 
-  type SaveInput = Parameters<typeof saveHoursM.mutateAsync>[0];
   const buildSave = (
     v: RowView,
-  ): { ok: true; input: SaveInput; rateChanged: boolean } | { ok: false; message: string } => {
+  ): { ok: true; input: SaveHoursInput; rateChanged: boolean } | { ok: false; message: string } => {
     const c = v.calc;
-    if (c.errors.hours) return { ok: false, message: c.errors.hours };
-    if (c.isFixed && c.errors.fixed) return { ok: false, message: c.errors.fixed };
-    if (!c.isFixed && c.hours === null) {
-      return { ok: false, message: "Enter hours (use 0 if they didn't work)." };
-    }
-    if (c.errors.rate) return { ok: false, message: c.errors.rate };
     const b = base[v.id] ?? v.edit;
     const validRate = c.rate !== null && !Number.isNaN(c.rate) ? c.rate : null;
     const rateChanged = validRate !== null && !sameValue(v.edit.rate, b.rate);
-    // Send the rate only when the manager changed it — re-saving a past
-    // week with its old rate must never roll the profile rate back. Older
-    // weeks always send their own rate so their snapshot is kept.
-    const sendRate = validRate !== null && (rateChanged || olderWeek);
-    return {
-      ok: true,
+    // One builder for every screen that saves a row (see lib/payrollRow).
+    const built = saveInputFor({
+      employeeId: v.id,
+      weekStart,
+      scheduled: v.scheduled,
+      calc: c,
       rateChanged,
-      input: {
-        employeeId: v.id,
-        weekStart,
-        hoursWorked: c.hoursOk,
-        scheduledHours: v.scheduled,
-        ...(sendRate && validRate !== null ? { payRateOverride: validRate } : {}),
-        ...(c.isFixed && c.fixed !== null ? { fixedGross: c.fixed } : {}),
-      },
-    };
+      olderWeek,
+    });
+    return built.ok ? { ok: true, input: built.input, rateChanged } : built;
   };
-
-  /** Save rows one by one; never stops at the first failure. */
   const saveRows = async (targets: RowView[]) => {
     const failed: { id: number; name: string; message: string }[] = [];
     const notes: string[] = [];
@@ -880,29 +740,12 @@ export default function HoursAndPayTab({
 
   /* ------------------------------- export ------------------------------- */
 
-  type ExportRow = {
-    employee: string;
-    store: string;
-    role: string;
-    payType: string;
-    rate: number;
-    scheduled: number;
-    hours: number;
-    gross: number;
-    status: string;
-  };
-
   /**
    * The week on screen as a spreadsheet, plus the words that go with it when
-   * it is shared. One builder for Export and Share, so they can never differ.
+   * it is shared. One builder for Export and Share — and the same one the
+   * command center uses (lib/payrollSheet) — so the file never differs.
    */
   const buildWeekFile = (justSaved?: Set<number>) => {
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-    const year = weekEnd.getUTCFullYear();
-    const storeLabel = scopeStore ?? "All stores";
-    const storeSlug = (scopeStore ? (STORE_ABBR[scopeStore] ?? scopeStore) : "All-stores").replace(/\s+/g, "-");
-    const filename = `Hotspot-Payroll-${toDateInput(weekStart)}_to_${toDateInput(weekEnd)}-${storeSlug}.xlsx`;
     const statusLabel = (v: RowView) => {
       if (justSaved?.has(v.id)) return "Saved";
       if (v.status === "saved") return "Saved";
@@ -910,7 +753,7 @@ export default function HoursAndPayTab({
       if (v.status === "unsaved" || v.status === "saving") return "Not saved";
       return "No hours";
     };
-    const exportRows: ExportRow[] = views.map((v) => ({
+    const sheetRows: WeekSheetRow[] = views.map((v) => ({
       employee: v.former ? `${v.name} (former)` : v.name,
       store: v.row.employee.storeLocation,
       role: v.row.employee.role,
@@ -921,56 +764,7 @@ export default function HoursAndPayTab({
       gross: v.calc.gross,
       status: statusLabel(v),
     }));
-    const paid = exportRows.filter((r) => r.status !== "No hours");
-    const savedN = paid.filter((r) => r.status === "Saved").length;
-    const pendingN = paid.length - savedN;
-    const sheet: XlsxSheet<ExportRow> = {
-      name: "Hours & pay",
-      title: "Weekly payroll",
-      subtitle: `Pay week ${range}, ${year} · ${storeLabel}`,
-      summary: [
-        { label: "Gross pay", value: fmtMoney(totals.gross) },
-        { label: "Hours worked", value: fmtHours(totals.hours, 2) },
-        { label: "People paid", value: String(paid.length) },
-        { label: "Saved to payroll", value: `${savedN} of ${paid.length}` },
-      ],
-      columns: [
-        { header: "Employee", key: "employee", width: 26 },
-        { header: "Store", key: "store", width: 20 },
-        { header: "Role", key: "role", width: 18 },
-        { header: "Pay type", key: "payType", width: 11 },
-        { header: "Hourly rate", key: "rate", width: 12, numFmt: "$#,##0.00", align: "right" },
-        { header: "Scheduled hours", key: "scheduled", width: 16, numFmt: "#,##0.0", align: "right" },
-        { header: "Hours worked", key: "hours", width: 14, numFmt: "#,##0.00", align: "right" },
-        { header: "Gross pay", key: "gross", width: 14, numFmt: "$#,##0.00", align: "right" },
-        {
-          header: "Status",
-          key: "status",
-          width: 18,
-          tone: (r) => (r.status === "Saved" ? "good" : r.status === "No hours" ? "muted" : "warn"),
-        },
-      ],
-      rows: exportRows,
-      totals: {
-        scheduled: Number(totals.scheduled.toFixed(2)),
-        hours: Number(totals.hours.toFixed(2)),
-        gross: Number(totals.gross.toFixed(2)),
-      },
-      totalsLabelKey: "employee",
-      totalsLabel: "Total",
-    };
-    return {
-      filename,
-      sheet,
-      title: `Hotspot payroll · ${range}`,
-      text: [
-        `${storeLabel} — pay week ${range}, ${year}`,
-        `${paid.length} ${plural(paid.length, "person", "people")} · ${fmtHours(totals.hours, 2)} hours · ${fmtMoney(totals.gross)} gross`,
-        pendingN > 0
-          ? `${pendingN} ${plural(pendingN, "row")} not saved to payroll yet`
-          : "Everyone is saved to payroll",
-      ].join("\n"),
-    };
+    return buildWeekSheet({ weekStart, scopeStore, rows: sheetRows, totals });
   };
 
   const buildFailed = (err: unknown) => {

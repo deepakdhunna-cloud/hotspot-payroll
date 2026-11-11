@@ -7,7 +7,13 @@ import type { AppRouter } from "../../../server/routers";
 import { fmtDayHeading, fmtDuration, fmtTime } from "@/lib/payweek";
 import { fmtHoursLabel } from "@/lib/format";
 import { errorMessage } from "@/lib/errors";
-import { getKioskStore, kioskPath, lockKioskToStore, markKioskTab } from "@/lib/kioskLock";
+import {
+  clearKioskLock,
+  getKioskStore,
+  kioskPath,
+  lockKioskToStore,
+  markKioskTab,
+} from "@/lib/kioskLock";
 
 /**
  * Public kiosk page. Behaves in two ways:
@@ -39,8 +45,11 @@ import {
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 
+// Stores can be added from the command center, so a store name in the URL
+// or session is first taken as given (any plausible name) and then checked
+// against the server's list once that has loaded — see the effect below.
 function isStore(value: string | undefined): value is Store {
-  return !!value && (STORES as readonly string[]).includes(value);
+  return !!value && value.trim().length >= 3 && value.length <= 64;
 }
 
 function decodeStoreFromUrl(raw: string | undefined): Store | null {
@@ -105,6 +114,25 @@ export default function ClockKiosk() {
 
   const [store, setStore] = useState<Store | null>(initialStore);
   usePageTitle(store ? `Time clock · ${store}` : "Time clock");
+
+  // The stores this business has right now (built-in ones until it loads).
+  const optionsQ = trpc.meta.options.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const storeList: readonly string[] = optionsQ.data?.stores ?? STORES;
+  // A store that doesn't exist — a mistyped link, or a tablet remembering a
+  // name the business doesn't have — falls back to the store picker rather
+  // than a keypad that refuses every code. Only once the server's list has
+  // actually loaded: until then the remembered store is trusted.
+  useEffect(() => {
+    if (!optionsQ.data || !store) return;
+    if (!optionsQ.data.stores.includes(store)) {
+      if (getKioskStore() === store) clearKioskLock();
+      setStore(null);
+      navigate("/clock", { replace: true });
+    }
+  }, [optionsQ.data, store, navigate]);
   useEffect(() => {
     const lockedStore = getKioskStore();
     if (lockedStore) {
@@ -264,7 +292,7 @@ export default function ClockKiosk() {
             </h1>
             <p className="mt-2 text-white/70">This device will remember it.</p>
             <div className="mt-10 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
-              {STORES.map((s) => (
+              {(storeList as Store[]).map((s) => (
                 <button
                   key={s}
                   type="button"

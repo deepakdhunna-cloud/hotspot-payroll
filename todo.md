@@ -212,3 +212,19 @@
 - [x] Share button on the weekly timesheet and on History: device share sheet with the spreadsheet and a summary; dialog with Email / Copy / Download where files can't be shared; if the browser refuses because the file took too long to build, the dialog's Share button shares on the next tap
 - [x] Export is a plain download everywhere; Share and Export both respect the "rows aren't saved yet" check
 - [x] Checked: real exports opened in LibreOffice; share flow exercised in Chromium with a stubbed share sheet (file, title and text passed; refusal path)
+
+## v15 — Command center; resizable navigation; self-service stores, roles and rules
+- [x] The CEO's view rebuilt as a command center with five sections: Live (orbit of every store around the company, vital signs, on-the-clock roster, attention list, system log, eight-week trend), Autopilot, Optimize, Control, Log. Old `?tab=pins` / `?tab=portal` links open Control
+- [x] Autopilot: every person in a pay week is Saved, Ready or On hold; one button approves every Ready row across all stores; held rows say why (long shift, automatic clock-out, hours vs schedule, a value that can't be saved) with Mark reviewed / Fix the punch / Approve as is; Share and Export. Built on the timesheet's own row math (`client/src/lib/payrollRow.ts`) — the two exports are identical files
+- [x] Optimize: findings computed from existing figures, each with its basis and an action; comparisons stand down while the last week is only partly saved; a shift still running past the limit is reported on its own and left out of the schedule math
+- [x] Control: withholding estimate rates, long-shift alert, automatic clock-out, add a store (with its manager PIN), add a role, PINs, portal and full download — CEO-only on the server (`settings.setRules`, `settings.addStore`, `settings.addRole`), stored in `app_settings`, live without a deploy (`server/registry.ts`)
+- [x] Live labor counts set pay at the weekly amount for the share of the week gone by (not hours × rate), so it ends the week at what payroll will be; Autopilot's live figures and the ledger under them come from the same rows at the same instant
+- [x] A store with no team yet reads as "set up", not broken: no missing-schedule or silent-clock alert until it has employees; later stores get their own colors
+- [x] Layout follows the page area's width (container queries): two columns on a foldable held sideways, one on a phone; all five sections stay on screen on a phone (icon over label); the orbit redraws larger when narrow; the payroll ledger fits a phone without sideways scrolling
+- [x] Side navigation resizable from 768px: drag its edge, tap the grip or use arrow keys; remembered per device; never leaves the page under 640px
+- [x] Fixed: pressing a store in the orbit made it jump away mid-click (the site's press feedback is a CSS transform, which replaces an SVG transform attribute), so taps didn't register; the phone bar's store picker was squeezed to "Al"; the live system log could be crowded out by routine sign-ins
+- [x] Light-mode logo: the red stripes are flat red bars (no black edge) in the light-background logo and compact mark; dark-mode logo unchanged
+- [x] Tests: 38 new (shared row math, Control permissions and limits, registry, navigation width, the unstaffed-store alert rule) — 227 passing; tsc + production build clean
+- [x] Checked in Chromium on the production build: time clock (wrong code, clock in, repeat-tap guard, clock out, unknown store, store list unavailable), manager sign-in and payroll, CEO all five sections, CFO, server refusals (403) for non-CEO rule changes; every section at 393, 466, 626, 890, 1440 and 1680 wide in light and dark with no sideways overflow and no script errors
+- [ ] Not yet checked on a real iPhone or a real foldable (sizes are from published estimates)
+

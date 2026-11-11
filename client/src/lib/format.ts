@@ -25,14 +25,28 @@ export const fmtWeekRange = (weekStart: Date | string) => {
 };
 
 /**
+ * The stores, in display order. Starts as the built-in list and is replaced
+ * by the server's list (which includes stores the CEO has added) as soon as
+ * the app has it — see `registerStores`.
+ */
+let storeOrder: string[] = [...STORES];
+
+/** Position of a store in the display order (unknown stores sort last). */
+export function storeIndex(store: string): number {
+  const i = storeOrder.indexOf(store);
+  return i < 0 ? 99 : i;
+}
+
+/**
  * Each store keeps one color everywhere (store cards, chart stacks, chips),
  * matching the order the Finance chart has always used.
  */
 export function storeColor(store: string): string {
-  const i = (STORES as readonly string[]).indexOf(store);
-  return `var(--chart-${(i < 0 ? 0 : i % 5) + 1})`;
+  const i = storeOrder.indexOf(store);
+  return `var(--chart-${(i < 0 ? 0 : i % 8) + 1})`;
 }
 
+/** Short store labels for chips and tight places. Filled by `registerStores`. */
 export const STORE_ABBR: Record<string, string> = {
   "Hotspot Market 11": "HM 11",
   "Hotspot Market 13": "HM 13",
@@ -40,6 +54,26 @@ export const STORE_ABBR: Record<string, string> = {
   "Hotspot Market 17": "HM 17",
   "Hotspot Travel Center": "Travel",
 };
+
+/**
+ * Take the server's store list (names and short labels, in order). Returns
+ * true when something actually changed, so the caller can re-render pages
+ * that had already read the old list.
+ */
+export function registerStores(info: { name: string; short: string }[]): boolean {
+  if (info.length === 0) return false;
+  const names = info.map((i) => i.name);
+  let changed =
+    names.length !== storeOrder.length || names.some((n, i) => n !== storeOrder[i]);
+  for (const i of info) {
+    if (STORE_ABBR[i.name] !== i.short) {
+      STORE_ABBR[i.name] = i.short;
+      changed = true;
+    }
+  }
+  storeOrder = names;
+  return changed;
+}
 
 
 /**

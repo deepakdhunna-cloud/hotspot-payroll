@@ -59,6 +59,7 @@ import {
   updateEmployee,
   updatePunch,
   upsertPayrollEntry,
+  getPunchesByIds,
 } from "./db";
 import {
   AUTO_CLOCKOUT_MAX_HOURS,
@@ -72,8 +73,7 @@ import {
 import { hashClockCode, verifyClockCode } from "./_core/clockAuth";
 import { dashboardScheduleWeeks } from "./dashboardScheduleWeeks";
 import {
-  ROLES,
-  STORES,
+  type EmployeeRole,
   type Store,
   businessDayBoundaryUtc,
   businessDayStart,
@@ -92,7 +92,6 @@ import {
 } from "@shared/hotspot";
 import { TRPCError } from "@trpc/server";
 import {
-  ALL_SCOPES,
   checkPinHash,
   listPinScopes,
   listPinScopesWithHashes,
@@ -106,10 +105,29 @@ import { clockPunchLimiter, pinLoginLimiter, requestIp } from "./rateLimit";
 import { rankNameMatches } from "./nameMatch";
 import { extractPdfText, extractSheetText, isSheetMime } from "./scheduleText";
 import { syncAttention } from "./attention";
+import {
+  RULE_LIMITS,
+  addRole,
+  addStore,
+  getRoles,
+  getRules,
+  getStoreInfo,
+  getStores,
+  isRole,
+  isStore,
+  roleNameProblem,
+  setRules,
+  storeNameProblem,
+} from "./registry";
 import { getPortalSyncStatus, pushPortalSnapshot } from "./portalSync";
 
-const StoreEnum = z.enum(STORES);
-const RoleEnum = z.enum(ROLES);
+// Stores and roles are the built-in lists plus anything the CEO has added
+// from the command center (server/registry.ts), so they are validated
+// against the live registry rather than a fixed enum.
+const StoreEnum = z.custom<Store>(isStore, { message: "Unknown store" });
+const RoleEnum = z.custom<EmployeeRole>(isRole, { message: "Unknown role" });
+/** Every store the business has right now. */
+const allStores = () => getStores() as Store[];
 
 /**
  * Marker stored in a payroll entry's notes when the week was saved as a
@@ -217,7 +235,7 @@ async function assertNoOverlap(
 
 function getScope(session: PinSession) {
   if (session.role === "admin") {
-    return { isAdmin: true as const, stores: [...STORES] as Store[] };
+    return { isAdmin: true as const, stores: allStores() };
   }
   return {
     isAdmin: false as const,
@@ -317,8 +335,10 @@ export const appRouter = router({
 
   meta: router({
     options: publicProcedure.query(() => ({
-      stores: [...STORES],
-      roles: [...ROLES],
+      stores: allStores(),
+      roles: getRoles(),
+      // Names with their short labels, in display order (built-ins first).
+      storeInfo: getStoreInfo(),
     })),
 
     myScope: protectedProcedure.query(({ ctx }) => getScope(ctx.session)),
@@ -1034,8 +1054,22 @@ export const appRouter = router({
   attention: router({
     list: protectedProcedure.query(async ({ ctx }) => {
       const scope = getScope(ctx.session);
-      const stores = resolveStores(scope) ?? [...STORES];
-      const items = await syncAttention(stores);
+      const stores = resolveStores(scope) ?? allStores();
+      const rows = await syncAttention(stores);
+      // When the shift behind a punch-related item started, so a screen can
+      // tell which pay week the item belongs to (a forgotten clock-out this
+      // week is no reason to hold last week's payroll).
+      const punchIds = rows
+        .map(r => r.punchId)
+        .filter((id): id is number => id != null);
+      const inAtById = new Map(
+        (await getPunchesByIds(punchIds)).map(p => [p.id, p.clockInAt])
+      );
+      const items = rows.map(r => ({
+        ...r,
+        punchClockInAt:
+          r.punchId != null ? (inAtById.get(r.punchId) ?? null) : null,
+      }));
       return { items, count: items.length };
     }),
 
@@ -1134,7 +1168,118 @@ export const appRouter = router({
   settings: router({
     get: protectedProcedure.query(async () => ({
       autoClockOutHours: await getAutoClockOutHours(),
+      // Operating rules the CEO can change (see server/registry.ts).
+      rules: getRules(),
     })),
+
+    /** Change the withholding estimate rates or the long-shift alert. */
+    setRules: adminProcedure
+      .input(
+        z.object({
+          estFederalPct: z
+            .number()
+            .min(RULE_LIMITS.estFederalPct.min)
+            .max(RULE_LIMITS.estFederalPct.max)
+            .optional(),
+          estStatePct: z
+            .number()
+            .min(RULE_LIMITS.estStatePct.min)
+            .max(RULE_LIMITS.estStatePct.max)
+            .optional(),
+          longShiftHours: z
+            .number()
+            .int()
+            .min(RULE_LIMITS.longShiftHours.min)
+            .max(RULE_LIMITS.longShiftHours.max)
+            .optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const rules = await setRules(input, ctx.session.scope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "settings.rules",
+          entityType: "setting",
+          detail: JSON.stringify(input),
+          ip: requestIp(ctx.req),
+        });
+        return { rules };
+      }),
+
+    /**
+     * Add a store. It gets its own manager PIN straight away, and from then
+     * on it appears everywhere a store can be picked: sign-in, the time
+     * clock, employees, payroll, schedules, the dashboards and the portal.
+     * Stores can't be renamed or removed here — every record is filed under
+     * the store's name.
+     */
+    addStore: adminProcedure
+      .input(
+        z.object({
+          name: z.string().min(1).max(80),
+          short: z.string().max(12).optional(),
+          pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits"),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const problem = storeNameProblem(input.name);
+        if (problem) throw new TRPCError({ code: "BAD_REQUEST", message: problem });
+        // A PIN signs in whichever account it matches, so it must be unique.
+        for (const row of await listPinScopesWithHashes()) {
+          if (await checkPinHash(input.pin, row.scope, row.pinHash)) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: `That PIN is already in use by ${
+                row.scope === "ceo" ? "the CEO master PIN" : row.scope
+              }. Choose a different one.`,
+            });
+          }
+        }
+        const store = await addStore(
+          { name: input.name, short: input.short },
+          ctx.session.scope
+        );
+        let pinSaved = true;
+        try {
+          await setPin(store.name as PinScope, input.pin);
+        } catch (err) {
+          pinSaved = false;
+          console.error("[Registry] store added but its PIN failed:", err);
+        }
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "settings.addStore",
+          entityType: "store",
+          detail: JSON.stringify({ store: store.name, short: store.short, pinSaved }),
+          ip: requestIp(ctx.req),
+        });
+        if (!pinSaved) {
+          // The store exists; adding it again would be refused as a
+          // duplicate, so say exactly what is left to do.
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `${store.name} was added, but its manager PIN could not be saved. Set it under Access → Change PIN.`,
+          });
+        }
+        return { store };
+      }),
+
+    /** Add a role employees can be given. */
+    addRole: adminProcedure
+      .input(z.object({ name: z.string().min(1).max(60) }))
+      .mutation(async ({ ctx, input }) => {
+        const problem = roleNameProblem(input.name);
+        if (problem) throw new TRPCError({ code: "BAD_REQUEST", message: problem });
+        const role = await addRole(input.name, ctx.session.scope);
+        void logAudit({
+          actorScope: ctx.session.scope,
+          action: "settings.addRole",
+          entityType: "role",
+          detail: JSON.stringify({ role }),
+          ip: requestIp(ctx.req),
+        });
+        return { role };
+      }),
 
     setAutoClockOut: protectedProcedure
       .input(
@@ -1231,7 +1376,7 @@ export const appRouter = router({
         // never leak into any mutation path.
         const scope =
           ctx.session.role === "cfo"
-            ? ({ isAdmin: true, stores: [...STORES] } as Scope)
+            ? ({ isAdmin: true, stores: allStores() } as Scope)
             : getScope(ctx.session);
         const week = input?.weekStart
           ? getWeekStart(input.weekStart)
@@ -1241,7 +1386,7 @@ export const appRouter = router({
         const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
 
         // byStore needs concrete keys, so an unfiltered admin view expands to all stores.
-        const storesFilter = resolveStores(scope, input?.store) ?? [...STORES];
+        const storesFilter = resolveStores(scope, input?.store) ?? allStores();
 
         const [employees, entries, clockHours, openPunches] = await Promise.all([
           listEmployees({ stores: storesFilter }),
@@ -1677,8 +1822,8 @@ export const appRouter = router({
         const punchEnd = new Date();
 
         const [entries, punches, employees] = await Promise.all([
-          getPayrollRange(firstWeek, lastClosed, [...STORES]),
-          listPunchesInRange(payWeekBounds(firstWeek).start, punchEnd, [...STORES]),
+          getPayrollRange(firstWeek, lastClosed, allStores()),
+          listPunchesInRange(payWeekBounds(firstWeek).start, punchEnd, allStores()),
           listEmployees({}),
         ]);
         const empById = new Map(employees.map(e => [e.id, e]));
@@ -1711,7 +1856,7 @@ export const appRouter = router({
             estState: 0,
             estNet: 0,
             byStore: Object.fromEntries(
-              STORES.map(s => [s, { gross: 0, hours: 0 }])
+              allStores().map(s => [s, { gross: 0, hours: 0 }])
             ),
           };
         });
@@ -1730,7 +1875,7 @@ export const appRouter = router({
           bucket.gross += gross;
           bucket.hours += hrs;
           bucket.scheduledHours += Number(e.scheduledHours);
-          const wh = estimateWithholding(gross);
+          const wh = estimateWithholding(gross, getRules());
           bucket.estFederal += wh.federal;
           bucket.estState += wh.state;
           bucket.estNet += wh.netPay;
@@ -1784,7 +1929,7 @@ export const appRouter = router({
             w.gross += gross;
             w.hours += hrs;
             w.peoplePaid += 1;
-            const wh = estimateWithholding(gross);
+            const wh = estimateWithholding(gross, getRules());
             w.estFederal += wh.federal;
             w.estState += wh.state;
             w.estNet += wh.netPay;
@@ -1843,11 +1988,18 @@ export const appRouter = router({
             Math.max(lastPunchByStore.get(p.storeLocation) ?? 0, t)
           );
         }
-        const feeds = STORES.map(s => ({
+        // `people` is the store's active headcount: a store with no team yet
+        // (just added) has no clock to report, which is not the same as silent.
+        const headcount = new Map<string, number>();
+        for (const e of employees) {
+          headcount.set(e.storeLocation, (headcount.get(e.storeLocation) ?? 0) + 1);
+        }
+        const feeds = allStores().map(s => ({
           store: s as string,
           lastPunchAt: lastPunchByStore.has(s)
             ? new Date(lastPunchByStore.get(s)!)
             : null,
+          people: headcount.get(s) ?? 0,
         }));
 
         return { weeks, latestWeekPeople, feeds, lastClosedWeekStart: lastClosed };
@@ -1860,7 +2012,7 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const week = getWeekStart(input.weekStart);
         const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
-        const stores = input.store ? [input.store] : [...STORES];
+        const stores = input.store ? [input.store] : allStores();
         const [activeEmployees, entries, clockHours, openPunches, shifts] =
           await Promise.all([
             listEmployees({ stores }),
@@ -1936,7 +2088,7 @@ export const appRouter = router({
           const clocked = clockHours.get(emp.id) ?? 0;
           const { overClocked } = overclockStatus(clocked, scheduled);
           const { federal, state, totalTax, netPay } =
-            estimateWithholding(grossPay);
+            estimateWithholding(grossPay, getRules());
           if (byStore[emp.storeLocation]) {
             byStore[emp.storeLocation].employeeCount++;
             byStore[emp.storeLocation].totalHours += hoursWorked;
@@ -1954,6 +2106,15 @@ export const appRouter = router({
             role: emp.role,
             storeLocation: emp.storeLocation,
             payRate: Number(emp.payRate),
+            // Standing set pay (active people only): they cost this each
+            // week whatever they clock, so live labor must not price their
+            // hours at the hourly rate.
+            weeklyPay:
+              Number(emp.active) !== 0 &&
+              emp.weeklyPay != null &&
+              Number(emp.weeklyPay) > 0
+                ? Number(emp.weeklyPay)
+                : null,
             hoursWorked,
             scheduledHours: scheduled,
             clockHours: clocked,
@@ -2000,7 +2161,8 @@ export const appRouter = router({
     /** List PIN scopes (without revealing PIN values). */
     listPins: adminProcedure.query(async () => {
       const rows = await listPinScopes();
-      return ALL_SCOPES.map(scope => {
+      const scopes: PinScope[] = ["ceo", "cfo", ...allStores()];
+      return scopes.map(scope => {
         const row = rows.find(r => r.scope === scope);
         return {
           scope,
@@ -2025,7 +2187,10 @@ export const appRouter = router({
     updatePin: adminProcedure
       .input(
         z.object({
-          scope: z.enum(["ceo", "cfo", ...STORES] as [PinScope, ...PinScope[]]),
+          scope: z.custom<PinScope>(
+            v => v === "ceo" || v === "cfo" || isStore(v),
+            { message: "Unknown sign-in" }
+          ),
           pin: z.string().regex(/^\d{4,8}$/, "PIN must be 4-8 digits"),
         })
       )
@@ -2068,12 +2233,15 @@ export const appRouter = router({
           .object({
             actorScope: z.string().max(64).optional(),
             limit: z.number().int().min(1).max(500).optional(),
+            /** Changes and failures only: leave out routine successful sign-ins. */
+            changesOnly: z.boolean().optional(),
           })
           .optional()
       )
       .query(async ({ input }) => {
         return listAuditLog({
           actorScope: input?.actorScope,
+          excludeActions: input?.changesOnly ? ["auth.pin_success"] : undefined,
           limit: input?.limit ?? 100,
         });
       }),
@@ -3303,7 +3471,7 @@ export const appRouter = router({
       .input(z.object({ weekStart: z.date(), store: StoreEnum.optional() }))
       .mutation(async ({ ctx, input }) => {
         const scope = getScope(ctx.session);
-        const stores = resolveStores(scope, input.store) ?? [...STORES];
+        const stores = resolveStores(scope, input.store) ?? allStores();
         const week = getWeekStart(input.weekStart);
         const shifts = await getShiftsForWeek(week, stores);
         if (shifts.length === 0) {
@@ -3352,7 +3520,7 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         const scope = getScope(ctx.session);
-        const stores = resolveStores(scope, input.store) ?? [...STORES];
+        const stores = resolveStores(scope, input.store) ?? allStores();
         const from = getWeekStart(input.fromWeek);
         const to = getWeekStart(input.toWeek);
         if (from.getTime() === to.getTime()) {

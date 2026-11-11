@@ -1,4 +1,5 @@
 import { Skeleton } from "./ui/skeleton";
+import { initialNav } from "@/lib/navSize";
 
 /**
  * Loading shell that matches the real chrome — brand bar and tab bar on a
@@ -6,16 +7,23 @@ import { Skeleton } from "./ui/skeleton";
  * nothing jumps when the session resolves.
  */
 export function DashboardLayoutSkeleton() {
+  const nav = initialNav();
   return (
-    <div className="app-shell" role="status" aria-label="Loading">
+    <div
+      className="app-shell"
+      role="status"
+      aria-label="Loading"
+      data-nav={nav.mode}
+      style={{ "--nav-w": `${nav.width}px` } as React.CSSProperties}
+    >
       <aside className="sidenav" aria-hidden="true">
-        <Skeleton className="mx-auto h-8 w-10 rounded-lg xl:mx-0 xl:w-32" />
+        <Skeleton className="mx-auto h-8 w-10 rounded-lg nav-full:mx-0 nav-full:w-32" />
         <div className="mt-4 flex flex-col gap-2">
           {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="mx-auto h-11 w-11 rounded-xl xl:mx-0 xl:h-9 xl:w-full" />
+            <Skeleton key={i} className="mx-auto h-11 w-11 rounded-xl nav-full:mx-0 nav-full:h-9 nav-full:w-full" />
           ))}
         </div>
-        <Skeleton className="mx-auto mt-auto h-9 w-9 rounded-full xl:mx-0 xl:h-12 xl:w-full xl:rounded-xl" />
+        <Skeleton className="mx-auto mt-auto h-9 w-9 rounded-full nav-full:mx-0 nav-full:h-12 nav-full:w-full nav-full:rounded-xl" />
       </aside>
 
       <div className="app-main">

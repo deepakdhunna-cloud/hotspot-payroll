@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   appSettings,
@@ -425,6 +425,13 @@ export async function getPunchById(id: number) {
   return rows[0];
 }
 
+/** Several punches at once, by id (missing ids are simply absent). */
+export async function getPunchesByIds(ids: number[]) {
+  const db = await getDb();
+  if (!db || ids.length === 0) return [];
+  return db.select().from(timePunches).where(inArray(timePunches.id, ids));
+}
+
 export async function createManualPunch(data: InsertTimePunch) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
@@ -779,6 +786,8 @@ export async function logAudit(entry: InsertAuditLogEntry): Promise<void> {
 export async function listAuditLog(filter?: {
   actorScope?: string;
   entityType?: string;
+  /** Leave these actions out (e.g. routine sign-ins) before the limit applies. */
+  excludeActions?: string[];
   limit?: number;
 }) {
   const db = await getDb();
@@ -786,6 +795,9 @@ export async function listAuditLog(filter?: {
   const conds = [] as any[];
   if (filter?.actorScope) conds.push(eq(auditLog.actorScope, filter.actorScope));
   if (filter?.entityType) conds.push(eq(auditLog.entityType, filter.entityType));
+  if (filter?.excludeActions && filter.excludeActions.length > 0) {
+    conds.push(notInArray(auditLog.action, filter.excludeActions));
+  }
   const where = conds.length > 0 ? and(...conds) : undefined;
   return db
     .select()

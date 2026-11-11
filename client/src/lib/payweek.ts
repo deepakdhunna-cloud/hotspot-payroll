@@ -107,6 +107,15 @@ export function fmtDayHeading(d: Date | string): string {
   });
 }
 
+/**
+ * Share of a pay week that has gone by, 0–1 (1 for any closed week, 0 for
+ * one that hasn't started). Set pay accrues with it in the live figures.
+ */
+export function payWeekElapsed(weekStart: Date, now: number = Date.now()): number {
+  const { start, end } = payWeekBounds(weekStart);
+  return Math.min(1, Math.max(0, (now - start.getTime()) / (end.getTime() - start.getTime())));
+}
+
 /** Store-local calendar day of an instant, "2026-11-04" — for grouping. */
 export function storeDayKey(d: Date | string): string {
   return asDate(d).toLocaleDateString("en-CA", { timeZone: BUSINESS_TIME_ZONE });

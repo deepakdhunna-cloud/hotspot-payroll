@@ -131,6 +131,10 @@ describe("computeAttentionCandidates — auto clock-out integration", () => {
   });
 
   it("a store with no recent punches is flagged as not feeding the site", async () => {
+    vi.mocked(db.listEmployees).mockResolvedValueOnce([
+      { id: 1, fullName: "Ana Diaz", storeLocation: STORE, clockCodeHash: "x" },
+      { id: 9, fullName: "Bo Lee", storeLocation: "Hotspot Market 11", clockCodeHash: "x" },
+    ] as any);
     vi.mocked(db.listPunchesInRange).mockResolvedValueOnce([
       {
         id: 50,
@@ -154,6 +158,20 @@ describe("computeAttentionCandidates — auto clock-out integration", () => {
     expect(out.find(c => c.refKey === "missing_feed:Hotspot Market 11")).toBeTruthy();
     // Market 13 punched 2h ago → live, not flagged.
     expect(out.find(c => c.refKey === `missing_feed:${STORE}`)).toBeUndefined();
+  });
+
+  it("a store with no team yet is not nagged about a schedule or a silent clock", async () => {
+    // Market 13 has a person; "Hotspot Market 21" was just added and is empty.
+    vi.mocked(db.listEmployees).mockResolvedValueOnce([
+      { id: 1, fullName: "Ana Diaz", storeLocation: STORE, clockCodeHash: "x" },
+    ] as any);
+
+    const out = await computeAttentionCandidates([STORE, "Hotspot Market 21"], now);
+    const forNew = out.filter((c) => c.storeLocation === "Hotspot Market 21");
+    expect(forNew).toEqual([]);
+    // The staffed store is still held to both.
+    expect(out.find((c) => c.refKey === `missing_feed:${STORE}`)).toBeTruthy();
+    expect(out.some((c) => c.kind === "missing_schedule" && c.storeLocation === STORE)).toBe(true);
   });
 
   it("a manually-closed long punch still becomes a long_punch task", async () => {

@@ -83,6 +83,8 @@ export default function Home() {
   const LEDGER_PREVIEW = 10;
 
   const scopeQ = trpc.meta.myScope.useQuery();
+  const settingsQ = trpc.settings.get.useQuery(undefined, { staleTime: 60_000 });
+  const longShiftHours = settingsQ.data?.rules.longShiftHours ?? 12;
   const greetingQ = trpc.meta.greetingName.useQuery();
   const stores = scopeQ.data?.stores ?? [];
   const store = storeFilter === "all" ? undefined : (storeFilter as any);
@@ -138,9 +140,10 @@ export default function Home() {
   const payableCount = employees.filter((e) => isSaved(e) || needsPay(e)).length;
   // Never show zeros for a week that failed to load.
   const summaryFailed = summaryQ.isError && !data;
-  // Open punches running longer than 12h are almost always forgotten.
+  // Open punches running past the long-shift limit (12h unless the CEO
+  // changed it) are almost always forgotten.
   const forgotten = clockedIn.filter(
-    (c) => Date.now() - new Date(c.clockInAt).getTime() > 12 * 3_600_000,
+    (c) => Date.now() - new Date(c.clockInAt).getTime() > longShiftHours * 3_600_000,
   );
 
   const pace = useMemo(() => {
@@ -441,7 +444,7 @@ export default function Home() {
                   <ul className="divide-y divide-border">
                     {(showAllClockedIn ? clockedIn : clockedIn.slice(0, 6)).map((c) => {
                       const hrs = (Date.now() - new Date(c.clockInAt).getTime()) / 3_600_000;
-                      const long = hrs > 12;
+                      const long = hrs > longShiftHours;
                       return (
                         <li key={c.punchId} className="flex items-center gap-3 py-2.5">
                           <InitialsBadge name={c.fullName} />
