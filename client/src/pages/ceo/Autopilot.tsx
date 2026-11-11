@@ -97,6 +97,38 @@ const FLAG_WORD: Record<string, string> = {
 const payOf = (r: Row) =>
   r.lane === "saved" && r.row.entry ? Number(r.row.entry.grossPay) : r.calc.gross;
 
+type AttentionItem = {
+  id: number;
+  kind: string;
+  title: string;
+  detail: string | null;
+  employeeId: number | null;
+  weekStart: Date | string | null;
+  punchClockInAt: Date | string | null;
+};
+
+/**
+ * Open flags per person for ONE pay week. An item belongs to its own week,
+ * or — for a shift — to the week that shift started in (a forgotten
+ * clock-out this week is no reason to hold last week's payroll).
+ */
+function flagsByEmployee(items: readonly AttentionItem[], weekIso: string): Map<number, Flag[]> {
+  const m = new Map<number, Flag[]>();
+  for (const item of items) {
+    if (!FLAG_KINDS.has(item.kind) || item.employeeId == null) continue;
+    const week = item.weekStart
+      ? toDateInput(new Date(item.weekStart))
+      : item.punchClockInAt
+        ? toDateInput(startOfPayWeek(fromDateInput(storeDayKey(item.punchClockInAt))))
+        : null;
+    if (week !== weekIso) continue;
+    const list = m.get(item.employeeId) ?? [];
+    list.push({ id: item.id, kind: item.kind, title: item.title, detail: item.detail });
+    m.set(item.employeeId, list);
+  }
+  return m;
+}
+
 const people = (n: number) => `${n} ${n === 1 ? "person" : "people"}`;
 const rowsWord = (n: number) => `${n} ${n === 1 ? "row" : "rows"}`;
 
@@ -129,28 +161,19 @@ export function Autopilot({
   const weekIso = toDateInput(weekStart);
   const liveWeek = weekStart.getTime() >= inProgressPayWeekStart().getTime();
   const olderWeek = weekStart.getTime() < currentPayPeriodStart().getTime();
-  const ready = weekQ.isSuccess && clockQ.isSuccess;
-  const failed = (weekQ.isError && !weekQ.data) || (clockQ.isError && !clockQ.data);
+  // Three things have to be KNOWN before a row can be called Ready: the
+  // week's payroll, the time clock, and the attention list. The flags are
+  // what keep a row out of Ready, so a check that failed must never read as
+  // "nothing is flagged" — if the latest attempt at any of the three failed,
+  // nothing is shown as approvable until it loads again.
+  const failed = weekQ.isError || clockQ.isError || attentionQ.isError;
+  const ready = !failed && weekQ.isSuccess && clockQ.isSuccess && attentionQ.isSuccess;
 
   /** Open flags per person for THIS week. */
-  const flagsByEmp = useMemo(() => {
-    const m = new Map<number, Flag[]>();
-    for (const item of attentionQ.data?.items ?? []) {
-      if (!FLAG_KINDS.has(item.kind) || item.employeeId == null) continue;
-      // Which pay week the item belongs to: its own week, or — for a shift —
-      // the week that shift started in.
-      const week = item.weekStart
-        ? toDateInput(new Date(item.weekStart))
-        : item.punchClockInAt
-          ? toDateInput(startOfPayWeek(fromDateInput(storeDayKey(item.punchClockInAt))))
-          : null;
-      if (week !== weekIso) continue;
-      const list = m.get(item.employeeId) ?? [];
-      list.push({ id: item.id, kind: item.kind, title: item.title, detail: item.detail });
-      m.set(item.employeeId, list);
-    }
-    return m;
-  }, [attentionQ.data, weekIso]);
+  const flagsByEmp = useMemo(
+    () => flagsByEmployee((attentionQ.data?.items ?? []) as AttentionItem[], weekIso),
+    [attentionQ.data, weekIso],
+  );
 
   const rows: Row[] = useMemo(() => {
     const clock = new Map<number, number>();
@@ -229,7 +252,9 @@ export function Autopilot({
 
   /* ------------------------------- saving ------------------------------- */
 
-  const [run, setRun] = useState<{ done: number; total: number } | null>(null);
+  const [run, setRun] = useState<{ done: number; total: number; checking?: boolean } | null>(
+    null,
+  );
   const [busyRow, setBusyRow] = useState<number | null>(null);
 
   const refreshAll = () => {
@@ -257,8 +282,27 @@ export function Autopilot({
   };
 
   const approveReady = async () => {
-    const targets = readyRows;
-    if (targets.length === 0 || run) return;
+    if (readyRows.length === 0 || run) return;
+    setRun({ done: 0, total: readyRows.length, checking: true });
+    // Look for flags again at this very moment. The list on screen can be up
+    // to a minute old; a row flagged since then must not be approved in bulk,
+    // and if the check can't be made, nothing is approved at all.
+    const fresh = await attentionQ.refetch();
+    if (fresh.isError || !fresh.data) {
+      setRun(null);
+      toast.error("Couldn't check for flags just now, so nothing was approved.", {
+        description: "Try again in a moment.",
+      });
+      return;
+    }
+    const flaggedNow = flagsByEmployee(fresh.data.items as AttentionItem[], weekIso);
+    const targets = readyRows.filter((r) => !flaggedNow.has(r.id));
+    const heldBack = readyRows.length - targets.length;
+    if (targets.length === 0) {
+      setRun(null);
+      toast.info(`${rowsWord(heldBack)} ${heldBack === 1 ? "was" : "were"} flagged just now and moved to On hold.`);
+      return;
+    }
     const problems: string[] = [];
     let saved = 0;
     setRun({ done: 0, total: targets.length });
@@ -279,7 +323,12 @@ export function Autopilot({
         { description: problems.slice(0, 3).join(" · ") },
       );
     } else {
-      toast.success(`${rowsWord(saved)} saved to payroll for ${range}.`);
+      toast.success(`${rowsWord(saved)} saved to payroll for ${range}.`, {
+        description:
+          heldBack > 0
+            ? `${rowsWord(heldBack)} flagged just now ${heldBack === 1 ? "was" : "were"} left on hold.`
+            : undefined,
+      });
     }
   };
 
@@ -429,12 +478,18 @@ export function Autopilot({
           <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
             <AlertTriangle className="h-6 w-6 text-warning" aria-hidden />
             <p className="text-sm font-medium">Couldn&apos;t load this pay week.</p>
+            <p className="max-w-md text-[13px] leading-relaxed text-muted-foreground">
+              {attentionQ.isError && !weekQ.isError && !clockQ.isError
+                ? "The check for what needs attention didn't load, so it isn't known which rows are flagged. Nothing can be approved until it does."
+                : "Payroll, the time clock and the attention check all have to load before anything can be approved."}
+            </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
                 weekQ.refetch();
                 clockQ.refetch();
+                attentionQ.refetch();
               }}
             >
               <RotateCw className="h-3.5 w-3.5" /> Try again
@@ -549,7 +604,7 @@ export function Autopilot({
                     <i style={{ width: `${(run.done / run.total) * 100}%` }} />
                   </div>
                   <p className="mono mt-1.5 text-[11px] text-muted-foreground">
-                    Saving {run.done} of {run.total}…
+                    {run.checking ? "Checking for flags…" : `Saving ${run.done} of ${run.total}…`}
                   </p>
                 </div>
               ) : (

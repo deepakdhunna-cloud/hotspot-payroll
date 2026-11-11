@@ -1,13 +1,20 @@
 /**
- * Executive view — the whole company on one screen.
+ * The command center — the CEO's view (admin only).
  *
- * Top: mode-aware pulse (live week = who's working and what labor costs
- * right now; closed week = what was saved and the withholding estimates).
- * Middle: one card per store — click a card to focus every number on that
- * store, click again to zoom back out. Eight-week filmstrip for history.
- * Tabs below hold the payroll detail, PIN management and the audit trail.
- * The open tab and the chosen week live in the URL (?tab=, ?week=), so a
- * refresh, Back or a shared link lands on the same view.
+ * One console with five sections that share a single focus (tap a store
+ * anywhere and every section narrows to it):
+ *
+ *   LIVE       the company at the center, every store in orbit, vital signs,
+ *              who is on the clock, what needs attention, the system log.
+ *   AUTOPILOT  payroll for every store from one place (pages/ceo/Autopilot),
+ *              with the saved-payroll ledger under it.
+ *   OPTIMIZE   findings worked out from the site's own figures (ceo/Insights).
+ *   CONTROL    rules, stores, roles, sign-in PINs, data (ceo/ControlRoom).
+ *   LOG        the full activity log.
+ *
+ * The open section and the chosen weeks live in the URL (?tab=, ?week= for
+ * Live, ?pay= for Autopilot), so a refresh, Back or a shared link lands on
+ * the same view. The look is one CSS scope, `.cc` in index.css.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -140,6 +147,22 @@ function initialWeek(): Date {
   return w.getTime() > live.getTime() ? live : w;
 }
 
+/**
+ * The week Autopilot is working on (?pay=). With nothing in the address it
+ * is the last closed week — the one to be paid; an address that names a
+ * past week for the Live view (?week=) opens Autopilot on that week too.
+ */
+function initialPayWeek(): Date {
+  const live = inProgressPayWeekStart();
+  const raw = searchParams().get("pay");
+  if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const w = startOfPayWeek(fromDateInput(raw));
+    return w.getTime() > live.getTime() ? live : w;
+  }
+  const linked = initialWeek();
+  return linked.getTime() === live.getTime() ? currentPayPeriodStart() : linked;
+}
+
 /* ------------------------------ helpers ------------------------------ */
 
 type WeeklyRow = {
@@ -193,12 +216,7 @@ export default function CeoView() {
   // The Live view follows the week in progress; Autopilot works on the week
   // to be paid (the last closed one) unless another is picked.
   const [weekStart, setWeekState] = useState<Date>(initialWeek);
-  const [payWeek, setPayWeek] = useState<Date>(() => {
-    const linked = initialWeek();
-    return linked.getTime() === inProgressPayWeekStart().getTime()
-      ? currentPayPeriodStart()
-      : linked;
-  });
+  const [payWeek, setPayWeekState] = useState<Date>(initialPayWeek);
   const { scope: storeFilter, setScope: setStoreFilter } = useStoreScope();
 
   const setTab = (next: string) => {
@@ -215,6 +233,15 @@ export default function CeoView() {
     replaceSearchParam(
       "week",
       next.getTime() === live.getTime() ? null : toDateInput(next)
+    );
+  };
+  // Autopilot's week is in the address too, so a refresh or a shared link
+  // opens the payroll that was being worked on.
+  const setPayWeek = (next: Date) => {
+    setPayWeekState(next);
+    replaceSearchParam(
+      "pay",
+      next.getTime() === currentPayPeriodStart().getTime() ? null : toDateInput(next)
     );
   };
 
