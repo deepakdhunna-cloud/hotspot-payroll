@@ -121,6 +121,10 @@ export async function computeAttentionCandidates(
     getShiftsForWeek(liveWeek, stores),
   ]);
   const empById = new Map(emps.map(e => [e.id, e]));
+  // A store with nobody on its team yet (one just added from the command
+  // center) has nothing to schedule and nobody to punch. It is not "missing"
+  // a schedule or a clock feed until it has people.
+  const staffedStores = new Set(emps.map(e => e.storeLocation));
   const out: AttentionCandidate[] = [];
 
   /* ---- 1. Long punches: open right now, or closed within the lookback ---- */
@@ -206,7 +210,7 @@ export async function computeAttentionCandidates(
   /* ---- 3. Missing live-week schedule, per store ---- */
   const storesWithShifts = new Set(liveShifts.map(s => s.storeLocation));
   for (const store of stores) {
-    if (storesWithShifts.has(store)) continue;
+    if (storesWithShifts.has(store) || !staffedStores.has(store)) continue;
     out.push({
       refKey: `missing_schedule:${store}:${liveWeek.toISOString().slice(0, 10)}`,
       kind: "missing_schedule",
@@ -288,6 +292,7 @@ export async function computeAttentionCandidates(
   }
   for (const store of stores) {
     const last = lastPunchByStore.get(store);
+    if (!last && !staffedStores.has(store)) continue; // no team yet, nothing to feed
     const silentMs = now.getTime() - (last ?? 0);
     if (last && silentMs < FEED_SILENCE_HOURS * 3_600_000) continue;
     const silentLabel =
