@@ -5,11 +5,11 @@
  *  Phone (and a foldable's cover screen)
  *      A brand bar on top that scrolls away, and a floating tab bar at the
  *      thumbs with the "+" quick-add in the middle.
- *  Foldable opened sideways, tablets, small laptops (48rem and up)
- *      A navigation rail on the left edge: nothing is spent on the short
- *      vertical space, and both thumbs reach it.
- *  Desktop (85rem and up)
- *      A sidebar with full labels, search and the account.
+ *  Foldable opened sideways, tablets, laptops and desktops (48rem and up)
+ *      A side navigation that is either a compact rail (icons, both thumbs
+ *      reach it, nothing spent on short vertical space) or the full sidebar
+ *      with labels, search and the account. Which one, and how wide, is the
+ *      person's choice: drag its edge or tap the grip (see lib/navSize).
  *
  * The same things live in each: the sections, quick add, search (⌘K),
  * the attention bell, the light/dark switch (always in plain sight, never
@@ -72,6 +72,7 @@ import {
   useStoreScope,
 } from "@/contexts/StoreScopeContext";
 import { announceQueryFlags } from "@/lib/queryFlag";
+import { NAV_FULL_MIN, NAV_RAIL, useNavSize } from "@/lib/navSize";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 
@@ -329,6 +330,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const attention = useAttentionCount();
   const install = useInstallState();
   const [installOpen, setInstallOpen] = React.useState(false);
+  const nav = useNavSize();
   const [quickOpen, setQuickOpen] = React.useState(false);
   // The rail / sidebar "+" menu is controlled so picking an action closes it.
   const [railQuickOpen, setRailQuickOpen] = React.useState(false);
@@ -415,7 +417,12 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      data-nav={nav.mode}
+      data-nav-dragging={nav.dragging || undefined}
+      style={{ "--nav-w": `${nav.width}px` } as React.CSSProperties}
+    >
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground"
@@ -427,20 +434,20 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       <aside className="sidenav" aria-label="App">
         <Link
           href={roleHome}
-          className="mb-1 flex h-11 shrink-0 items-center justify-center rounded-xl xl:mb-2 xl:justify-start xl:px-2"
+          className="mb-1 flex h-11 shrink-0 items-center justify-center rounded-xl nav-full:mb-2 nav-full:justify-start nav-full:px-2"
           aria-label={isCfo ? "Go to finance" : "Go to dashboard"}
         >
-          <BrandGlyph className="h-6 xl:hidden" />
-          <BrandMark size="sm" className="hidden h-8 xl:block" />
+          <BrandGlyph className="h-6 nav-full:hidden" />
+          <BrandMark size="sm" className="hidden h-8 nav-full:block" />
         </Link>
 
         {ops ? (
-          <div className="flex shrink-0 flex-col items-center gap-1 xl:flex-row xl:items-stretch xl:gap-2">
+          <div className="flex shrink-0 flex-col items-center gap-1 nav-full:flex-row nav-full:items-stretch nav-full:gap-2">
             {/* Sidebar: a search field. Rail: an icon. */}
             <button
               type="button"
               onClick={() => setCmdOpen(true)}
-              className="hidden h-9 min-w-0 flex-1 items-center gap-2 rounded-[0.625rem] border border-input bg-[var(--field)] px-2.5 text-sm text-muted-foreground transition-colors hover:border-[var(--border-strong)] hover:text-foreground xl:flex"
+              className="hidden h-9 min-w-0 flex-1 items-center gap-2 rounded-[0.625rem] border border-input bg-[var(--field)] px-2.5 text-sm text-muted-foreground transition-colors hover:border-[var(--border-strong)] hover:text-foreground nav-full:flex"
               aria-label={`Search pages, people and actions (${shortcut})`}
             >
               <Search className="h-4 w-4 shrink-0" aria-hidden />
@@ -455,10 +462,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-full xl:h-9 xl:w-9 xl:rounded-[0.625rem]"
+                      className="btn-primary flex h-10 w-10 shrink-0 items-center justify-center rounded-full nav-full:h-9 nav-full:w-9 nav-full:rounded-[0.625rem]"
                       aria-label="Quick add"
                     >
-                      <Plus className="h-5 w-5 xl:h-4 xl:w-4" aria-hidden />
+                      <Plus className="h-5 w-5 nav-full:h-4 nav-full:w-4" aria-hidden />
                     </button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
@@ -478,7 +485,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() => setCmdOpen(true)}
-                  className="chrome-btn xl:hidden"
+                  className="chrome-btn nav-full:hidden"
                   aria-label={`Search pages, people and actions (${shortcut})`}
                 >
                   <Search aria-hidden />
@@ -491,10 +498,10 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </div>
         ) : null}
 
-        {ops ? <StoreScope className="mx-auto mt-1 w-full max-w-full shrink-0 xl:mt-2" /> : null}
+        {ops ? <StoreScope className="mx-auto mt-1 w-full max-w-full shrink-0 nav-full:mt-2" /> : null}
 
         {menuItems.length > 1 ? (
-          <nav className="mt-2 flex shrink-0 flex-col gap-0.5 xl:mt-3" aria-label="Primary">
+          <nav className="mt-2 flex shrink-0 flex-col gap-0.5 nav-full:mt-3" aria-label="Primary">
             {menuItems.map((item) => {
               const active = isPathActive(item.path);
               return (
@@ -524,8 +531,8 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 title={attention.label}
               >
                 <span className="relative flex">
-                  <Bell className="h-5 w-5 xl:h-[1.05rem] xl:w-[1.05rem]" aria-hidden />
-                  <span className="xl:hidden">
+                  <Bell className="h-5 w-5 nav-full:h-[1.05rem] nav-full:w-[1.05rem]" aria-hidden />
+                  <span className="nav-full:hidden">
                     {attention.failed || attention.count > 0 ? (
                       <span
                         className={cn(
@@ -547,14 +554,14 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                     ) : null}
                   </span>
                 </span>
-                <span className="truncate xl:flex-1 xl:text-left">
-                  <span className="xl:hidden">Alerts</span>
-                  <span className="hidden xl:inline">Needs attention</span>
+                <span className="truncate nav-full:flex-1 nav-full:text-left">
+                  <span className="nav-full:hidden">Alerts</span>
+                  <span className="hidden nav-full:inline">Needs attention</span>
                 </span>
                 {attention.failed ? (
-                  <AlertTriangle className="hidden h-4 w-4 text-warning xl:block" aria-hidden />
+                  <AlertTriangle className="hidden h-4 w-4 text-warning nav-full:block" aria-hidden />
                 ) : attention.count > 0 ? (
-                  <span className="nav-badge hidden xl:inline-flex" aria-hidden>
+                  <span className="nav-badge hidden nav-full:inline-flex" aria-hidden>
                     {attention.count > 99 ? "99+" : attention.count}
                   </span>
                 ) : null}
@@ -568,26 +575,26 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                 title="Open the time clock in a new tab"
               >
                 <Clock aria-hidden />
-                <span className="truncate xl:flex-1 xl:text-left">Time clock</span>
-                <ExternalLink className="hidden h-3.5 w-3.5 opacity-60 xl:block" aria-hidden />
+                <span className="truncate nav-full:flex-1 nav-full:text-left">Time clock</span>
+                <ExternalLink className="hidden h-3.5 w-3.5 opacity-60 nav-full:block" aria-hidden />
               </a>
             </>
           ) : null}
 
           {/* Appearance: a button on the rail, the three choices spelled out
               in the sidebar. */}
-          <ThemeMenu label side="right" align="end" className="nav-item xl:hidden" />
-          <ThemeSwitch className="mt-1.5 hidden xl:grid" />
+          <ThemeMenu label side="right" align="end" className="nav-item nav-full:hidden" />
+          <ThemeSwitch className="mt-1.5 hidden nav-full:grid" />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="mt-1 flex shrink-0 items-center justify-center gap-2.5 rounded-xl p-1.5 text-left transition-colors hover:bg-[var(--nav-active)] xl:justify-start xl:border xl:border-border xl:bg-card xl:p-2 xl:shadow-[var(--shadow-card)]"
+                className="mt-1 flex shrink-0 items-center justify-center gap-2.5 rounded-xl p-1.5 text-left transition-colors hover:bg-[var(--nav-active)] nav-full:justify-start nav-full:border nav-full:border-border nav-full:bg-card nav-full:p-2 nav-full:shadow-[var(--shadow-card)]"
                 aria-label={`Account menu: ${displayName}, ${scopeLine}`}
               >
                 <AccountAvatar initial={initial} />
-                <span className="hidden min-w-0 flex-1 xl:block">
+                <span className="hidden min-w-0 flex-1 nav-full:block">
                   <span className="block truncate text-[13px] font-medium leading-tight">
                     {displayName}
                   </span>
@@ -596,7 +603,7 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
                   </span>
                 </span>
                 <ChevronsUpDown
-                  className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground xl:block"
+                  className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground nav-full:block"
                   aria-hidden
                 />
               </button>
@@ -605,6 +612,40 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
       </aside>
+
+      {/* The navigation's edge: drag to size it, tap to open or close it. */}
+      {nav.resizable ? (
+        <div
+          className="nav-grip"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={
+            nav.mode === "full"
+              ? "Resize the side navigation. Tap to collapse it."
+              : "Tap or drag to open the full side navigation."
+          }
+          aria-valuemin={NAV_RAIL}
+          aria-valuemax={nav.max}
+          aria-valuenow={nav.width}
+          tabIndex={0}
+          title={nav.mode === "full" ? "Drag to resize · tap to collapse" : "Drag or tap to expand"}
+          onPointerDown={nav.onPointerDown}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              nav.nudge(-16);
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault();
+              nav.nudge(nav.mode === "rail" ? NAV_FULL_MIN : 16);
+            } else if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              nav.toggle();
+            }
+          }}
+        >
+          <span aria-hidden="true" />
+        </div>
+      ) : null}
 
       <div className="app-main">
         {/* ---------------- Phone brand bar (scrolls away) ---------------- */}

@@ -18,22 +18,27 @@
    - Type: one family, Geist (loaded in index.html). Numbers are tabular.
 
    Layout breakpoints follow the CONTENT column, not the window: from 48rem
-   the app shows a navigation rail (4.75rem) and from 85rem a sidebar
-   (15rem), so md / lg / xl are shifted up by the width of that navigation.
+   the app shows a side navigation (a 4.75rem rail, or a wider sidebar from
+   85rem by default), so md / lg / xl are shifted up by its width.
    A page that says `md:` still means "my column is at least 768px wide".
 
      < 600   phone, and a foldable's cover screen     tab bar
      600+    sm   large phone, foldable open upright  tab bar, two-up grids
-     768+    rail foldable open sideways, tablets     navigation rail
-     848+    md   content ≥ 768
-     1104+   lg   content ≥ 1024
-     1360+   xl   sidebar; content ≥ 1120
+     768+    rail foldable open sideways, tablets     side navigation
+     848+    md   content ≥ 768 beside the rail
+     1104+   lg   content ≥ 1024 beside the rail
+     1360+   xl   full sidebar by default; content ≥ 1120
+   The side navigation's width is the person's choice (rail or full sidebar,
+   see lib/navSize); it is trimmed so the page keeps at least 640px.
    ======================================================================= */
 
 /* Dark tokens apply under .dark (the whole app) and under .ink / .ink-panel
    (a surface that is dark in both themes: the payroll hero card, the time
    clock). */
 @custom-variant dark (&:is(.dark *, .ink *, .ink, .ink-panel *, .ink-panel));
+/* The side navigation is a rail or the full sidebar by the person's choice
+   (lib/navSize), not by window width — so its layout keys off this. */
+@custom-variant nav-full (&:is([data-nav="full"] *));
 
 @theme {
   --breakpoint-sm: 37.5rem;
@@ -272,11 +277,9 @@
   color-scheme: dark;
 }
 
+/* Fallback only: the app shell sets --nav-w itself (lib/navSize). */
 @media (min-width: 48rem) {
   :root { --nav-w: 4.75rem; }
-}
-@media (min-width: 85rem) {
-  :root { --nav-w: 15rem; }
 }
 
 @layer base {
@@ -1162,7 +1165,7 @@ input[type="datetime-local"] {
    App chrome
    -----------------------------------------------------------------------
    Phone: brand bar on top (scrolls away), floating tab bar at the thumbs.
-   From 48rem: a navigation rail on the left edge. From 85rem: a sidebar.
+   From 48rem: a side navigation — rail or full sidebar, the person's choice.
    ======================================================================= */
 /* In the components layer, so a utility on the element (xl:hidden, h-5)
    still wins over these. */
@@ -1212,12 +1215,11 @@ input[type="datetime-local"] {
   }
   .sidenav::-webkit-scrollbar { display: none; }
 }
-@media (min-width: 85rem) {
-  .sidenav {
-    padding-left: calc(0.75rem + env(safe-area-inset-left));
-    padding-right: 0.75rem;
-  }
+[data-nav="full"] .sidenav {
+  padding-left: calc(0.75rem + env(safe-area-inset-left));
+  padding-right: 0.75rem;
 }
+
 .nav-item {
   position: relative;
   display: flex;
@@ -1255,37 +1257,89 @@ input[type="datetime-local"] {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
-@media (min-width: 85rem) {
-  .nav-item {
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 0.7rem;
-    min-height: 2.375rem;
-    padding: 0 0.7rem;
-    border-radius: 0.625rem;
-    font-size: 14px;
-  }
-  .nav-item > svg {
-    width: 1.05rem;
-    height: 1.05rem;
-  }
-  /* The current section carries one of the logo's speed lines. */
-  .nav-item[data-active="true"]::before {
-    content: "";
-    position: absolute;
-    left: -0.75rem;
-    top: 22%;
-    bottom: 22%;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: var(--brand-red);
-  }
+[data-nav="full"] .nav-item {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 0.7rem;
+  min-height: 2.375rem;
+  padding: 0 0.7rem;
+  border-radius: 0.625rem;
+  font-size: 14px;
 }
-/* A short, wide screen (a foldable held sideways): tighter rail items. */
-@media (min-width: 48rem) and (max-width: 84.99rem) and (max-height: 42rem) {
-  .nav-item {
+[data-nav="full"] .nav-item > svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+/* The current section carries one of the logo's speed lines. */
+[data-nav="full"] .nav-item[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: -0.75rem;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand-red);
+}
+/* A short screen (a foldable held sideways): tighter rail items. */
+@media (min-width: 48rem) and (max-height: 42rem) {
+  [data-nav="rail"] .nav-item {
     min-height: 2.75rem;
     gap: 2px;
+  }
+}
+
+/* ---- The navigation's edge: drag to size it, tap to open or close ----
+   A full-height strip straddling the border. Its grip is a short pill that
+   lights up under a pointer; the strip is wide enough for a thumb.       */
+.nav-grip {
+  display: none;
+}
+@media (min-width: 48rem) {
+  .nav-grip {
+    position: fixed;
+    z-index: 45;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--nav-w) - 0.5rem);
+    width: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: col-resize;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  @media (pointer: coarse) {
+    .nav-grip {
+      left: calc(var(--nav-w) - 0.75rem);
+      width: 1.5rem;
+    }
+  }
+  .nav-grip > span {
+    width: 0.3rem;
+    height: 2.75rem;
+    border-radius: 999px;
+    background: var(--border-strong);
+    box-shadow: 0 0 0 3px var(--background);
+    transition: background-color 140ms ease, height 140ms ease, width 140ms ease;
+  }
+  .nav-grip:hover > span,
+  .nav-grip:focus-visible > span,
+  [data-nav-dragging] .nav-grip > span {
+    background: var(--brand-red);
+    height: 3.5rem;
+  }
+  .nav-grip:focus-visible {
+    outline: none;
+  }
+  /* While dragging: no text selection, and the cursor stays a resize arrow. */
+  [data-nav-dragging],
+  [data-nav-dragging] * {
+    cursor: col-resize !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
   }
 }
 /* Small count on a navigation item (open attention items). */
