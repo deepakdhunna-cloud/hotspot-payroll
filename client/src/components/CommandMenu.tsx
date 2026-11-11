@@ -16,15 +16,17 @@ import { InitialsBadge } from "@/components/InitialsBadge";
 import { STORE_ABBR } from "@/lib/format";
 import { announceQueryFlags } from "@/lib/queryFlag";
 import { trpc } from "@/lib/trpc";
+import { CEO_SECTIONS, DESK_HOME, ceoPath, type Role } from "@/lib/portal";
 import {
   CalendarDays,
   ClipboardList,
   Clock,
   ExternalLink,
   History,
-  Landmark,
+  KeyRound,
   LayoutDashboard,
-  ShieldCheck,
+  Rocket,
+  Store,
   UserPlus,
   Users,
   Wallet,
@@ -34,12 +36,15 @@ import { useLocation } from "wouter";
 export function CommandMenu({
   open,
   onOpenChange,
-  isAdmin,
+  role,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  isAdmin: boolean;
+  role: Role;
 }) {
+  const isAdmin = role === "admin";
+  // A manager's dashboard is "/"; the CEO's copy of it is on the store desk.
+  const dashboard = isAdmin ? DESK_HOME : "/";
   const [, navigate] = useLocation();
   // Loaded only while the bar is open; the roster rarely changes mid-session.
   const peopleQ = trpc.employees.list.useQuery(undefined, {
@@ -69,6 +74,19 @@ export function CommandMenu({
         <CommandEmpty>Nothing matches that.</CommandEmpty>
 
         <CommandGroup heading="Actions">
+          {isAdmin ? (
+            <>
+              <CommandItem value="approve payroll autopilot run all stores" onSelect={() => go("/ceo/payroll")}>
+                <Rocket /> Approve payroll
+              </CommandItem>
+              <CommandItem value="add a store new location" onSelect={() => go("/ceo/control?addStore=1")}>
+                <Store /> Add a store
+              </CommandItem>
+              <CommandItem value="change a pin sign-in access password" onSelect={() => go("/ceo/control?section=access")}>
+                <KeyRound /> Change a PIN
+              </CommandItem>
+            </>
+          ) : null}
           <CommandItem value="add a punch fix hours manual" onSelect={() => go("/payroll?tab=punches&add=1")}>
             <Clock /> Add a punch
           </CommandItem>
@@ -78,9 +96,11 @@ export function CommandMenu({
           <CommandItem value="import schedule upload homebase" onSelect={() => go("/schedule-import")}>
             <CalendarDays /> Import schedule
           </CommandItem>
-          <CommandItem value="run payroll last week export save" onSelect={() => go("/payroll")}>
-            <Wallet /> Run payroll
-          </CommandItem>
+          {isAdmin ? null : (
+            <CommandItem value="run payroll last week export save" onSelect={() => go("/payroll")}>
+              <Wallet /> Run payroll
+            </CommandItem>
+          )}
           <CommandItem
             value="open the time clock kiosk tablet punch in"
             onSelect={() => {
@@ -93,15 +113,33 @@ export function CommandMenu({
           </CommandItem>
         </CommandGroup>
 
+        {isAdmin ? (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Command center">
+              {CEO_SECTIONS.map((sec) => (
+                <CommandItem
+                  key={sec.key}
+                  value={`${sec.label} ${sec.hint} ceo command center ${sec.key}`}
+                  onSelect={() => go(ceoPath(sec.key))}
+                >
+                  <sec.icon /> {sec.label}
+                  <CommandShortcut className="tracking-normal">{sec.hint}</CommandShortcut>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        ) : null}
+
         <CommandSeparator />
-        <CommandGroup heading="Go to">
-          <CommandItem value="dashboard home overview" onSelect={() => go("/")}>
+        <CommandGroup heading={isAdmin ? "Store desk" : "Go to"}>
+          <CommandItem value="dashboard home overview store desk" onSelect={() => go(dashboard)}>
             <LayoutDashboard /> Dashboard
           </CommandItem>
           <CommandItem value="employees team roster people staff" onSelect={() => go("/employees")}>
             <Users /> Employees
           </CommandItem>
-          <CommandItem value="payroll hours and pay" onSelect={() => go("/payroll")}>
+          <CommandItem value="payroll hours and pay timesheet" onSelect={() => go("/payroll")}>
             <ClipboardList /> Payroll: hours &amp; pay
           </CommandItem>
           <CommandItem value="payroll punches time clock" onSelect={() => go("/payroll?tab=punches")}>
@@ -113,16 +151,6 @@ export function CommandMenu({
           <CommandItem value="schedule week shifts" onSelect={() => go("/schedule-import")}>
             <CalendarDays /> Schedule
           </CommandItem>
-          {isAdmin ? (
-            <>
-              <CommandItem value="executive ceo all stores pins activity" onSelect={() => go("/ceo")}>
-                <ShieldCheck /> Executive
-              </CommandItem>
-              <CommandItem value="finance cfo labor cost" onSelect={() => go("/cfo")}>
-                <Landmark /> Finance
-              </CommandItem>
-            </>
-          ) : null}
         </CommandGroup>
 
         {people.length > 0 ? (

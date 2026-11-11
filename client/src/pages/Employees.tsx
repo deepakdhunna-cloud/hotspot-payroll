@@ -34,7 +34,7 @@ import { trpc } from "@/lib/trpc";
 import { fmtMoney, STORE_ABBR } from "@/lib/format";
 import { KeyRound, Plus, Search, ArrowRight, Trash2, X, ChevronRight } from "lucide-react";
 import { TableStateRows } from "@/components/QueryStates";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQueryFlag } from "@/lib/queryFlag";
 import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
@@ -45,8 +45,18 @@ import { errorMessage } from "@/lib/errors";
 import { InitialsBadge } from "@/components/InitialsBadge";
 import { useStoreScope } from "@/contexts/StoreScopeContext";
 
-export default function Employees() {
-  usePageTitle("Employees");
+export default function Employees({
+  title = "Employees",
+  eyebrow,
+  lead,
+}: {
+  /** The CEO's portal shows this same directory as "People". */
+  title?: string;
+  eyebrow?: ReactNode;
+  /** Shown between the header and the directory (the CEO's headcount view). */
+  lead?: ReactNode;
+} = {}) {
+  usePageTitle(title);
   const { scope: storeFilter } = useStoreScope();
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -168,7 +178,8 @@ export default function Employees() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Employees"
+        eyebrow={eyebrow}
+        title={title}
         description={
           listQ.data
             ? `${activePeople.length} ${activePeople.length === 1 ? "employee" : "employees"}${
@@ -202,6 +213,8 @@ export default function Employees() {
           </Dialog>
         }
       />
+
+      {lead}
 
       <Card className="surface-card gap-0 py-0 overflow-hidden">
         <CardHeader className="px-3 sm:px-4 py-3 border-b border-border">

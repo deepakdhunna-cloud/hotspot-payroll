@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STORE_ABBR, fmtHours, fmtHoursLabel, fmtMoney, fmtWeekRange, storeColor, storeIndex } from "@/lib/format";
 import { inProgressPayWeekStart } from "@/lib/payweek";
+import { DESK_HOME } from "@/lib/portal";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, ArrowUpRight, CheckCircle2, Eye } from "lucide-react";
@@ -122,7 +123,7 @@ export function Insights({
               ? ` Not counting the ${runningLong.size} ${runningLong.size === 1 ? "person" : "people"} whose shift is still running too long.`
               : ""
           }`,
-          action: { label: "See this week by employee", href: "/" },
+          action: { label: "See this week by employee", href: DESK_HOME },
         });
       } else if (hourly.some((r) => r.scheduledHours > 0)) {
         out.push({

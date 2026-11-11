@@ -60,7 +60,13 @@ const EmployeeProfile = lazyWithReload(() => import("./pages/EmployeeProfile"));
 const WeeklyPayroll = lazyWithReload(() => import("./pages/WeeklyPayroll"));
 const ScheduleImport = lazyWithReload(() => import("./pages/ScheduleImport"));
 const CeoView = lazyWithReload(() => import("./pages/CeoView"));
-const CfoView = lazyWithReload(() => import("./pages/CfoView"));
+const CeoPeople = lazyWithReload(() => import("./pages/ceo/PeoplePage"));
+// Finance is one page shared by two portals: the CFO's (/cfo) and, as a
+// section, the CEO's (/ceo/finance). Each has an overview and a register.
+const FinanceOverview = lazyWithReload(() => import("./pages/ceo/FinancePage"));
+const FinanceRegister = lazyWithReload(() =>
+  import("./pages/ceo/FinancePage").then((m) => ({ default: m.FinanceRegisterPage })),
+);
 const ClockKiosk = lazyWithReload(() => import("./pages/ClockKiosk"));
 
 /** Quiet in-layout loading state while a page chunk streams in. */
@@ -161,14 +167,25 @@ function Router() {
     <DashboardLayout>
       <Suspense fallback={<PageFallback />}>
         <Switch>
+        {/* A manager's portal. The CEO reaches the same pages through the
+            store desk, whose dashboard is /desk (the CEO's own home is the
+            command center). Who may open what is decided in lib/portal. */}
         <Route path={"/"} component={Home} />
+        <Route path={"/desk"} component={Home} />
         <Route path={"/employees"} component={Employees} />
         <Route path={"/employees/:id"} component={EmployeeProfile} />
         <Route path={"/payroll"} component={WeeklyPayroll} />
         <Route path={"/time-clock"} component={TimeClockRedirect} />
         <Route path={"/schedule-import"} component={ScheduleImport} />
+        {/* The CEO's portal: one address per section. */}
+        <Route path={"/ceo/people"} component={CeoPeople} />
+        <Route path={"/ceo/finance/register"} component={FinanceRegister} />
+        <Route path={"/ceo/finance"} component={FinanceOverview} />
+        <Route path={"/ceo/:section"} component={CeoView} />
         <Route path={"/ceo"} component={CeoView} />
-        <Route path={"/cfo"} component={CfoView} />
+        {/* The CFO's portal. */}
+        <Route path={"/cfo/register"} component={FinanceRegister} />
+        <Route path={"/cfo"} component={FinanceOverview} />
           <Route path={"/404"} component={NotFound} />
           <Route component={NotFound} />
         </Switch>

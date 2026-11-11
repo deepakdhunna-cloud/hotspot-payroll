@@ -33,12 +33,14 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { storeColor } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
+import { DESK_HOME } from "@/lib/portal";
+import { FLAG_EVENT, useQueryFlag } from "@/lib/queryFlag";
 import {
   CalendarDays,
   ClipboardList,
   Clock,
-  ExternalLink,
-  Landmark,
+  History,
+  LayoutDashboard,
   Loader2,
   Plus,
   Users,
@@ -61,6 +63,23 @@ function suggestShort(name: string): string {
 const pctText = (rate: number) => String(Math.round(rate * 10000) / 100);
 
 export function ControlRoom({ access, data }: { access: ReactNode; data: ReactNode }) {
+  // "Change a PIN" (the + menu, search) lands here on the Access part.
+  // Checked on arrival and again whenever the app announces new address
+  // flags, so it also works when Control is already the page on screen.
+  useEffect(() => {
+    const check = () => {
+      const url = new URL(window.location.href);
+      const target = url.searchParams.get("section");
+      if (!target) return;
+      url.searchParams.delete("section");
+      window.history.replaceState(window.history.state, "", url.toString());
+      const el = document.getElementById(`control-${target}`);
+      if (el) window.setTimeout(() => el.scrollIntoView({ block: "start" }), 80);
+    };
+    check();
+    window.addEventListener(FLAG_EVENT, check);
+    return () => window.removeEventListener(FLAG_EVENT, check);
+  }, []);
   return (
     <div className="space-y-4 sm:space-y-5">
       <div className="cc-cols">
@@ -70,18 +89,19 @@ export function ControlRoom({ access, data }: { access: ReactNode; data: ReactNo
           <RolesPanel />
         </div>
       </div>
-      <ShortcutsPanel />
-      <SectionLabel>Access</SectionLabel>
+      <SectionLabel id="control-access">Access</SectionLabel>
       {access}
-      <SectionLabel>Data and portal</SectionLabel>
+      <SectionLabel id="control-data">Data and portal</SectionLabel>
       {data}
+      <SectionLabel id="control-more">Records and a manager&apos;s tools</SectionLabel>
+      <MorePanel />
     </div>
   );
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
+function SectionLabel({ id, children }: { id?: string; children: ReactNode }) {
   return (
-    <h2 className="hud-label flex items-center gap-3 pt-2">
+    <h2 id={id} className="hud-label flex scroll-mt-24 items-center gap-3 pt-2">
       <span className="text-[var(--hud-accent)]">//</span>
       {children}
       <span className="h-px flex-1 bg-[var(--hud-line)]" aria-hidden />
@@ -308,6 +328,11 @@ function StoresPanel() {
     headcount.set(e.storeLocation, (headcount.get(e.storeLocation) ?? 0) + 1);
   }
   const [open, setOpen] = useState(false);
+  // "Add a store" from the + menu or search lands here with ?addStore=1.
+  useQueryFlag("addStore", () => {
+    reset();
+    setOpen(true);
+  });
   const [name, setName] = useState("");
   const [short, setShort] = useState("");
   const [shortTouched, setShortTouched] = useState(false);
@@ -553,49 +578,49 @@ function RolesPanel() {
   );
 }
 
-/* ------------------------------- shortcuts ------------------------------- */
+/* ------------------------- the log and the store desk ------------------------- */
 
-const SHORTCUTS = [
-  { href: "/employees", icon: Users, label: "Employees", hint: "Add, edit, move, deactivate — any store" },
+const DESK_LINKS = [
+  { href: DESK_HOME, icon: LayoutDashboard, label: "Dashboard", hint: "A store's week at a glance" },
   { href: "/payroll", icon: ClipboardList, label: "Payroll", hint: "Timesheets, punches and history" },
+  { href: "/employees", icon: Users, label: "Employees", hint: "Add, edit, move, deactivate" },
   { href: "/schedule-import", icon: CalendarDays, label: "Schedule", hint: "Import, edit or move a week" },
-  { href: "/cfo", icon: Landmark, label: "Finance", hint: "Five-week labor cost, read-only" },
 ] as const;
 
-function ShortcutsPanel() {
+function MorePanel() {
   return (
-    <HudPanel title="Everything else" meta="the rest of the site, under the same sign-in">
-      <ul className="grid divide-y divide-[var(--hud-line)] sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-5">
-        {SHORTCUTS.map((s) => (
-          <li key={s.href} className="sm:border-b sm:border-[var(--hud-line)] lg:border-b-0 lg:border-r lg:last:border-r-0">
-            <Link href={s.href} className="flex h-full items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/60 sm:px-5">
-              <s.icon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--hud-accent)]" aria-hidden />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">{s.label}</span>
-                <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{s.hint}</span>
-              </span>
+    <div className="cc-cols">
+      <HudPanel title="Activity log" meta="every change, by whom and when">
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:p-5">
+          <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-muted-foreground">
+            Sign-ins, payroll saves, punch edits, PIN changes, rule changes and deletions (with a
+            snapshot of what was deleted). Nothing in it can be edited.
+          </p>
+          <Button variant="outline" className="h-10 shrink-0" asChild>
+            <Link href="/ceo/log">
+              <History className="h-4 w-4" aria-hidden /> Open the log
             </Link>
-          </li>
-        ))}
-        <li>
-          <a
-            href="/clock"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-full items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent/60 sm:px-5"
-          >
-            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-[var(--hud-accent)]" aria-hidden />
-            <span className="min-w-0">
-              <span className="flex items-center gap-1 text-sm font-medium">
-                Time clock <ExternalLink className="h-3 w-3 opacity-60" aria-hidden />
-              </span>
-              <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
-                The punch screen for a store tablet
-              </span>
-            </span>
-          </a>
-        </li>
-      </ul>
-    </HudPanel>
+          </Button>
+        </div>
+      </HudPanel>
+      <HudPanel title="Store desk" meta="a manager's tools, for any store">
+        <ul className="grid grid-cols-2 divide-x divide-y divide-[var(--hud-line)] [&>li:nth-child(-n+2)]:border-t-0 [&>li:nth-child(odd)]:border-l-0">
+          {DESK_LINKS.map((s) => (
+            <li key={s.href}>
+              <Link
+                href={s.href}
+                className="flex h-full items-start gap-3 px-4 py-3 transition-colors hover:bg-accent/60 sm:px-5"
+              >
+                <s.icon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--hud-accent)]" aria-hidden />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{s.label}</span>
+                  <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{s.hint}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </HudPanel>
+    </div>
   );
 }
