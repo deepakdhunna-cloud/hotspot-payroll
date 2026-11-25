@@ -537,6 +537,20 @@ export default function HoursAndPayTab({
   });
 
   const edited = views.filter((v) => v.dirty);
+  // Saved rows whose hours don't match the time clock for this payroll's
+  // days — saved before the days changed, or typed by hand. Once the days
+  // are over, one tap fills them with the clock hours to review and save.
+  const offClock = liveWeek
+    ? []
+    : views.filter((v) => v.isSaved && !v.dirty && v.clockDiffers);
+  const useClockForSaved = () =>
+    setEdits((s) => {
+      const next = { ...s };
+      for (const v of offClock) {
+        next[v.id] = { ...(next[v.id] ?? v.edit), hours: v.clock!.toFixed(2), manual: false };
+      }
+      return next;
+    });
   const unsaved = views.filter((v) => v.status === "unsaved");
   // A closed week's clock-filled rows are ready to finalize as they are.
   const barTargets = liveWeek ? edited : [...edited, ...unsaved];
@@ -892,6 +906,25 @@ export default function HoursAndPayTab({
         scopeStore={scopeStore}
         savedCount={savedCount}
       />
+      {ready && offClock.length > 0 ? (
+        <div
+          role="status"
+          className="callout-warn flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="text-sm">
+            <span className="callout-title font-semibold">
+              {offClock.length} saved {plural(offClock.length, "row doesn't", "rows don't")} match the
+              time clock for {range}.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              Saved before the days changed, or typed by hand. Use the clock hours, check them, then save.
+            </span>
+          </p>
+          <Button variant="outline" size="sm" className="h-9 shrink-0 bg-card sm:h-8" onClick={useClockForSaved}>
+            <Clock className="h-4 w-4" /> Use clock hours
+          </Button>
+        </div>
+      ) : null}
       <KpiBand className="grid-cols-2 md:grid-cols-3">
         <KpiCell
           hero
