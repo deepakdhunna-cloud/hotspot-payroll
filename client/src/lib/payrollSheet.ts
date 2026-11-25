@@ -3,8 +3,15 @@
  * shared. The weekly timesheet and the command center's autopilot both build
  * their export from here, so the file is the same wherever it is made.
  */
-import { STORE_ABBR, fmtHours, fmtMoney, fmtWeekRange } from "@/lib/format";
-import { toDateInput } from "@/lib/payweek";
+import {
+  STORE_ABBR,
+  fmtDayRange,
+  fmtDaySpan,
+  fmtHours,
+  fmtMoney,
+  fmtWeekRange,
+} from "@/lib/format";
+import { addDaysMarker, toDateInput, type PeriodDays } from "@/lib/payweek";
 import type { XlsxSheet } from "@/lib/xlsx";
 
 export type WeekSheetRow = {
@@ -22,24 +29,51 @@ export type WeekSheetRow = {
 
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
 
+/**
+ * When a payroll doesn't pay exactly Thursday → Wednesday, the line that
+ * says so — whoever receives the file needs to know which days it covers
+ * and where the rest went.
+ */
+export function periodNote(weekStart: Date, period: PeriodDays | null | undefined): string | null {
+  if (!period) return null;
+  const first = new Date(period.firstDay);
+  const last = new Date(period.lastDay);
+  const thursday = weekStart;
+  const wednesday = addDaysMarker(weekStart, 6);
+  const parts: string[] = [];
+  if (first.getTime() < thursday.getTime()) {
+    parts.push(`includes ${fmtDaySpan(first, addDaysMarker(thursday, -1))} from last week`);
+  }
+  if (last.getTime() < wednesday.getTime()) {
+    parts.push(`${fmtDaySpan(addDaysMarker(last, 1), wednesday)} is paid with next week's payroll`);
+  }
+  return parts.length > 0 ? parts.join("; ") : null;
+}
+
 export function buildWeekSheet(args: {
   weekStart: Date;
+  /**
+   * The days this payroll pays, when known. A week that ends early or takes
+   * in days from the week before is labelled and named by those days.
+   */
+  period?: PeriodDays | null;
   /** The one store this covers, or null for all stores. */
   scopeStore: string | null;
   rows: WeekSheetRow[];
   totals: { scheduled: number; hours: number; gross: number };
 }): { filename: string; sheet: XlsxSheet<WeekSheetRow>; title: string; text: string } {
-  const { weekStart, scopeStore, rows, totals } = args;
-  const range = fmtWeekRange(weekStart);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+  const { weekStart, period, scopeStore, rows, totals } = args;
+  const firstDay = period ? new Date(period.firstDay) : weekStart;
+  const weekEnd = period ? new Date(period.lastDay) : addDaysMarker(weekStart, 6);
+  const range = period ? fmtDayRange(firstDay, weekEnd) : fmtWeekRange(weekStart);
+  const note = periodNote(weekStart, period);
   const year = weekEnd.getUTCFullYear();
   const storeLabel = scopeStore ?? "All stores";
   const storeSlug = (scopeStore ? (STORE_ABBR[scopeStore] ?? scopeStore) : "All-stores").replace(
     /\s+/g,
     "-",
   );
-  const filename = `Hotspot-Payroll-${toDateInput(weekStart)}_to_${toDateInput(weekEnd)}-${storeSlug}.xlsx`;
+  const filename = `Hotspot-Payroll-${toDateInput(firstDay)}_to_${toDateInput(weekEnd)}-${storeSlug}.xlsx`;
   const paid = rows.filter((r) => r.status !== "No hours");
   const savedN = paid.filter((r) => r.status === "Saved").length;
   const pendingN = paid.length - savedN;
@@ -47,7 +81,7 @@ export function buildWeekSheet(args: {
   const sheet: XlsxSheet<WeekSheetRow> = {
     name: "Hours & pay",
     title: "Weekly payroll",
-    subtitle: `Pay week ${range}, ${year} · ${storeLabel}`,
+    subtitle: `Pay week ${range}, ${year} · ${storeLabel}${note ? ` · ${note}` : ""}`,
     summary: [
       { label: "Gross pay", value: fmtMoney(totals.gross) },
       { label: "Hours worked", value: fmtHours(totals.hours, 2) },
@@ -86,6 +120,7 @@ export function buildWeekSheet(args: {
     title: `Hotspot payroll · ${range}`,
     text: [
       `${storeLabel} — pay week ${range}, ${year}`,
+      ...(note ? [`Note: ${note.charAt(0).toUpperCase()}${note.slice(1)}.`] : []),
       `${paid.length} ${plural(paid.length, "person", "people")} · ${fmtHours(totals.hours, 2)} hours · ${fmtMoney(totals.gross)} gross`,
       pendingN > 0
         ? `${pendingN} ${plural(pendingN, "row")} not saved to payroll yet`

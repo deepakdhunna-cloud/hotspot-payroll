@@ -55,6 +55,7 @@ import {
   type WeekRow,
 } from "@/lib/payrollRow";
 import {
+  fmtDayRange,
   fmtHours,
   fmtHoursLabel,
   fmtMoney,
@@ -64,9 +65,10 @@ import {
 import {
   currentPayPeriodStart,
   fromDateInput,
-  inProgressPayWeekStart,
+  payrollStillOpen,
   toDateInput,
 } from "@/lib/payweek";
+import { PayDays } from "@/components/PayDays";
 import { errorMessage } from "@/lib/errors";
 import { buildXlsx, exportXlsx, prefetchXlsx } from "@/lib/xlsx";
 import { buildWeekSheet, type WeekSheetRow } from "@/lib/payrollSheet";
@@ -369,7 +371,10 @@ export default function HoursAndPayTab({
   const clockHoursQ = trpc.clock.weekHoursBulk.useQuery({ weekStart, store });
   const meQ = trpc.auth.me.useQuery();
   const draftKey = `${meQ.data?.scope ?? "anon"}|${toDateInput(weekStart)}|${storeFilter}`;
-  const range = fmtWeekRange(weekStart);
+  // The days this payroll pays — Thursday → Wednesday unless the week ends
+  // early or takes in days the previous payroll left off.
+  const period = weekQ.data?.period;
+  const range = period ? fmtDayRange(period.firstDay, period.lastDay) : fmtWeekRange(weekStart);
 
   const [edits, setEdits] = useState<Record<number, RowEdit>>({});
   const [base, setBase] = useState<Record<number, RowBaseline>>({});
@@ -471,7 +476,9 @@ export default function HoursAndPayTab({
     utils.attention.list.invalidate();
   };
 
-  const liveWeek = weekStart.getTime() >= inProgressPayWeekStart().getTime();
+  // Still collecting hours? A week that ends early is done — and payable —
+  // once its last day is over, before the calendar week is.
+  const liveWeek = payrollStillOpen(weekStart, period);
   // Weeks before the last closed one: the rate on screen is that week's
   // own rate, and saving must keep it (the server never copies it to the
   // profile for these weeks).
@@ -505,8 +512,11 @@ export default function HoursAndPayTab({
       hasClock && calc.hours !== null && !calc.errors.hours && Math.abs(calc.hoursOk - clock!) > CLOCK_MATCH_SLACK;
     const scheduled = Number(row.entry?.scheduledHours ?? 0);
     const effective = calc.hours !== null && !calc.errors.hours ? calc.hoursOk : (clock ?? 0);
+    // Compared with the schedule for the days this payroll pays, when they
+    // aren't the normal week (a moved-in day isn't "over schedule").
+    const against = row.periodScheduled ?? scheduled;
     const overBy =
-      scheduled > 0 && effective > scheduled + OVER_SCHEDULE_SLACK ? effective - scheduled : null;
+      against > 0 && effective > against + OVER_SCHEDULE_SLACK ? effective - against : null;
     return {
       row,
       id,
@@ -764,7 +774,7 @@ export default function HoursAndPayTab({
       gross: v.calc.gross,
       status: statusLabel(v),
     }));
-    return buildWeekSheet({ weekStart, scopeStore, rows: sheetRows, totals });
+    return buildWeekSheet({ weekStart, period, scopeStore, rows: sheetRows, totals });
   };
 
   const buildFailed = (err: unknown) => {
@@ -868,6 +878,7 @@ export default function HoursAndPayTab({
           </Button>
         </div>
       ) : null}
+      <PayDays weekStart={weekStart} period={period} savedCount={savedCount} />
       <KpiBand className="grid-cols-2 md:grid-cols-3">
         <KpiCell
           hero

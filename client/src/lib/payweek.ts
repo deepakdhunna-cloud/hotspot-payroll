@@ -8,6 +8,7 @@
  */
 import {
   BUSINESS_TIME_ZONE,
+  businessDayStart,
   businessLocalToUtc,
   formatScheduleDay,
   getWeekDays,
@@ -15,7 +16,10 @@ import {
   lastClosedPayWeek,
   payWeekBounds,
   payWeekOf,
+  type PayPeriod,
 } from "@shared/hotspot";
+
+export type { PayPeriod };
 
 /** Snap a date marker to the Thursday (00:00 UTC) on or before it. */
 export const startOfPayWeek = getWeekStart;
@@ -166,3 +170,51 @@ export function fmtDuration(hours: number | null | undefined): string {
   if (h === 0) return `${m}m`;
   return `${h}h ${String(m).padStart(2, "0")}m`;
 }
+
+/* ------------------------- days in a week's payroll ------------------------- */
+
+/** The minimal shape of a pay period the screens need (server rows carry more). */
+export type PeriodDays = Pick<PayPeriod, "firstDay" | "lastDay" | "start" | "end"> &
+  Partial<Pick<PayPeriod, "days" | "endsEarly" | "startsEarly">>;
+
+/**
+ * Whether a week's payroll is still collecting hours. With its days known,
+ * that is "its last day paid hasn't ended" — a week that ends early is done
+ * (and payable) before the calendar week is. Without them, the calendar rule.
+ */
+export function payrollStillOpen(
+  weekStart: Date,
+  period: PeriodDays | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (period) return now < new Date(period.end).getTime();
+  return weekStart.getTime() >= inProgressPayWeekStart(new Date(now)).getTime();
+}
+
+/** Share of a payroll's days gone by, 0–1 (see payWeekElapsed). */
+export function periodElapsed(period: PeriodDays, now: number = Date.now()): number {
+  const start = new Date(period.start).getTime();
+  const end = new Date(period.end).getTime();
+  return Math.min(1, Math.max(0, (now - start) / (end - start)));
+}
+
+/** Today's store-local calendar day as a 00:00 UTC marker. */
+export function todayMarker(now: Date = new Date()): Date {
+  return businessDayStart(now);
+}
+
+/** A day marker shifted by ±n days. */
+export function addDaysMarker(day: Date, n: number): Date {
+  const d = new Date(day);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d;
+}
+
+/**
+ * Day markers are 00:00 UTC; date pickers work in the device's local time.
+ * These carry the calendar date across unchanged in both directions.
+ */
+export const markerToLocal = (d: Date) =>
+  new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+export const localToMarker = (d: Date) =>
+  new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));

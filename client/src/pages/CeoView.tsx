@@ -52,6 +52,7 @@ import { errorMessage } from "@/lib/errors";
 import {
   STORE_ABBR,
   fmtHours,
+  fmtDayRange,
   fmtHoursLabel,
   fmtMoney,
   fmtWeekRange,
@@ -67,6 +68,8 @@ import {
   fromDateInput,
   inProgressPayWeekStart,
   payWeekElapsed,
+  payrollStillOpen,
+  periodElapsed,
   startOfPayWeek,
   storeDayKey,
   toDateInput,
@@ -307,14 +310,21 @@ export default function CeoView() {
     { enabled: !!isAdmin && tab === "stores", refetchInterval: 60_000 }
   );
   // The saved-payroll ledger under Autopilot, for the week being paid.
+  // Counted over the days that week's PAYROLL pays (`pay`), so the ledger
+  // agrees with Autopilot when a week ends early or starts early.
   const ledgerQ = trpc.ceo.weekly.useQuery(
-    { weekStart: payWeek },
+    { weekStart: payWeek, pay: true },
     { enabled: !!isAdmin && tab === "payroll", refetchInterval: 60_000 }
   );
 
   // The Autopilot tab's "so far" figures and the ledger under them come from
   // the same rows at the same instant, so they are the same numbers.
-  const ledgerIsLive = payWeek.getTime() === inProgressPayWeekStart().getTime();
+  const ledgerPeriod = ledgerQ.data?.period ?? null;
+  // The days that payroll pays ("Nov 19 – Nov 24" for a week that ends early).
+  const payRange = ledgerPeriod
+    ? fmtDayRange(ledgerPeriod.firstDay, ledgerPeriod.lastDay)
+    : fmtWeekRange(payWeek);
+  const ledgerIsLive = payrollStillOpen(payWeek, ledgerPeriod);
   const ledgerRows = useMemo(
     () =>
       ((ledgerQ.data?.rows ?? []) as WeeklyRow[]).filter(
@@ -323,9 +333,9 @@ export default function CeoView() {
     [ledgerQ.data, storeFilter]
   );
   const ledgerElapsed = useMemo(
-    () => payWeekElapsed(payWeek),
+    () => (ledgerPeriod ? periodElapsed(ledgerPeriod) : payWeekElapsed(payWeek)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [payWeek, ledgerQ.dataUpdatedAt]
+    [payWeek, ledgerPeriod, ledgerQ.dataUpdatedAt]
   );
   const ledgerSoFar = useMemo(() => {
     if (!ledgerIsLive || !ledgerQ.data) return null;
@@ -490,7 +500,7 @@ export default function CeoView() {
             <h1 className="page-title mt-1">{SECTION_TITLE[tab] ?? "Command center"}</h1>
             <p className="page-subtitle">
               {tab === "payroll"
-                ? `Autopilot · ${fmtWeekRange(payWeek)} · ${focusLabel}`
+                ? `Autopilot · ${payRange} · ${focusLabel}`
                 : tab === "stores"
                   ? `Every store side by side · this week, ${fmtWeekRange(inProgressPayWeekStart())}`
                   : tab === "optimize"
@@ -742,7 +752,7 @@ export default function CeoView() {
                 rows={ledgerRows}
                 isLiveWeek={ledgerIsLive}
                 elapsed={ledgerElapsed}
-                weekStart={payWeek}
+                range={payRange}
                 showGroups={storeFilter === "all"}
                 focusLabel={focusLabel}
                 loading={ledgerQ.isPending && !ledgerQ.isError}
@@ -993,7 +1003,7 @@ function PayrollPanel({
   rows,
   isLiveWeek,
   elapsed,
-  weekStart,
+  range,
   showGroups,
   focusLabel,
   loading,
@@ -1004,7 +1014,8 @@ function PayrollPanel({
   isLiveWeek: boolean;
   /** Share of this week gone by (1 once it is closed): set pay accrues with it. */
   elapsed: number;
-  weekStart: Date;
+  /** The days this payroll pays, as a label. */
+  range: string;
   showGroups: boolean;
   focusLabel: string;
   loading: boolean;
@@ -1060,7 +1071,7 @@ function PayrollPanel({
         </CardTitle>
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">
-            {fmtWeekRange(weekStart)} · {focusLabel}.
+            {range} · {focusLabel}.
           </span>{" "}
           {isLiveWeek
             ? "Earned so far is clocked hours × each person's pay rate; anyone on set pay counts at their weekly amount for the share of the week gone by. Saved pay and tax estimates appear once the week closes and it is saved."
