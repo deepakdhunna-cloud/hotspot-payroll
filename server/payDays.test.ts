@@ -194,13 +194,31 @@ describe("payroll.setDays", () => {
   const tuesday = new Date(live);
   tuesday.setUTCDate(tuesday.getUTCDate() + 5);
 
-  it("only the CEO can change a payroll's days", async () => {
+  it("a manager can't change another store's days, and the CFO can't change any", async () => {
     await expect(
-      caller("Hotspot Market 11").payroll.setDays({ weekStart: live, lastDay: tuesday }),
+      caller("Hotspot Market 11").payroll.setDays({
+        weekStart: live,
+        lastDay: tuesday,
+        store: "Hotspot Market 13",
+      }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       caller("cfo").payroll.setDays({ weekStart: live, lastDay: tuesday }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("a manager may change their own store's days (it gets as far as saving)", async () => {
+    // No database in tests: the write itself fails, after every check passed.
+    await expect(
+      caller("Hotspot Market 11").payroll.setDays({ weekStart: live, lastDay: tuesday }),
+    ).rejects.toThrow(/Database unavailable/);
+    await expect(
+      caller("Hotspot Market 11").payroll.setDays({
+        weekStart: live,
+        lastDay: tuesday,
+        store: "Hotspot Market 11",
+      }),
+    ).rejects.toThrow(/Database unavailable/);
   });
 
   it("refuses a last day outside the week", async () => {
@@ -217,9 +235,11 @@ describe("payroll.setDays", () => {
     ).rejects.toThrow(/paid a while ago/);
   });
 
-  it("managers still see the days on payroll.week (no database: the normal week)", async () => {
+  it("managers see their own store's days on payroll.week (no database: the normal week)", async () => {
     const res = await caller("Hotspot Market 11").payroll.week({ weekStart: NOV19 });
     expect(dayKey(res.period.firstDay)).toBe("2026-11-19");
     expect(dayKey(res.period.lastDay)).toBe("2026-11-25");
+    expect(res.period.mixed).toBe(false);
+    expect(res.periods.map((p) => p.store)).toEqual(["Hotspot Market 11"]);
   });
 });

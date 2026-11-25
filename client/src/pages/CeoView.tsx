@@ -319,7 +319,11 @@ export default function CeoView() {
 
   // The Autopilot tab's "so far" figures and the ledger under them come from
   // the same rows at the same instant, so they are the same numbers.
-  const ledgerPeriod = ledgerQ.data?.period ?? null;
+  // The focused store's days, or the span of every store's.
+  const ledgerPeriod =
+    (storeFilter === "all"
+      ? ledgerQ.data?.period
+      : ledgerQ.data?.periods?.find(p => p.store === storeFilter)?.period) ?? null;
   // The days that payroll pays ("Nov 19 – Nov 24" for a week that ends early).
   const payRange = ledgerPeriod
     ? fmtDayRange(ledgerPeriod.firstDay, ledgerPeriod.lastDay)
@@ -337,17 +341,25 @@ export default function CeoView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [payWeek, ledgerPeriod, ledgerQ.dataUpdatedAt]
   );
+  // Each store's own share of its days gone by: a store whose days are over
+  // counts set pay in full while the others are still running.
+  const ledgerElapsedOf = useMemo(() => {
+    const m = new Map(
+      (ledgerQ.data?.periods ?? []).map(p => [p.store, periodElapsed(p.period)])
+    );
+    return (store: string) => m.get(store) ?? ledgerElapsed;
+  }, [ledgerQ.data, ledgerElapsed]);
   const ledgerSoFar = useMemo(() => {
     if (!ledgerIsLive || !ledgerQ.data) return null;
     const perStore = new Map<string, number>();
     let total = 0;
     for (const r of ledgerRows) {
-      const v = laborSoFar(r, ledgerElapsed);
+      const v = laborSoFar(r, ledgerElapsedOf(r.storeLocation));
       total += v;
       perStore.set(r.storeLocation, (perStore.get(r.storeLocation) ?? 0) + v);
     }
     return { total, byStore: perStore };
-  }, [ledgerIsLive, ledgerQ.data, ledgerRows, ledgerElapsed]);
+  }, [ledgerIsLive, ledgerQ.data, ledgerRows, ledgerElapsedOf]);
 
   const data = ceoQ.data;
   const byStore = (data?.byStore ?? {}) as Record<string, any>;
@@ -751,7 +763,7 @@ export default function CeoView() {
               <PayrollPanel
                 rows={ledgerRows}
                 isLiveWeek={ledgerIsLive}
-                elapsed={ledgerElapsed}
+                elapsed={ledgerElapsedOf}
                 range={payRange}
                 showGroups={storeFilter === "all"}
                 focusLabel={focusLabel}
@@ -1012,8 +1024,11 @@ function PayrollPanel({
 }: {
   rows: WeeklyRow[];
   isLiveWeek: boolean;
-  /** Share of this week gone by (1 once it is closed): set pay accrues with it. */
-  elapsed: number;
+  /**
+   * Share of this week gone by (1 once it is closed): set pay accrues with
+   * it. Per store when stores pay different days.
+   */
+  elapsed: number | ((store: string) => number);
   /** The days this payroll pays, as a label. */
   range: string;
   showGroups: boolean;
@@ -1023,6 +1038,8 @@ function PayrollPanel({
   onRetry: () => void;
 }) {
   const colSpan = isLiveWeek ? 5 : 7;
+  const at = (r: WeeklyRow) =>
+    typeof elapsed === "function" ? elapsed(r.storeLocation) : elapsed;
   // The estimate rates are set in Control; say the ones in force right now.
   const rulesQ = trpc.settings.get.useQuery(undefined, { staleTime: 60_000 });
   const pctOf = (rate: number | undefined, fallback: number) =>
@@ -1054,11 +1071,12 @@ function PayrollPanel({
             Number(b.overClocked) - Number(a.overClocked) ||
             a.fullName.localeCompare(b.fullName)
       );
-      return { store, list, totals: totalsOf(list, elapsed) };
+      return { store, list, totals: totalsOf(list, at) };
     });
   }, [rows, isLiveWeek, elapsed]);
 
-  const grand = useMemo(() => totalsOf(rows, elapsed), [rows, elapsed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const grand = useMemo(() => totalsOf(rows, at), [rows, elapsed]);
 
   return (
     <Card className="surface-card gap-0 py-0">
@@ -1224,13 +1242,13 @@ function PayrollPanel({
                               <TableCell className="text-right tabular-nums font-semibold">
                                 {onSetPay(r) ? (
                                   <>
-                                    {fmtMoney(laborSoFar(r, elapsed))}
+                                    {fmtMoney(laborSoFar(r, at(r)))}
                                     <span className="block text-[11px] font-normal text-muted-foreground">
                                       of {fmtMoney(r.weeklyPay!)} set pay
                                     </span>
                                   </>
                                 ) : r.clockHours > 0 ? (
-                                  fmtMoney(laborSoFar(r, elapsed))
+                                  fmtMoney(laborSoFar(r, at(r)))
                                 ) : (
                                   "—"
                                 )}
@@ -1322,13 +1340,13 @@ function PayrollPanel({
   );
 }
 
-function totalsOf(list: WeeklyRow[], elapsed: number) {
+function totalsOf(list: WeeklyRow[], at: (r: WeeklyRow) => number) {
   return list.reduce(
     (t, r) => ({
       scheduled: t.scheduled + r.scheduledHours,
       clock: t.clock + r.clockHours,
       saved: t.saved + r.hoursWorked,
-      earned: t.earned + laborSoFar(r, elapsed),
+      earned: t.earned + laborSoFar(r, at(r)),
       gross: t.gross + r.grossPay,
       tax: t.tax + r.federal + r.state,
       net: t.net + r.netPay,

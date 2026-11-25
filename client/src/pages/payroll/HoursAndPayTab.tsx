@@ -774,7 +774,14 @@ export default function HoursAndPayTab({
       gross: v.calc.gross,
       status: statusLabel(v),
     }));
-    return buildWeekSheet({ weekStart, period, scopeStore, rows: sheetRows, totals });
+    return buildWeekSheet({
+      weekStart,
+      period,
+      periods: weekQ.data?.periods,
+      scopeStore,
+      rows: sheetRows,
+      totals,
+    });
   };
 
   const buildFailed = (err: unknown) => {
@@ -878,7 +885,13 @@ export default function HoursAndPayTab({
           </Button>
         </div>
       ) : null}
-      <PayDays weekStart={weekStart} period={period} savedCount={savedCount} />
+      <PayDays
+        weekStart={weekStart}
+        period={period}
+        periods={weekQ.data?.periods}
+        scopeStore={scopeStore}
+        savedCount={savedCount}
+      />
       <KpiBand className="grid-cols-2 md:grid-cols-3">
         <KpiCell
           hero
