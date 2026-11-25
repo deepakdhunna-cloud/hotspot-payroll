@@ -336,6 +336,109 @@ export function payWeekBounds(weekStart: Date): { start: Date; end: Date } {
   return { start: businessMidnightUtc(week), end: businessMidnightUtc(next) };
 }
 
+/* ------------------------- days in a pay week's payroll ------------------------- */
+
+/**
+ * A pay week's payroll normally pays its own Thursday → Wednesday. When
+ * payroll has to go out before the week is over (a holiday, an early
+ * deadline), the week can END EARLY: it pays Thursday through an earlier
+ * day, and the days it leaves off are paid with the NEXT week's payroll,
+ * which then starts early to take them in. Every punch is still paid exactly
+ * once — the two payrolls simply split the days differently.
+ *
+ * Only the end is ever chosen. A week's first day is always the day after the
+ * previous payroll's last day, so no day can fall between two payrolls.
+ *
+ * Early ends are kept by pay week (its Thursday, "YYYY-MM-DD") with the last
+ * day paid ("YYYY-MM-DD"). No entry — or the Wednesday — is the normal week.
+ */
+export type PayWeekEnds = ReadonlyMap<string, string>;
+
+export type PayPeriod = {
+  /** The pay week (its Thursday marker) — what payroll rows are saved under. */
+  weekStart: Date;
+  /** First calendar day this payroll pays (00:00 UTC marker). */
+  firstDay: Date;
+  /** Last calendar day this payroll pays (00:00 UTC marker). */
+  lastDay: Date;
+  /** The real instants that bound the punches it pays: [start, end). */
+  start: Date;
+  end: Date;
+  /** Number of days paid. 7 for a normal week. */
+  days: number;
+  /** Ends before Wednesday; the days after `lastDay` go to next week's payroll. */
+  endsEarly: boolean;
+  /** Starts before Thursday, taking in days the previous payroll left off. */
+  startsEarly: boolean;
+};
+
+const DAY_MS = 86_400_000;
+const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY_MS);
+/** "YYYY-MM-DD" of a 00:00 UTC day marker. */
+export const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+const parseDayKey = (s: string | undefined | null): Date | null => {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+/** The app_settings key that holds a pay week's early end. */
+export const PAY_END_PREFIX = "payend:";
+export const payEndKey = (weekStart: Date) =>
+  `${PAY_END_PREFIX}${dayKey(getWeekStart(weekStart))}`;
+
+/**
+ * Why `lastDay` can't be the last day paid for this week, or null when it
+ * can. It has to be a day of the week itself, Thursday through Wednesday.
+ */
+export function payEndProblem(weekStart: Date, lastDay: Date): string | null {
+  const week = getWeekStart(weekStart);
+  const day = new Date(
+    Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate())
+  );
+  if (day.getTime() < week.getTime() || day.getTime() > addDays(week, 6).getTime()) {
+    return "Pick a day from this pay week's Thursday to its Wednesday.";
+  }
+  return null;
+}
+
+/**
+ * The early end recorded for a week, as its last day paid — or null for a
+ * normal week. A stored value outside the week (hand-edited, or from a bug)
+ * is ignored rather than trusted: the week then pays normally.
+ */
+function earlyLastDay(weekStart: Date, ends: PayWeekEnds): Date | null {
+  const day = parseDayKey(ends.get(dayKey(weekStart)));
+  if (!day || payEndProblem(weekStart, day)) return null;
+  // Wednesday is the normal end, not an early one.
+  return day.getTime() === addDays(weekStart, 6).getTime() ? null : day;
+}
+
+/** The days a pay week's payroll covers, given the recorded early ends. */
+export function payPeriodOf(weekStart: Date, ends: PayWeekEnds): PayPeriod {
+  const week = getWeekStart(weekStart);
+  const prevEnd = earlyLastDay(addDays(week, -7), ends);
+  const ownEnd = earlyLastDay(week, ends);
+  const firstDay = prevEnd ? addDays(prevEnd, 1) : week;
+  const lastDay = ownEnd ?? addDays(week, 6);
+  return {
+    weekStart: week,
+    firstDay,
+    lastDay,
+    start: businessMidnightUtc(firstDay),
+    end: businessMidnightUtc(addDays(lastDay, 1)),
+    days: Math.round((lastDay.getTime() - firstDay.getTime()) / DAY_MS) + 1,
+    endsEarly: ownEnd !== null,
+    startsEarly: prevEnd !== null,
+  };
+}
+
+/** The pay weeks whose early ends decide `weekStart`'s days: it and the one before. */
+export function payPeriodKeyWeeks(weekStart: Date): Date[] {
+  const week = getWeekStart(weekStart);
+  return [addDays(week, -7), week];
+}
+
 /**
  * The UTC instant of a wall-clock time in store-local time — how a typed
  * "Nov 4, 9:00 PM" becomes a real moment no matter where the device is.

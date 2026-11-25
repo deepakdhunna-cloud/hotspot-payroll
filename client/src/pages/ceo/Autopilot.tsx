@@ -27,23 +27,27 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { errorMessage } from "@/lib/errors";
 import {
   STORE_ABBR,
+  fmtDayRange,
   fmtHours,
   fmtHoursLabel,
   fmtMoney,
   fmtWeekRange,
+  fmtWeekday,
   storeColor,
   storeIndex,
 } from "@/lib/format";
+import { PayDays } from "@/components/PayDays";
 import { freshView, saveInputFor, type FreshView } from "@/lib/payrollRow";
 import { buildWeekSheet, type WeekSheetRow } from "@/lib/payrollSheet";
 import {
   currentPayPeriodStart,
   fromDateInput,
-  inProgressPayWeekStart,
-  payWeekElapsed,
+  payrollStillOpen,
+  periodElapsed,
   startOfPayWeek,
   storeDayKey,
   toDateInput,
+  type PeriodDays,
 } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import { buildXlsx, exportXlsx, prefetchXlsx } from "@/lib/xlsx";
@@ -109,19 +113,34 @@ type AttentionItem = {
 
 /**
  * Open flags per person for ONE pay week. An item belongs to its own week,
- * or — for a shift — to the week that shift started in (a forgotten
- * clock-out this week is no reason to hold last week's payroll).
+ * or — for a shift — to the payroll that pays the day it started (a
+ * forgotten clock-out this week is no reason to hold last week's payroll).
+ * With the payroll's days known, that is the days it actually pays: a shift
+ * on a day moved to next week's payroll doesn't hold this one.
  */
-function flagsByEmployee(items: readonly AttentionItem[], weekIso: string): Map<number, Flag[]> {
+function flagsByEmployee(
+  items: readonly AttentionItem[],
+  weekIso: string,
+  period: PeriodDays | null | undefined,
+): Map<number, Flag[]> {
   const m = new Map<number, Flag[]>();
+  const firstIso = period ? toDateInput(new Date(period.firstDay)) : null;
+  const lastIso = period ? toDateInput(new Date(period.lastDay)) : null;
   for (const item of items) {
     if (!FLAG_KINDS.has(item.kind) || item.employeeId == null) continue;
-    const week = item.weekStart
-      ? toDateInput(new Date(item.weekStart))
-      : item.punchClockInAt
-        ? toDateInput(startOfPayWeek(fromDateInput(storeDayKey(item.punchClockInAt))))
-        : null;
-    if (week !== weekIso) continue;
+    let mine: boolean;
+    if (item.weekStart) {
+      mine = toDateInput(new Date(item.weekStart)) === weekIso;
+    } else if (item.punchClockInAt) {
+      const day = storeDayKey(item.punchClockInAt);
+      mine =
+        firstIso && lastIso
+          ? day >= firstIso && day <= lastIso
+          : toDateInput(startOfPayWeek(fromDateInput(day))) === weekIso;
+    } else {
+      mine = false;
+    }
+    if (!mine) continue;
     const list = m.get(item.employeeId) ?? [];
     list.push({ id: item.id, kind: item.kind, title: item.title, detail: item.detail });
     m.set(item.employeeId, list);
@@ -157,9 +176,13 @@ export function Autopilot({
   const saveM = trpc.payroll.saveHours.useMutation();
   const resolveM = trpc.attention.resolve.useMutation();
 
-  const range = fmtWeekRange(weekStart);
   const weekIso = toDateInput(weekStart);
-  const liveWeek = weekStart.getTime() >= inProgressPayWeekStart().getTime();
+  // The days this payroll pays: Thursday → Wednesday unless the week ends
+  // early or takes in days the previous payroll left off. A week that ends
+  // early can be approved once its last day is over.
+  const period = weekQ.data?.period;
+  const range = period ? fmtDayRange(period.firstDay, period.lastDay) : fmtWeekRange(weekStart);
+  const liveWeek = payrollStillOpen(weekStart, period);
   const olderWeek = weekStart.getTime() < currentPayPeriodStart().getTime();
   // Three things have to be KNOWN before a row can be called Ready: the
   // week's payroll, the time clock, and the attention list. The flags are
@@ -171,8 +194,8 @@ export function Autopilot({
 
   /** Open flags per person for THIS week. */
   const flagsByEmp = useMemo(
-    () => flagsByEmployee((attentionQ.data?.items ?? []) as AttentionItem[], weekIso),
-    [attentionQ.data, weekIso],
+    () => flagsByEmployee((attentionQ.data?.items ?? []) as AttentionItem[], weekIso, period),
+    [attentionQ.data, weekIso, period],
   );
 
   const rows: Row[] = useMemo(() => {
@@ -206,6 +229,16 @@ export function Autopilot({
       );
   }, [weekQ.data, clockQ.data, flagsByEmp, weekStart, olderWeek, storeFocus]);
 
+  // Saved rows in every store, whatever the focus: changing the payroll's
+  // days changes every store's payroll, and these were priced with the old.
+  const savedEverywhere = useMemo(() => {
+    const clock = new Map<number, number>();
+    for (const e of clockQ.data?.entries ?? []) clock.set(e.employeeId, e.hours);
+    return (weekQ.data?.employees ?? []).filter(
+      (r) => freshView(r, clock.get(r.employee.id)).isSaved,
+    ).length;
+  }, [weekQ.data, clockQ.data]);
+
   const lane = (l: Lane) => rows.filter((r) => r.lane === l);
   const savedRows = lane("saved");
   const readyRows = lane("ready");
@@ -218,9 +251,9 @@ export function Autopilot({
   // all three show one number. (Saving, and the export, always use the full
   // amount: that is what payroll will be.)
   const elapsed = useMemo(
-    () => (liveWeek ? payWeekElapsed(weekStart) : 1),
+    () => (liveWeek && period ? periodElapsed(period) : 1),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [liveWeek, weekStart, weekQ.dataUpdatedAt, clockQ.dataUpdatedAt],
+    [liveWeek, period, weekQ.dataUpdatedAt, clockQ.dataUpdatedAt],
   );
   const shownPay = (r: Row) =>
     liveWeek && r.lane !== "saved" && r.calc.isFixed ? payOf(r) * elapsed : payOf(r);
@@ -295,7 +328,7 @@ export function Autopilot({
       });
       return;
     }
-    const flaggedNow = flagsByEmployee(fresh.data.items as AttentionItem[], weekIso);
+    const flaggedNow = flagsByEmployee(fresh.data.items as AttentionItem[], weekIso, period);
     const targets = readyRows.filter((r) => !flaggedNow.has(r.id));
     const heldBack = readyRows.length - targets.length;
     if (targets.length === 0) {
@@ -384,6 +417,7 @@ export function Autopilot({
     }));
     return buildWeekSheet({
       weekStart,
+      period,
       scopeStore: storeFocus === "all" ? null : storeFocus,
       rows: sheetRows,
       totals: {
@@ -442,13 +476,16 @@ export function Autopilot({
       : complete
         ? `Payroll for ${range} is complete.`
         : liveWeek
-          ? "This week is still running. Autopilot engages once it closes on Wednesday night."
+          ? `This week is still running. Autopilot engages once it closes on ${
+              period ? fmtWeekday(period.lastDay) : "Wednesday"
+            } night.`
           : readyRows.length > 0
             ? `${rowsWord(readyRows.length)} ${readyRows.length === 1 ? "is" : "are"} clean and ready to approve.`
             : `${rowsWord(holdRows.length)} ${holdRows.length === 1 ? "is" : "are"} waiting on a decision.`;
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      <PayDays weekStart={weekStart} period={period} savedCount={savedEverywhere} />
       <HudPanel
         title="Autopilot"
         meta={`Pay week ${range}${storeFocus === "all" ? " · all stores" : ` · ${STORE_ABBR[storeFocus] ?? storeFocus}`}`}

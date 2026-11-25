@@ -540,6 +540,21 @@ export async function setAppSetting(
     .onDuplicateKeyUpdate({ set: { value, updatedBy: updatedBy ?? null } });
 }
 
+/** Remove one app-wide setting (no-op when it isn't set). */
+export async function deleteAppSetting(key: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db.delete(appSettings).where(eq(appSettings.key, key));
+}
+
+/** Several app-wide settings at once, as a key → value map (only those set). */
+export async function getAppSettings(keys: string[]): Promise<Map<string, string>> {
+  const db = await getDb();
+  if (!db || keys.length === 0) return new Map();
+  const rows = await db.select().from(appSettings).where(inArray(appSettings.key, keys));
+  return new Map(rows.map((r) => [r.key, r.value]));
+}
+
 /**
  * Sum of completed punch durations (in hours) for an employee in [start, end).
  * Open punches (no clockOutAt yet) are counted up to `now`, but never past the

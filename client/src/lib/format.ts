@@ -24,6 +24,37 @@ export const fmtWeekRange = (weekStart: Date | string) => {
   return `${start.toLocaleDateString("en-US", opt)} – ${end.toLocaleDateString("en-US", opt)}`;
 };
 
+/** A calendar day marker (00:00 UTC) as "Wed Nov 25". */
+export const fmtDayShort = (day: Date | string) =>
+  new Date(day).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+
+/** A calendar day marker's weekday: "Wednesday". */
+export const fmtWeekday = (day: Date | string) =>
+  new Date(day).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+
+/**
+ * The days a payroll pays, "Nov 19 – Nov 24" — the same style as
+ * fmtWeekRange, which it equals for a normal Thursday → Wednesday week.
+ */
+export const fmtDayRange = (firstDay: Date | string, lastDay: Date | string) => {
+  const opt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", timeZone: "UTC" };
+  const a = new Date(firstDay).toLocaleDateString("en-US", opt);
+  const b = new Date(lastDay).toLocaleDateString("en-US", opt);
+  return a === b ? a : `${a} – ${b}`;
+};
+
+/** The days moved out of a payroll, "Wed Nov 25" or "Tue Nov 24 – Wed Nov 25". */
+export const fmtDaySpan = (from: Date | string, to: Date | string) => {
+  const a = fmtDayShort(from);
+  const b = fmtDayShort(to);
+  return a === b ? a : `${a} – ${b}`;
+};
+
 /**
  * The stores, in display order. Starts as the built-in list and is replaced
  * by the server's list (which includes stores the CEO has added) as soon as
