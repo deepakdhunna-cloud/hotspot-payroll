@@ -440,6 +440,40 @@ export function payPeriodKeyWeeks(weekStart: Date): Date[] {
 }
 
 /**
+ * Each store can end its own week early, so a screen showing several stores
+ * can hold several sets of days. This is the span covering all of them —
+ * earliest first day to latest last day — with `mixed` set when they differ.
+ * It ends when the LAST store's days end, so a view of several stores never
+ * treats the week as over while one of them is still counting hours.
+ */
+export type ScopePeriod = PayPeriod & { mixed: boolean };
+
+export function spanOfPeriods(weekStart: Date, periods: PayPeriod[]): ScopePeriod {
+  if (periods.length === 0) return { ...payPeriodOf(weekStart, new Map()), mixed: false };
+  const week = getWeekStart(weekStart);
+  const min = (xs: Date[]) => new Date(Math.min(...xs.map((d) => d.getTime())));
+  const max = (xs: Date[]) => new Date(Math.max(...xs.map((d) => d.getTime())));
+  const firstDay = min(periods.map((p) => p.firstDay));
+  const lastDay = max(periods.map((p) => p.lastDay));
+  const mixed = periods.some(
+    (p) =>
+      p.firstDay.getTime() !== periods[0].firstDay.getTime() ||
+      p.lastDay.getTime() !== periods[0].lastDay.getTime()
+  );
+  return {
+    weekStart: week,
+    firstDay,
+    lastDay,
+    start: min(periods.map((p) => p.start)),
+    end: max(periods.map((p) => p.end)),
+    days: Math.round((lastDay.getTime() - firstDay.getTime()) / DAY_MS) + 1,
+    endsEarly: lastDay.getTime() < addDays(week, 6).getTime(),
+    startsEarly: firstDay.getTime() < week.getTime(),
+    mixed,
+  };
+}
+
+/**
  * The UTC instant of a wall-clock time in store-local time — how a typed
  * "Nov 4, 9:00 PM" becomes a real moment no matter where the device is.
  * `month` is 1–12.

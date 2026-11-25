@@ -50,23 +50,44 @@ export function periodNote(weekStart: Date, period: PeriodDays | null | undefine
   return parts.length > 0 ? parts.join("; ") : null;
 }
 
+/**
+ * For a file covering several stores that pay different days: each store
+ * whose days differ from Thursday → Wednesday, and how.
+ */
+export function storesNote(
+  weekStart: Date,
+  periods: { store: string; period: PeriodDays }[] | null | undefined,
+): string | null {
+  if (!periods) return null;
+  const parts = periods.flatMap(({ store, period: p }) => {
+    const moved = periodNote(weekStart, p);
+    if (!moved) return [];
+    return [`${STORE_ABBR[store] ?? store} pays ${fmtDayRange(p.firstDay, p.lastDay)} (${moved})`];
+  });
+  return parts.length > 0 ? parts.join("; ") : null;
+}
+
 export function buildWeekSheet(args: {
   weekStart: Date;
   /**
    * The days this payroll pays, when known. A week that ends early or takes
-   * in days from the week before is labelled and named by those days.
+   * in days from the week before is labelled and named by those days. For
+   * several stores, the span of all their days (`mixed` when they differ).
    */
-  period?: PeriodDays | null;
+  period?: (PeriodDays & { mixed?: boolean }) | null;
+  /** Each store's own days, for a file covering stores that differ. */
+  periods?: { store: string; period: PeriodDays }[] | null;
   /** The one store this covers, or null for all stores. */
   scopeStore: string | null;
   rows: WeekSheetRow[];
   totals: { scheduled: number; hours: number; gross: number };
 }): { filename: string; sheet: XlsxSheet<WeekSheetRow>; title: string; text: string } {
-  const { weekStart, period, scopeStore, rows, totals } = args;
+  const { weekStart, period, periods, scopeStore, rows, totals } = args;
   const firstDay = period ? new Date(period.firstDay) : weekStart;
   const weekEnd = period ? new Date(period.lastDay) : addDaysMarker(weekStart, 6);
   const range = period ? fmtDayRange(firstDay, weekEnd) : fmtWeekRange(weekStart);
-  const note = periodNote(weekStart, period);
+  const note =
+    period?.mixed && periods ? storesNote(weekStart, periods) : periodNote(weekStart, period);
   const year = weekEnd.getUTCFullYear();
   const storeLabel = scopeStore ?? "All stores";
   const storeSlug = (scopeStore ? (STORE_ABBR[scopeStore] ?? scopeStore) : "All-stores").replace(

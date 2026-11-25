@@ -93,9 +93,18 @@ import {
   dayKey,
   payEndKey,
   payEndProblem,
+  payPeriodOf,
+  spanOfPeriods,
   formatWeekRange,
 } from "@shared/hotspot";
-import { payPeriodFor } from "./payPeriods";
+import {
+  hoursForPeriods,
+  payPeriodFor,
+  recordedEnds,
+  scopePeriods,
+  storePayEndKey,
+  storePeriods,
+} from "./payPeriods";
 import { TRPCError } from "@trpc/server";
 import {
   checkPinHash,
@@ -823,13 +832,17 @@ export const appRouter = router({
         const week = getWeekStart(input.weekStart);
         const stores = resolveStores(scope, input.store);
 
-        // The days this payroll pays: Thursday → Wednesday, unless this week
-        // ends early or takes in days the previous one left off.
-        const period = await payPeriodFor(week);
+        // The days this payroll pays, store by store: Thursday → Wednesday,
+        // unless the week ends early or takes in days the previous one left
+        // off. Each store's punches are counted over its own days.
+        const { byStore, period, periods } = await scopePeriods(
+          week,
+          stores ?? allStores()
+        );
         const [activeEmployees, entries, clocked] = await Promise.all([
           listEmployees({ stores }),
           getPayrollByWeek(week, stores),
-          hoursWorkedForWeekBulk(period.start, period.end, stores),
+          hoursForPeriods(byStore),
         ]);
         const entryByEmp = new Map<number, (typeof entries)[number]>();
         for (const e of entries) entryByEmp.set(e.employeeId, e);
@@ -850,19 +863,30 @@ export const appRouter = router({
         // "over schedule". (The week's own scheduled hours are untouched:
         // they are what gets saved and what the schedule checks use.)
         const daysScheduled = new Map<number, number>();
-        if (period.startsEarly || period.endsEarly) {
-          const shiftWeeks = period.startsEarly
-            ? [getWeekStart(period.firstDay), week]
+        const moved = periods.filter(
+          p => p.period.startsEarly || p.period.endsEarly
+        );
+        if (moved.length > 0) {
+          const prevWeek = new Date(week);
+          prevWeek.setUTCDate(prevWeek.getUTCDate() - 7);
+          const shiftWeeks = moved.some(p => p.period.startsEarly)
+            ? [prevWeek, week]
             : [week];
+          const movedStores = moved.map(p => p.store);
           const shifts = (
-            await Promise.all(shiftWeeks.map(w => getShiftsForWeek(w, stores)))
+            await Promise.all(
+              shiftWeeks.map(w => getShiftsForWeek(w, movedStores))
+            )
           ).flat();
-          const first = period.firstDay.getTime();
-          const last = period.lastDay.getTime();
           for (const s of shifts) {
+            const p = byStore.get(s.storeLocation);
+            if (!p || (!p.startsEarly && !p.endsEarly)) continue;
             const t = new Date(s.shiftDate);
             const day = Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate());
-            const inPeriod = day >= first && day <= last ? Number(s.hours) : 0;
+            const inPeriod =
+              day >= p.firstDay.getTime() && day <= p.lastDay.getTime()
+                ? Number(s.hours)
+                : 0;
             daysScheduled.set(
               s.employeeId,
               (daysScheduled.get(s.employeeId) ?? 0) + inPeriod
@@ -872,7 +896,10 @@ export const appRouter = router({
 
         return {
           weekStart: week,
+          /** The days the stores on screen pay, as one span (`mixed` when they differ). */
           period,
+          /** Each store's own days. */
+          periods,
           employees: employees.map(emp => ({
             employee: emp,
             entry: entryByEmp.get(emp.id) ?? null,
@@ -895,22 +922,47 @@ export const appRouter = router({
      * (which starts early to take them in). `lastDay` null — or the
      * Wednesday — puts the week back to normal.
      *
-     * CEO only: it changes every store's payroll for both weeks. It can't be
-     * changed once next week has saved payroll — that payroll already paid
-     * (or left out) the days in question.
+     * A store manager changes their own store's days. The CEO changes one
+     * store's (`store`), or every store's at once (no `store`), which also
+     * clears any store's own choice for that week so they all line up.
+     *
+     * It can't be changed once next week has saved payroll for the stores
+     * in question — that payroll already paid (or left out) those days.
      */
-    setDays: adminProcedure
+    setDays: protectedProcedure
       .input(
         z.object({
           weekStart: z.date(),
           /** The last day this week's payroll pays, or null for the normal week. */
           lastDay: z.date().nullable(),
+          /** One store; omitted = every store (CEO only). */
+          store: StoreEnum.optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const scope = getScope(ctx.session);
+        // A manager only ever changes their own store; the CEO any store,
+        // or all of them.
+        let targets: Store[];
+        if (scope.isAdmin) {
+          targets = input.store ? [input.store] : allStores();
+        } else {
+          const own =
+            input.store ??
+            (scope.stores.length === 1 ? scope.stores[0] : undefined);
+          if (!own || !scope.stores.includes(own)) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "You can only change your own store's payroll days.",
+            });
+          }
+          targets = [own];
+        }
+        const forAll = scope.isAdmin && !input.store;
         const week = getWeekStart(input.weekStart);
         const nextWeek = new Date(week);
         nextWeek.setUTCDate(nextWeek.getUTCDate() + 7);
+        const wednesday = new Date(nextWeek.getTime() - 86_400_000);
         // Only the week being paid and the one still running: changing an
         // older week would move hours between payrolls that went out long ago.
         if (week.getTime() < lastClosedPayWeek(new Date()).getTime()) {
@@ -919,53 +971,88 @@ export const appRouter = router({
             message: `${formatWeekRange(week)} was paid a while ago, so its days can't change now.`,
           });
         }
-        let lastDay: Date | null = null;
+        let end = wednesday;
         if (input.lastDay) {
           const problem = payEndProblem(week, input.lastDay);
           if (problem) {
             throw new TRPCError({ code: "BAD_REQUEST", message: problem });
           }
-          lastDay = new Date(
+          end = new Date(
             Date.UTC(
               input.lastDay.getUTCFullYear(),
               input.lastDay.getUTCMonth(),
               input.lastDay.getUTCDate()
             )
           );
-          // The Wednesday is simply the normal week.
-          if (lastDay.getTime() === nextWeek.getTime() - 86_400_000) lastDay = null;
         }
-        const nextSaved = (await getPayrollByWeek(nextWeek)).filter(
+        const nextSaved = (await getPayrollByWeek(nextWeek, targets)).filter(
           isPayrollOfRecord
         );
         if (nextSaved.length > 0) {
+          const whose = forAll
+            ? "Payroll"
+            : `${Array.from(new Set(nextSaved.map(e => e.storeLocation))).join(", ")}'s payroll`;
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `Payroll for ${formatWeekRange(nextWeek)} already has saved rows, so days can't move between the two weeks now.`,
+            message: `${whose} for ${formatWeekRange(nextWeek)} already has saved rows, so days can't move between the two weeks now.`,
           });
         }
-        const before = await payPeriodFor(week);
-        const key = payEndKey(week);
-        if (lastDay) await setAppSetting(key, dayKey(lastDay), ctx.session.scope);
-        else await deleteAppSetting(key);
-        const period = await payPeriodFor(week);
+
+        const before = await storePeriods(week, targets);
+        const by = ctx.session.scope;
+        const allKey = payEndKey(week);
+        const isNormal = end.getTime() === wednesday.getTime();
+        if (forAll) {
+          if (isNormal) await deleteAppSetting(allKey);
+          else await setAppSetting(allKey, dayKey(end), by);
+          // Every store follows the CEO's choice for this week.
+          const own = await recordedEnds(week, allStores());
+          for (const store of Array.from(own.byStore.keys())) {
+            await deleteAppSetting(storePayEndKey(week, store));
+          }
+        } else {
+          const store = targets[0];
+          const { all } = await recordedEnds(week, [store]);
+          // The day the all-stores setting gives this store anyway.
+          const allEnd = payPeriodOf(
+            week,
+            all ? new Map([[dayKey(week), all]]) : new Map()
+          ).lastDay;
+          const key = storePayEndKey(week, store);
+          if (allEnd.getTime() === end.getTime()) await deleteAppSetting(key);
+          // Its own choice — the Wednesday included, which keeps this store
+          // on its normal week while the others end early.
+          else await setAppSetting(key, dayKey(end), by);
+        }
+
+        const after = await storePeriods(week, targets);
         // Rows already saved for this week were priced with the old days.
-        const savedHere = (await getPayrollByWeek(week)).filter(
+        const savedHere = (await getPayrollByWeek(week, targets)).filter(
           isPayrollOfRecord
         ).length;
+        const days = (p: { firstDay: Date; lastDay: Date }) =>
+          `${dayKey(p.firstDay)}..${dayKey(p.lastDay)}`;
         void logAudit({
-          actorScope: ctx.session.scope,
+          actorScope: by,
           action: "payroll.setDays",
           entityType: "setting",
           detail: JSON.stringify({
             weekStart: dayKey(week),
-            from: { firstDay: dayKey(before.firstDay), lastDay: dayKey(before.lastDay) },
-            to: { firstDay: dayKey(period.firstDay), lastDay: dayKey(period.lastDay) },
+            stores: forAll ? "all" : targets,
+            lastDay: dayKey(end),
+            changes: targets
+              .filter(s => days(before.get(s)!) !== days(after.get(s)!))
+              .map(s => ({ store: s, from: days(before.get(s)!), to: days(after.get(s)!) })),
             savedRowsThisWeek: savedHere,
           }),
           ip: requestIp(ctx.req),
         });
-        return { period, savedHere };
+        const periods = targets.map(store => ({ store, period: after.get(store)! }));
+        return {
+          period: spanOfPeriods(week, periods.map(p => p.period)),
+          periods,
+          savedHere,
+        };
       }),
 
     saveHours: protectedProcedure
@@ -2145,14 +2232,17 @@ export const appRouter = router({
       )
       .query(async ({ input }) => {
         const week = getWeekStart(input.weekStart);
-        const period = input.pay ? await payPeriodFor(week) : null;
-        const { start: weekStartAt, end: weekEnd } = period ?? payWeekBounds(week);
+        const { start: weekStartAt, end: weekEnd } = payWeekBounds(week);
         const stores = input.store ? [input.store] : allStores();
+        // Each store's payroll days, when counting by them.
+        const paid = input.pay ? await scopePeriods(week, stores) : null;
         const [activeEmployees, entries, clockHours, openPunches, shifts] =
           await Promise.all([
             listEmployees({ stores }),
             getPayrollByWeek(week, stores),
-            hoursWorkedForWeekBulk(weekStartAt, weekEnd, stores),
+            paid
+              ? hoursForPeriods(paid.byStore)
+              : hoursWorkedForWeekBulk(weekStartAt, weekEnd, stores),
             listOpenPunches(stores),
             getShiftsForWeek(week, stores),
           ]);
@@ -2286,8 +2376,9 @@ export const appRouter = router({
 
         return {
           weekStart: week,
-          /** The payroll's days, when asked for with `pay` (else null). */
-          period,
+          /** The payroll's days, when asked for with `pay` (else null): all stores' span, and each store's. */
+          period: paid?.period ?? null,
+          periods: paid?.periods ?? null,
           byStore,
           rows,
           grand,
@@ -2935,8 +3026,9 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         }
         const start = getWeekStart(input.weekStart);
-        // The days this week's payroll pays (normally Thursday → Wednesday).
-        const bounds = await payPeriodFor(start);
+        // The days this week's payroll pays for their store (normally
+        // Thursday → Wednesday).
+        const bounds = await payPeriodFor(start, emp.storeLocation);
         const hours = await hoursWorkedForWeek(emp.id, bounds.start, bounds.end);
         return { employeeId: emp.id, weekStart: start, hours };
       }),
@@ -2948,11 +3040,11 @@ export const appRouter = router({
         const scope = getScope(ctx.session);
         const stores = resolveStores(scope, input.store);
         const start = getWeekStart(input.weekStart);
-        // The days this week's payroll pays, in store time: Thursday 00:00
-        // Chicago → next Thursday 00:00, unless the week ends early or takes
-        // in days the previous week's payroll left off.
-        const bounds = await payPeriodFor(start);
-        const map = await hoursWorkedForWeekBulk(bounds.start, bounds.end, stores);
+        // The days this week's payroll pays, store by store, in store time:
+        // Thursday 00:00 Chicago → next Thursday 00:00, unless that store's
+        // week ends early or takes in days the previous one left off.
+        const { byStore } = await scopePeriods(start, stores ?? allStores());
+        const map = await hoursForPeriods(byStore);
         return {
           weekStart: start,
           entries: Array.from(map.entries()).map(([employeeId, hours]) => ({

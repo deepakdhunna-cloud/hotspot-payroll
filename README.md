@@ -172,31 +172,43 @@ the amount that was saved.
 ### Paying a week early (holidays, early deadlines)
 
 Payroll normally pays Thursday → Wednesday. When it has to be sent before the
-week is over, open that week in **Payroll** (the CEO's Autopilot or the Store
-desk's Hours & pay), tap **Change days** and pick the last day to pay on the
-calendar — **Leave out today** does the usual case in one tap. The week then
-pays only those days: today's hours, and anyone still on the clock, drop out,
-and the week counts as closed, so it can be approved and exported straight
-away. The days left off are added to the start of **next week's** payroll
-automatically (Thanksgiving 2026: Nov 19 – Nov 24, then Nov 25 – Dec 2), so
-every hour is paid once. Both weeks show a notice saying which days they pay,
-and the export and share text say so too. **Full week** puts a week back to
-normal.
+week is over, open that week in **Payroll → Hours & pay** (a store manager,
+or the CEO's Store desk) or the CEO's **Payroll** (Autopilot), tap **Change
+days** and pick the last day to pay on the calendar — **Leave out today**
+does the usual case in one tap. The week then pays only those days: today's
+hours, and anyone still on the clock, drop out, and the week counts as
+closed, so it can be saved, approved and exported straight away. The days
+left off are added to the start of **next week's** payroll automatically
+(Thanksgiving 2026: Nov 19 – Nov 24, then Nov 25 – Dec 2), so every hour is
+paid once. **Full week** puts a week back to normal.
 
-- Only the end is picked; a payroll always starts the day after the previous
-  one ended, so no day can fall between two payrolls.
-- CEO only (it changes every store's payroll for two weeks); managers see the
-  notice. Only the week being paid or the one in progress can change, and not
-  once next week already has saved payroll. Every change is in the activity
-  log (`payroll.setDays`).
-- Rows already saved for the week keep their saved hours and show the new
-  clock figure beside them to save again.
-- What follows the payroll's days: the timesheet's clock hours, Autopilot and
-  its ledger, the exports. What stays on the calendar week: the live
-  dashboard and Command view, the kiosk, the schedule and its checks.
-- Stored as `payend:<Thursday>` → last day paid in `app_settings`, read fresh
-  on every request (`server/payPeriods.ts`); the math is `payPeriodOf` in
-  `shared/hotspot.ts` (tests: `server/payDays.test.ts`).
+Each store can do this on its own:
+
+- A **store manager** changes their own store's days, from their own login.
+  It never touches another store.
+- The **CEO** changes the store on screen (a focused store, or the Store
+  desk on one store), or **every store at once** from an all-stores view —
+  which also clears any store's own choice for that week so they line up.
+- When stores pay different days, the all-stores views say which ones, the
+  export says so too, and Autopilot names the stores whose days are already
+  over (focus one to approve it; the all-stores view waits for the last).
+
+Rules: only the end is picked (a payroll always starts the day after the
+previous one ended, so no day falls between two payrolls); only the week
+being paid or the one in progress can change, and not once next week already
+has saved payroll for that store; rows already saved keep their saved hours
+and show the new clock figure beside them to save again; every change is in
+the activity log (`payroll.setDays`, with who and which stores).
+
+What follows the payroll's days: the timesheet's clock hours, Autopilot and
+its ledger, the exports. What stays on the calendar week: the live dashboard
+and Command view, the kiosk, the schedule and its checks.
+
+Stored in `app_settings` as `payend:<Thursday>` (every store) and
+`payend:<Thursday>:<store>` (one store, which wins) → last day paid, read
+fresh on every request (`server/payPeriods.ts`). The math is `payPeriodOf`
+and `spanOfPeriods` in `shared/hotspot.ts` (tests: `server/payDays.test.ts`,
+`server/payDaysStores.test.ts`).
 
 ### What the CEO can change without a developer
 

@@ -9,8 +9,11 @@
  * Only the end is picked. A payroll's first day is always the day after the
  * previous payroll's last day: it is shown on the calendar, but locked.
  *
- * Everyone sees the notice when a week doesn't pay its normal days; only the
- * CEO can change them (it changes every store's payroll for two weeks).
+ * Each store can end its own week early. A store's manager changes their own
+ * store; the CEO changes the store on screen, or every store at once from an
+ * all-stores view (which lines them all up). Everyone sees the notice when a
+ * week doesn't pay its normal days; an all-stores view lists any store whose
+ * days differ.
  */
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -30,6 +33,7 @@ import {
 import { useIsMobile } from "@/hooks/useMobile";
 import { errorMessage } from "@/lib/errors";
 import {
+  STORE_ABBR,
   fmtDayRange,
   fmtDayShort,
   fmtDaySpan,
@@ -45,6 +49,7 @@ import {
 } from "@/lib/payweek";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import type { Store } from "@shared/hotspot";
 import { AlertTriangle, CalendarRange, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -57,6 +62,17 @@ const asDate = (d: Date | string) => new Date(d);
 /** A run of days as words, and whether it is more than one ("is" / "are"). */
 function daySpan(from: Date, to: Date) {
   return { text: fmtDaySpan(from, to), many: !same(from, to) };
+}
+
+const abbr = (store: string) => STORE_ABBR[store] ?? store;
+const isNormal = (p: PayPeriod) => !p.endsEarly && !p.startsEarly;
+
+/** One store's days in a few words, for the all-stores list. */
+function shortDays(weekStart: Date, p: PayPeriod): string {
+  const range = `${fmtDayShort(p.firstDay)} – ${fmtDayShort(p.lastDay)}`;
+  if (!p.endsEarly) return range;
+  const moved = daySpan(addDaysMarker(asDate(p.lastDay), 1), addDaysMarker(weekStart, 6));
+  return `${range} (${moved.text} paid next week)`;
 }
 
 /** The sentence(s) describing a payroll that doesn't pay its normal week. */
@@ -91,24 +107,43 @@ function describe(weekStart: Date, period: PayPeriod) {
 export function PayDays({
   weekStart,
   period,
+  periods,
+  scopeStore,
   savedCount,
   className,
 }: {
   weekStart: Date;
-  /** The days this week's payroll pays (from payroll.week); nothing renders until known. */
-  period: PayPeriod | null | undefined;
+  /**
+   * The days the payroll on screen pays (from payroll.week) — for several
+   * stores, the span of them all, `mixed` when they differ. Nothing renders
+   * until it is known.
+   */
+  period: (PayPeriod & { mixed?: boolean }) | null | undefined;
+  /** Each store's own days, for listing stores that differ. */
+  periods?: { store: string; period: PayPeriod }[] | null;
+  /** The one store on screen (a change applies to it), or null for all stores. */
+  scopeStore: string | null;
   /** Rows already saved for this week on screen — they were priced with the current days. */
   savedCount: number;
   className?: string;
 }) {
   const { user } = useAuth();
-  const canChange = user?.role === "admin";
+  const isAdmin = user?.role === "admin";
+  // A manager changes their own store; the CEO the store on screen or all.
+  const canChange = isAdmin || (user?.role === "manager" && scopeStore !== null);
   if (!period) return null;
-  const normal = !period.endsEarly && !period.startsEarly;
+  const mixed = !!period.mixed && scopeStore === null;
+  const normal = !mixed && isNormal(period);
   if (normal && !canChange) return null;
 
   const picker = canChange ? (
-    <DaysPicker weekStart={weekStart} period={period} savedCount={savedCount} />
+    <DaysPicker
+      weekStart={weekStart}
+      period={period}
+      mixed={mixed}
+      scopeStore={scopeStore}
+      savedCount={savedCount}
+    />
   ) : null;
 
   if (normal) {
@@ -137,7 +172,40 @@ export function PayDays({
     );
   }
 
+  // Stores on screen paying different days: say which ones, and how.
+  if (mixed) {
+    const differ = (periods ?? []).filter((p) => !isNormal(p.period));
+    return (
+      <div
+        role="status"
+        className={cn(
+          "callout-warn flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+          className
+        )}
+      >
+        <p className="flex min-w-0 items-start gap-2 text-sm">
+          <CalendarRange className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>
+            <span className="callout-title font-semibold">
+              Stores pay different days this week.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              {differ
+                .map((p) => `${abbr(p.store)}: ${shortDays(weekStart, p.period)}`)
+                .join(" · ")}
+              {differ.length > 0 ? ". " : ""}
+              The rest pay {fmtDayShort(weekStart)} – {fmtDayShort(addDaysMarker(weekStart, 6))}.
+            </span>
+          </span>
+        </p>
+        {picker}
+      </div>
+    );
+  }
+
   const { title, body } = describe(weekStart, period);
+  // The CEO looking at one store: say which store this is about.
+  const who = isAdmin && scopeStore ? `${abbr(scopeStore)} · ` : "";
   return (
     <div
       role="status"
@@ -149,7 +217,10 @@ export function PayDays({
       <p className="flex min-w-0 items-start gap-2 text-sm">
         <CalendarRange className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <span>
-          <span className="callout-title font-semibold">{title}</span>{" "}
+          <span className="callout-title font-semibold">
+            {who}
+            {title}
+          </span>{" "}
           <span className="text-muted-foreground">{body}</span>
         </span>
       </p>
@@ -169,10 +240,16 @@ const PICKER_HINT =
 function DaysPicker({
   weekStart,
   period,
+  mixed,
+  scopeStore,
   savedCount,
 }: {
   weekStart: Date;
   period: PayPeriod;
+  /** The stores on screen pay different days now (saving lines them up). */
+  mixed: boolean;
+  /** The one store this changes, or null for every store (CEO). */
+  scopeStore: string | null;
   savedCount: number;
 }) {
   const utils = trpc.useUtils();
@@ -191,7 +268,9 @@ function DaysPicker({
   const canLeaveOutToday =
     today.getTime() > weekStart.getTime() &&
     today.getTime() <= wednesday.getTime();
-  const changed = !same(end, currentEnd);
+  // With stores paying different days, saving lines them all up — a change
+  // even when the last day picked is the latest one already in use.
+  const changed = mixed || !same(end, currentEnd);
   const draftDays =
     Math.round((end.getTime() - firstDay.getTime()) / 86_400_000) + 1;
   const twoMonths = firstDay.getUTCMonth() !== wednesday.getUTCMonth();
@@ -223,6 +302,8 @@ function DaysPicker({
       const res = await setDays.mutateAsync({
         weekStart,
         lastDay: same(end, wednesday) ? null : end,
+        // Stores are checked against the live list on the server.
+        ...(scopeStore ? { store: scopeStore as Store } : {}),
       });
       await Promise.all([
         utils.payroll.week.invalidate(),
@@ -235,8 +316,9 @@ function DaysPicker({
       const moved = p.endsEarly
         ? `${left.text} ${left.many ? "move" : "moves"} to next week's payroll.`
         : "Back to the normal Thursday–Wednesday week.";
+      const whose = scopeStore === null ? "Every store's payroll" : `${abbr(scopeStore)}'s payroll`;
       toast.success(
-        `This payroll now pays ${fmtDayRange(p.firstDay, p.lastDay)}.`,
+        `${whose} now pays ${fmtDayRange(p.firstDay, p.lastDay)}.`,
         {
           description:
             res.savedHere > 0
@@ -344,6 +426,11 @@ function DaysPicker({
             </p>
           ) : null}
         </div>
+        <p className="text-xs text-muted-foreground">
+          {scopeStore === null
+            ? "Applies to every store, replacing any store's own choice for this week."
+            : `Applies to ${abbr(scopeStore)} only.`}
+        </p>
         {changed && savedCount > 0 ? (
           <p className="flex items-start gap-1.5 text-xs text-warning">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
