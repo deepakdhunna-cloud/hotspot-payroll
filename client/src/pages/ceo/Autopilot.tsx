@@ -37,7 +37,13 @@ import {
   storeIndex,
 } from "@/lib/format";
 import { PayDays } from "@/components/PayDays";
-import { freshView, saveInputFor, type FreshView } from "@/lib/payrollRow";
+import {
+  CLOCK_MATCH_SLACK,
+  calcRow,
+  freshView,
+  saveInputFor,
+  type FreshView,
+} from "@/lib/payrollRow";
 import { buildWeekSheet, type WeekSheetRow } from "@/lib/payrollSheet";
 import {
   currentPayPeriodStart,
@@ -252,6 +258,53 @@ export function Autopilot({
         freshView(r, clock.get(r.employee.id)).isSaved,
     ).length;
   }, [weekQ.data, clockQ.data, storeFocus]);
+
+  // Saved rows whose hours don't match the time clock for this payroll's
+  // days (saved before the days changed, or typed by hand). Once the days
+  // are over they can be re-saved from the clock in one go.
+  const offClock = liveWeek
+    ? []
+    : rows.filter(
+        (r) =>
+          r.lane === "saved" &&
+          r.clock !== undefined &&
+          Math.abs(r.calc.hoursOk - r.clock) > CLOCK_MATCH_SLACK,
+      );
+  const [syncing, setSyncing] = useState(false);
+  const updateToClock = async () => {
+    if (syncing || offClock.length === 0) return;
+    setSyncing(true);
+    const problems: string[] = [];
+    let done = 0;
+    for (const r of offClock) {
+      // Same row, the clock's hours; the saved rate and set pay stay.
+      const calc = calcRow({ ...r.edit, hours: r.clock!.toFixed(2), manual: false });
+      const built = saveInputFor({
+        employeeId: r.id,
+        weekStart,
+        scheduled: r.scheduled,
+        calc,
+        rateChanged: false,
+        olderWeek,
+      });
+      try {
+        if (!built.ok) throw new Error(built.message);
+        await saveM.mutateAsync(built.input);
+        done++;
+      } catch (err) {
+        problems.push(`${r.name}: ${errorMessage(err)}`);
+      }
+    }
+    setSyncing(false);
+    refreshAll();
+    if (problems.length > 0) {
+      toast.error(`${rowsWord(done)} updated. ${problems.length} could not be.`, {
+        description: problems.slice(0, 3).join(" · "),
+      });
+    } else {
+      toast.success(`${rowsWord(done)} updated to the time clock for ${range}.`);
+    }
+  };
 
   const lane = (l: Lane) => rows.filter((r) => r.lane === l);
   const savedRows = lane("saved");
@@ -532,6 +585,33 @@ export function Autopilot({
         scopeStore={storeFocus === "all" ? null : storeFocus}
         savedCount={savedInScope}
       />
+      {ready && offClock.length > 0 ? (
+        <div
+          role="status"
+          className="callout-warn flex flex-col gap-2 rounded-xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="text-sm">
+            <span className="callout-title font-semibold">
+              {rowsWord(offClock.length)} saved {offClock.length === 1 ? "doesn't" : "don't"} match the
+              time clock for {range}.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              {offClock.map((r) => r.name).slice(0, 4).join(", ")}
+              {offClock.length > 4 ? ` and ${offClock.length - 4} more` : ""} — saved before the days
+              changed, or typed by hand.
+            </span>
+          </p>
+          <Button
+            size="sm"
+            className="h-9 shrink-0 sm:h-8"
+            onClick={() => void updateToClock()}
+            disabled={syncing}
+          >
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+            Update to the clock
+          </Button>
+        </div>
+      ) : null}
       <HudPanel
         title="Autopilot"
         meta={`Pay week ${range}${storeFocus === "all" ? " · all stores" : ` · ${STORE_ABBR[storeFocus] ?? storeFocus}`}`}

@@ -322,7 +322,7 @@ function DaysPicker({
         {
           description:
             res.savedHere > 0
-              ? `${moved} ${res.savedHere} ${plural(res.savedHere, "row was", "rows were")} already saved with the old days — each one now shows the new clock hours beside it; save them again.`
+              ? `${moved} ${res.savedHere} ${plural(res.savedHere, "row was", "rows were")} already saved with the old days — use "Use clock hours" / "Update to the clock" on this page to bring them in line.`
               : moved,
           duration: res.savedHere > 0 ? 12_000 : undefined,
         }
